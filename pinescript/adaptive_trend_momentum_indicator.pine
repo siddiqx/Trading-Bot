@@ -86,10 +86,13 @@ use_rsi_entry_guard= input.bool(true, "Enforce Anti-Exhaustion RSI Guard at Entr
 rsi_max_long       = input.float(78.0, "Max Long Entry RSI (Anti-Overbought)", minval=55.0, maxval=85.0, group=grp_vol)
 rsi_min_short      = input.float(22.0, "Min Short Entry RSI (Anti-Oversold)", minval=15.0, maxval=45.0, group=grp_vol)
 
-// 4. Session & Webhook Credentials
-grp_session = "Session & Webhook Credentials"
-session_filter_enabled = input.bool(false, "Enable Strict Session Filter (Disable to Capture Tokyo/Asian Moves on JPY & AUD)", group=grp_session)
+// 4. Session & Weekday Execution Filters
+grp_session = "Session & Weekday Execution Filters"
+session_filter_enabled = input.bool(false, "Enable Strict Session Window Filter", group=grp_session)
 allowed_session        = input.session("0000-2000", "Allowed Session Window (UTC)", group=grp_session)
+filter_friday_pm       = input.bool(true, "Disable Friday PM (After 12:00 UTC Weekend Unwind)", group=grp_session)
+filter_full_friday     = input.bool(false, "Disable All Friday Trading (Mon - Thu Only)", group=grp_session)
+filter_monday_am       = input.bool(false, "Disable Monday Morning (Before 12:00 UTC Gap Rebalance)", group=grp_session)
 webhook_secret         = input.string("test-secret-key-12345", "Webhook Secret Key", group=grp_session)
 env_label              = input.string("LIVE", "Environment (LIVE or TEST)", options=["LIVE", "TEST"], group=grp_session)
 
@@ -179,8 +182,18 @@ ob_bull_l = (close[1] < open[1]) ? low[1] : low
 ob_bear_h = (close[1] > open[1]) ? high[1] : high
 ob_bear_l = (close[1] > open[1]) ? low[1] : low
 
-in_session = not session_filter_enabled or not na(time(timeframe.period, allowed_session))
-is_rollover_hour = avoid_rollover and (hour(time, "UTC") == 21)
+cur_wday     = dayofweek(time, "UTC")
+cur_hour_utc = hour(time, "UTC")
+is_fri       = (cur_wday == dayofweek.friday)
+is_mon       = (cur_wday == dayofweek.monday)
+
+is_fri_pm_blocked  = filter_friday_pm and is_fri and (cur_hour_utc >= 12)
+is_full_fri_blocked= filter_full_friday and is_fri
+is_mon_am_blocked  = filter_monday_am and is_mon and (cur_hour_utc < 12)
+wday_allowed       = not is_fri_pm_blocked and not is_full_fri_blocked and not is_mon_am_blocked
+
+in_session       = (not session_filter_enabled or not na(time(timeframe.period, allowed_session))) and wday_allowed
+is_rollover_hour = avoid_rollover and (cur_hour_utc == 21)
 
 // 15m Fair Value Gap (FVG)
 ltf_fvg_bearish = high < low[2]
