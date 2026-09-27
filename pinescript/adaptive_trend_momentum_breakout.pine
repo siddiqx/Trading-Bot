@@ -10,7 +10,11 @@ strategy(
      commission_value=0.00005,
      calc_on_every_tick=false,
      calc_on_order_fills=false,
-     process_orders_on_close=true
+     process_orders_on_close=true,
+     max_bars_back=500,
+     max_boxes_count=100,
+     max_lines_count=200,
+     max_labels_count=200
      )
 
 // =============================================================================
@@ -26,6 +30,7 @@ strategy(
 // 3. LOWER TIMEFRAME REFINEMENT (15-Minute Execution Chart):
 //    - Waits for price to retrace into the 50% Equilibrium / Order Block / 15m FVG.
 //    - Confirms rejection on 15m before triggering entry.
+//    - Also supports direct 1H execution if loaded on a 1-Hour chart!
 // 4. FIXED NON-TRAILING STRUCTURAL SL & TP:
 //    - Stop Loss is STRICTLY FIXED at the Order Block Invalidation boundary + ATR buffer.
 //      It NEVER moves, trails, or tightens to a single candle wick. Price is given
@@ -52,9 +57,9 @@ use_compounding    = input.bool(true, "Compound Live Equity", group=grp_risk)
 rr_ratio           = input.float(2.0, "Target Risk/Reward Ratio", minval=1.2, maxval=5.0, step=0.25, group=grp_risk)
 sl_atr_buffer      = input.float(0.25, "Structural SL Buffer (1H ATR Multiple)", minval=0.10, maxval=1.0, step=0.05, group=grp_risk)
 min_sl_pips_input  = input.float(15.0, "Minimum Stop Loss Breathing Room (Pips)", minval=5.0, maxval=50.0, step=1.0, group=grp_risk)
-cooldown_bars      = input.int(12, "Post-Trade Cooldown (15m Bars = 3 Hours)", minval=4, maxval=60, group=grp_risk)
-max_trade_bars     = input.int(160, "Max Trade Hold Duration (15m Bars = 40 Hours)", minval=40, maxval=400, group=grp_risk)
-max_hunting_bars   = input.int(24, "Max Retracement Wait (15m Bars = 6 Hours)", minval=8, maxval=60, group=grp_risk)
+cooldown_bars      = input.int(12, "Post-Trade Cooldown (Bars)", minval=2, maxval=60, group=grp_risk)
+max_trade_bars     = input.int(160, "Max Trade Hold Duration (Bars)", minval=20, maxval=400, group=grp_risk)
+max_hunting_bars   = input.int(24, "Max Retracement Wait (Bars)", minval=6, maxval=60, group=grp_risk)
 
 // 2. Higher Timeframe Setup Parameters
 grp_htf = "Higher Timeframe (1H & Daily) Setup"
@@ -95,11 +100,11 @@ f_calc_d1() =>
      lookahead=barmerge.lookahead_off
      )
 
-d1_bullish = not use_d1_filter or (d1_c_raw[1] > d1_ema_raw[1])
-d1_bearish = not use_d1_filter or (d1_c_raw[1] < d1_ema_raw[1])
+d1_bullish = not use_d1_filter or (nz(d1_c_raw[1]) > nz(d1_ema_raw[1]))
+d1_bearish = not use_d1_filter or (nz(d1_c_raw[1]) < nz(d1_ema_raw[1]))
 
 // =============================================================================
-// 1-HOUR (60m) SETUP ENGINE - VOLUME & EXHAUSTION PROTECTION
+// 1-HOUR (60m) SETUP ENGINE - PURE, STATELESS, ROBUST
 // =============================================================================
 f_calculate_1h_state() =>
     c = close
@@ -135,29 +140,14 @@ f_calculate_1h_state() =>
     cond_long  = cross_long  and (c > ema200) and (ema20 > ema50) and (adx_val >= adx_min) and adx_rising and rsi_long_healthy  and vol_ok and (body_ratio_long >= min_body_ratio)
     cond_short = cross_short and (c < ema200) and (ema20 < ema50) and (adx_val >= adx_min) and adx_rising and rsi_short_healthy and vol_ok and (body_ratio_short >= min_body_ratio)
 
-    var float ob_hl = na
-    var float ob_ll = na
-    ob_hl := h[1]
-    ob_ll := l[1]
-    for k = 1 to 5
-        if c[k] < o[k]
-            ob_hl := h[k]
-            ob_ll := l[k]
-            break
+    ob_bull_h = ta.valuewhen(c < o, h, 0)
+    ob_bull_l = ta.valuewhen(c < o, l, 0)
+    ob_bear_h = ta.valuewhen(c > o, h, 0)
+    ob_bear_l = ta.valuewhen(c > o, l, 0)
 
-    var float ob_hs = na
-    var float ob_ls = na
-    ob_hs := h[1]
-    ob_ls := l[1]
-    for k = 1 to 5
-        if c[k] > o[k]
-            ob_hs := h[k]
-            ob_ls := l[k]
-            break
+    [cond_long, cond_short, atr_val, adx_val, rsi_val, ob_bull_h, ob_bull_l, ob_bear_h, ob_bear_l, h, l]
 
-    [cond_long, cond_short, c, d_high, d_low, atr_val, ob_hl, ob_ll, ob_hs, ob_ls, h, l, adx_val, rsi_val]
-
-[raw_long, raw_short, raw_c, raw_dh, raw_dl, raw_atr, raw_ob_hl, raw_ob_ll, raw_ob_hs, raw_ob_ls, raw_h, raw_l, raw_adx, raw_rsi] = request.security(
+[raw_long, raw_short, raw_atr, raw_adx, raw_rsi, raw_ob_hl, raw_ob_ll, raw_ob_hs, raw_ob_ls, raw_h, raw_l] = request.security(
      syminfo.tickerid,
      sig_tf,
      f_calculate_1h_state(),
@@ -165,17 +155,17 @@ f_calculate_1h_state() =>
      lookahead=barmerge.lookahead_off
      )
 
-h1_long_setup    = raw_long[1] and d1_bullish
-h1_short_setup   = raw_short[1] and d1_bearish
-h1_atr_confirmed = raw_atr[1]
-h1_adx_confirmed = raw_adx[1]
-h1_rsi_confirmed = raw_rsi[1]
-h1_ob_hl_confirmed = raw_ob_hl[1]
-h1_ob_ll_confirmed = raw_ob_ll[1]
-h1_ob_hs_confirmed = raw_ob_hs[1]
-h1_ob_ls_confirmed = raw_ob_ls[1]
-h1_high_confirmed  = raw_h[1]
-h1_low_confirmed   = raw_l[1]
+h1_long_setup      = nz(raw_long[1], false) and d1_bullish
+h1_short_setup     = nz(raw_short[1], false) and d1_bearish
+h1_atr_confirmed   = nz(raw_atr[1], ta.atr(14))
+h1_adx_confirmed   = nz(raw_adx[1], 25.0)
+h1_rsi_confirmed   = nz(raw_rsi[1], 50.0)
+h1_ob_hl_confirmed = nz(raw_ob_hl[1], high)
+h1_ob_ll_confirmed = nz(raw_ob_ll[1], low)
+h1_ob_hs_confirmed = nz(raw_ob_hs[1], high)
+h1_ob_ls_confirmed = nz(raw_ob_ls[1], low)
+h1_high_confirmed  = nz(raw_h[1], high)
+h1_low_confirmed   = nz(raw_l[1], low)
 
 is_sub_1h = timeframe.isintraday and timeframe.multiplier < 60
 is_new_1h_bar = ta.change(time(sig_tf)) != 0
@@ -183,6 +173,7 @@ h1_pulse = is_sub_1h ? is_new_1h_bar : barstate.isconfirmed
 
 in_session = not session_filter_enabled or not na(time(timeframe.period, allowed_session + ":1234567"))
 
+// 15m Fair Value Gap (FVG)
 ltf_fvg_bearish = high < low[2]
 ltf_fvg_bear_bottom = high
 ltf_fvg_bullish = low > high[2]
@@ -227,13 +218,13 @@ risk_cash = current_capital * (risk_pct / 100.0)
 
 f_calc_units(sl_dist) =>
     units = 1000.0
-    if sl_dist > 0
-        if is_gold
-            units := risk_cash / sl_dist
-        else if is_jpy or is_usd_base
-            units := (risk_cash * close) / sl_dist
-        else
-            units := risk_cash / sl_dist
+    safe_dist = math.max(nz(sl_dist, min_sl_dist), 0.0001)
+    if is_gold
+        units := risk_cash / safe_dist
+    else if is_jpy or is_usd_base
+        units := (risk_cash * close) / safe_dist
+    else
+        units := risk_cash / safe_dist
     units
 
 // =============================================================================
@@ -266,7 +257,7 @@ if (setup_hunting != 0) and ((bar_index - hunting_start_bar) > max_hunting_bars)
     setup_hunting := 0
 
 // =============================================================================
-// STEP 2: LOWER TIMEFRAME (15m) ENTRY REFINEMENT & FIXED SL/TP ASSIGNMENT
+// STEP 2: ENTRY REFINEMENT & FIXED SL/TP ASSIGNMENT
 // =============================================================================
 sig_long_fired = false
 sig_short_fired = false
@@ -274,112 +265,136 @@ sig_short_fired = false
 ltf_vol_ok = volume >= (ta.sma(volume, 14) * 0.85) or (volume == 0)
 
 // TRIGGER SHORT:
+short_entry_trigger = false
 if (active_trade_state == 0) and (setup_hunting == -1) and in_session and (strategy.position_size == 0)
-    retrace_into_premium = (high >= hunt_fib_50) or (high >= hunt_ob_l) or (ltf_fvg_bearish and high >= ltf_fvg_bear_bottom)
-    rejection_confirmed = (close < open) and (close < low[1]) and ltf_vol_ok
+    if is_sub_1h
+        retrace_into_premium = (high >= hunt_fib_50) or (high >= hunt_ob_l) or (ltf_fvg_bearish and high >= ltf_fvg_bear_bottom)
+        rejection_confirmed = (close < open) and (close < low[1]) and ltf_vol_ok
+        short_entry_trigger := retrace_into_premium and rejection_confirmed
+    else
+        short_entry_trigger := true
 
-    if retrace_into_premium and rejection_confirmed
-        active_trade_state := -1
-        setup_hunting := 0
-        trade_entry_bar := bar_index
-        sig_short_fired := true
+if short_entry_trigger
+    active_trade_state := -1
+    setup_hunting := 0
+    trade_entry_bar := bar_index
+    sig_short_fired := true
 
-        fixed_entry := close
+    fixed_entry := close
 
-        raw_sl = hunt_ob_h + (hunt_atr * sl_atr_buffer)
-        calc_dist = raw_sl - fixed_entry
-        actual_sl_dist = math.max(calc_dist, min_sl_dist)
-        fixed_sl := fixed_entry + actual_sl_dist
+    safe_ob_h = math.max(nz(hunt_ob_h, high), nz(hunt_ob_l, low))
+    safe_ob_l = math.min(nz(hunt_ob_h, high), nz(hunt_ob_l, low))
+    if safe_ob_h <= safe_ob_l
+        safe_ob_h := safe_ob_l + (pip_unit * 2)
 
-        risk_dist = fixed_sl - fixed_entry
-        fixed_tp := fixed_entry - (risk_dist * rr_ratio)
+    safe_atr = nz(hunt_atr, nz(ta.atr(14), close * 0.005))
+    raw_sl = safe_ob_h + (safe_atr * sl_atr_buffer)
+    calc_dist = math.abs(raw_sl - fixed_entry)
+    actual_sl_dist = math.max(calc_dist, min_sl_dist)
+    fixed_sl := fixed_entry + actual_sl_dist
 
-        trade_units = f_calc_units(risk_dist)
-        fixed_lots := is_gold ? math.max(0.01, math.round(trade_units / 100.0, 2)) : math.max(0.01, math.round(trade_units / 100000.0, 2))
+    risk_dist = fixed_sl - fixed_entry
+    fixed_tp := fixed_entry - (risk_dist * rr_ratio)
 
-        strategy.entry("15m-Short", strategy.short, qty=trade_units)
-        strategy.exit("Exit-Short", from_entry="15m-Short", stop=fixed_sl, limit=fixed_tp)
+    trade_units = f_calc_units(risk_dist)
+    fixed_lots := is_gold ? math.max(0.01, math.round(trade_units / 100.0, 2)) : math.max(0.01, math.round(trade_units / 100000.0, 2))
 
-        fixed_pips_sl := math.round(risk_dist / pip_unit, 1)
-        fixed_pips_tp := math.round((fixed_entry - fixed_tp) / pip_unit, 1)
+    strategy.entry("15m-Short", strategy.short, qty=trade_units)
+    strategy.exit("Exit-Short", from_entry="15m-Short", stop=fixed_sl, limit=fixed_tp)
 
-        lbl_text = "▼ SELL @" + str.tostring(fixed_entry, p_fmt) + "\n" +
-                   "SL: " + str.tostring(fixed_sl, p_fmt) + " (-" + str.tostring(fixed_pips_sl, "#.#") + " p)\n" +
-                   "TP: " + str.tostring(fixed_tp, p_fmt) + " (+" + str.tostring(fixed_pips_tp, "#.#") + " p | 1:" + str.tostring(rr_ratio, "#.#") + ")\n" +
-                   "Lots: " + str.tostring(fixed_lots, "#.##")
+    fixed_pips_sl := math.round(risk_dist / pip_unit, 1)
+    fixed_pips_tp := math.round((fixed_entry - fixed_tp) / pip_unit, 1)
 
-        label.new(bar_index, high + (pip_unit * 12), text=lbl_text, style=label.style_label_down, color=color.new(#9f1239, 0), textcolor=color.white, size=size.normal)
+    lbl_text = "▼ SELL @" + str.tostring(fixed_entry, p_fmt) + "\n" +
+               "SL: " + str.tostring(fixed_sl, p_fmt) + " (-" + str.tostring(fixed_pips_sl, "#.#") + " p)\n" +
+               "TP: " + str.tostring(fixed_tp, p_fmt) + " (+" + str.tostring(fixed_pips_tp, "#.#") + " p | 1:" + str.tostring(rr_ratio, "#.#") + ")\n" +
+               "Lots: " + str.tostring(fixed_lots, "#.##")
 
-        cur_ob_box := box.new(
-             left=bar_index - 6,
-             top=hunt_ob_h,
-             right=bar_index + 1,
-             bottom=hunt_ob_l,
-             border_color=color.new(#ef4444, 20),
-             border_width=1,
-             bgcolor=color.new(#ef4444, 88),
-             text="-OB Supply [" + str.tostring(hunt_ob_l, p_fmt) + " - " + str.tostring(hunt_ob_h, p_fmt) + "]",
-             text_color=color.new(#ef4444, 0),
-             text_size=size.small
-             )
+    label.new(bar_index, high + (pip_unit * 12), text=lbl_text, style=label.style_label_down, color=color.new(#9f1239, 0), textcolor=color.white, size=size.normal)
 
-        cur_entry_line := line.new(bar_index, fixed_entry, bar_index + 1, fixed_entry, color=color.new(#0284c7, 0), width=2, style=line.style_dashed)
-        cur_sl_line    := line.new(bar_index, fixed_sl, bar_index + 1, fixed_sl, color=color.new(#e11d48, 0), width=2, style=line.style_solid)
-        cur_tp_line    := line.new(bar_index, fixed_tp, bar_index + 1, fixed_tp, color=color.new(#059669, 0), width=2, style=line.style_solid)
+    box_left = math.max(0, bar_index - 6)
+    cur_ob_box := box.new(
+         left=box_left,
+         top=safe_ob_h,
+         right=bar_index + 1,
+         bottom=safe_ob_l,
+         border_color=color.new(#ef4444, 20),
+         border_width=1,
+         bgcolor=color.new(#ef4444, 88),
+         text="-OB Supply [" + str.tostring(safe_ob_l, p_fmt) + " - " + str.tostring(safe_ob_h, p_fmt) + "]",
+         text_color=color.new(#ef4444, 0),
+         text_size=size.small
+         )
+
+    cur_entry_line := line.new(bar_index, fixed_entry, bar_index + 1, fixed_entry, color=color.new(#0284c7, 0), width=2, style=line.style_dashed)
+    cur_sl_line    := line.new(bar_index, fixed_sl, bar_index + 1, fixed_sl, color=color.new(#e11d48, 0), width=2, style=line.style_solid)
+    cur_tp_line    := line.new(bar_index, fixed_tp, bar_index + 1, fixed_tp, color=color.new(#059669, 0), width=2, style=line.style_solid)
 
 // TRIGGER LONG:
+long_entry_trigger = false
 if (active_trade_state == 0) and (setup_hunting == 1) and in_session and (strategy.position_size == 0)
-    retrace_into_discount = (low <= hunt_fib_50) or (low <= hunt_ob_h) or (ltf_fvg_bullish and low <= ltf_fvg_bull_top)
-    rejection_confirmed = (close > open) and (close > high[1]) and ltf_vol_ok
+    if is_sub_1h
+        retrace_into_discount = (low <= hunt_fib_50) or (low <= hunt_ob_h) or (ltf_fvg_bullish and low <= ltf_fvg_bull_top)
+        rejection_confirmed = (close > open) and (close > high[1]) and ltf_vol_ok
+        long_entry_trigger := retrace_into_discount and rejection_confirmed
+    else
+        long_entry_trigger := true
 
-    if retrace_into_discount and rejection_confirmed
-        active_trade_state := 1
-        setup_hunting := 0
-        trade_entry_bar := bar_index
-        sig_long_fired := true
+if long_entry_trigger
+    active_trade_state := 1
+    setup_hunting := 0
+    trade_entry_bar := bar_index
+    sig_long_fired := true
 
-        fixed_entry := close
+    fixed_entry := close
 
-        raw_sl = hunt_ob_l - (hunt_atr * sl_atr_buffer)
-        calc_dist = fixed_entry - raw_sl
-        actual_sl_dist = math.max(calc_dist, min_sl_dist)
-        fixed_sl := fixed_entry - actual_sl_dist
+    safe_ob_h = math.max(nz(hunt_ob_h, high), nz(hunt_ob_l, low))
+    safe_ob_l = math.min(nz(hunt_ob_h, high), nz(hunt_ob_l, low))
+    if safe_ob_h <= safe_ob_l
+        safe_ob_h := safe_ob_l + (pip_unit * 2)
 
-        risk_dist = fixed_entry - fixed_sl
-        fixed_tp := fixed_entry + (risk_dist * rr_ratio)
+    safe_atr = nz(hunt_atr, nz(ta.atr(14), close * 0.005))
+    raw_sl = safe_ob_l - (safe_atr * sl_atr_buffer)
+    calc_dist = math.abs(fixed_entry - raw_sl)
+    actual_sl_dist = math.max(calc_dist, min_sl_dist)
+    fixed_sl := fixed_entry - actual_sl_dist
 
-        trade_units = f_calc_units(risk_dist)
-        fixed_lots := is_gold ? math.max(0.01, math.round(trade_units / 100.0, 2)) : math.max(0.01, math.round(trade_units / 100000.0, 2))
+    risk_dist = fixed_entry - fixed_sl
+    fixed_tp := fixed_entry + (risk_dist * rr_ratio)
 
-        strategy.entry("15m-Long", strategy.long, qty=trade_units)
-        strategy.exit("Exit-Long", from_entry="15m-Long", stop=fixed_sl, limit=fixed_tp)
+    trade_units = f_calc_units(risk_dist)
+    fixed_lots := is_gold ? math.max(0.01, math.round(trade_units / 100.0, 2)) : math.max(0.01, math.round(trade_units / 100000.0, 2))
 
-        fixed_pips_sl := math.round(risk_dist / pip_unit, 1)
-        fixed_pips_tp := math.round((fixed_tp - fixed_entry) / pip_unit, 1)
+    strategy.entry("15m-Long", strategy.long, qty=trade_units)
+    strategy.exit("Exit-Long", from_entry="15m-Long", stop=fixed_sl, limit=fixed_tp)
 
-        lbl_text = "▲ BUY @" + str.tostring(fixed_entry, p_fmt) + "\n" +
-                   "SL: " + str.tostring(fixed_sl, p_fmt) + " (-" + str.tostring(fixed_pips_sl, "#.#") + " p)\n" +
-                   "TP: " + str.tostring(fixed_tp, p_fmt) + " (+" + str.tostring(fixed_pips_tp, "#.#") + " p | 1:" + str.tostring(rr_ratio, "#.#") + ")\n" +
-                   "Lots: " + str.tostring(fixed_lots, "#.##")
+    fixed_pips_sl := math.round(risk_dist / pip_unit, 1)
+    fixed_pips_tp := math.round((fixed_tp - fixed_entry) / pip_unit, 1)
 
-        label.new(bar_index, low - (pip_unit * 12), text=lbl_text, style=label.style_label_up, color=color.new(#065f46, 0), textcolor=color.white, size=size.normal)
+    lbl_text = "▲ BUY @" + str.tostring(fixed_entry, p_fmt) + "\n" +
+               "SL: " + str.tostring(fixed_sl, p_fmt) + " (-" + str.tostring(fixed_pips_sl, "#.#") + " p)\n" +
+               "TP: " + str.tostring(fixed_tp, p_fmt) + " (+" + str.tostring(fixed_pips_tp, "#.#") + " p | 1:" + str.tostring(rr_ratio, "#.#") + ")\n" +
+               "Lots: " + str.tostring(fixed_lots, "#.##")
 
-        cur_ob_box := box.new(
-             left=bar_index - 6,
-             top=hunt_ob_h,
-             right=bar_index + 1,
-             bottom=hunt_ob_l,
-             border_color=color.new(#10b981, 20),
-             border_width=1,
-             bgcolor=color.new(#10b981, 88),
-             text="+OB Demand [" + str.tostring(hunt_ob_l, p_fmt) + " - " + str.tostring(hunt_ob_h, p_fmt) + "]",
-             text_color=color.new(#10b981, 0),
-             text_size=size.small
-             )
+    label.new(bar_index, low - (pip_unit * 12), text=lbl_text, style=label.style_label_up, color=color.new(#065f46, 0), textcolor=color.white, size=size.normal)
 
-        cur_entry_line := line.new(bar_index, fixed_entry, bar_index + 1, fixed_entry, color=color.new(#0284c7, 0), width=2, style=line.style_dashed)
-        cur_sl_line    := line.new(bar_index, fixed_sl, bar_index + 1, fixed_sl, color=color.new(#e11d48, 0), width=2, style=line.style_solid)
-        cur_tp_line    := line.new(bar_index, fixed_tp, bar_index + 1, fixed_tp, color=color.new(#059669, 0), width=2, style=line.style_solid)
+    box_left = math.max(0, bar_index - 6)
+    cur_ob_box := box.new(
+         left=box_left,
+         top=safe_ob_h,
+         right=bar_index + 1,
+         bottom=safe_ob_l,
+         border_color=color.new(#10b981, 20),
+         border_width=1,
+         bgcolor=color.new(#10b981, 88),
+         text="+OB Demand [" + str.tostring(safe_ob_l, p_fmt) + " - " + str.tostring(safe_ob_h, p_fmt) + "]",
+         text_color=color.new(#10b981, 0),
+         text_size=size.small
+         )
+
+    cur_entry_line := line.new(bar_index, fixed_entry, bar_index + 1, fixed_entry, color=color.new(#0284c7, 0), width=2, style=line.style_dashed)
+    cur_sl_line    := line.new(bar_index, fixed_sl, bar_index + 1, fixed_sl, color=color.new(#e11d48, 0), width=2, style=line.style_solid)
+    cur_tp_line    := line.new(bar_index, fixed_tp, bar_index + 1, fixed_tp, color=color.new(#059669, 0), width=2, style=line.style_solid)
 
 // =============================================================================
 // STEP 3: ACTIVE TRADE LIFECYCLE (MONITORING UNTIL EXACT FIXED TP OR SL IS HIT)
@@ -448,7 +463,7 @@ f_build_json(is_long) =>
      "\"exchange\":\"" + syminfo.prefix + "\"," +
      "\"timeframe\":\"" + timeframe.period + "\"," +
      "\"direction\":\"" + dir_str + "\"," +
-     "\"signal_time\":\"" + str.format_time(time, "yyyy-MM-dd'T'HH:mm:ss'Z'", "UTC") + "\"," +
+     "\"signal_time\":\"" + str.format_time(nz(time), "yyyy-MM-dd'T'HH:mm:ss'Z'", "UTC") + "\"," +
      "\"price\":" + str.tostring(close, p_fmt) + "," +
      "\"entry\":" + str.tostring(fixed_entry, p_fmt) + "," +
      "\"stop_loss\":" + str.tostring(fixed_sl, p_fmt) + "," +
