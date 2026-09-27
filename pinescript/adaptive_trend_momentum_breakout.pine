@@ -58,11 +58,14 @@ risk_pct           = input.float(1.0, "Risk Per Trade (%)", minval=0.1, maxval=5
 account_size_input = input.float(10000.0, "Account Size (USD)", minval=100.0, step=1000.0, group=grp_risk)
 use_compounding    = input.bool(true, "Compound Live Equity", group=grp_risk)
 rr_ratio           = input.float(1.75, "Target Risk/Reward Ratio", minval=1.2, maxval=5.0, step=0.05, group=grp_risk)
-sl_atr_buffer      = input.float(0.25, "Structural SL Buffer (1H ATR Multiple)", minval=0.10, maxval=1.0, step=0.05, group=grp_risk)
-min_sl_pips_input  = input.float(12.0, "Minimum Stop Loss Breathing Room (Pips)", minval=5.0, maxval=50.0, step=1.0, group=grp_risk)
+sl_atr_buffer      = input.float(0.50, "Structural SL Buffer (1H ATR Multiple)", minval=0.10, maxval=1.5, step=0.05, group=grp_risk)
+min_sl_pips_input  = input.float(18.0, "Minimum Stop Loss Breathing Room (Pips)", minval=5.0, maxval=50.0, step=1.0, group=grp_risk)
 cooldown_bars      = input.int(3, "Post-Trade Cooldown (Bars)", minval=1, maxval=30, group=grp_risk)
 max_trade_bars     = input.int(160, "Max Trade Hold Duration (Bars)", minval=20, maxval=400, group=grp_risk)
-max_hunting_bars   = input.int(20, "Max Retracement Wait (Bars)", minval=6, maxval=60, group=grp_risk)
+max_hunting_bars   = input.int(12, "Max Retracement Wait (Bars)", minval=4, maxval=30, group=grp_risk)
+use_circuit_breaker        = input.bool(true, "Enable Consecutive Loss Circuit Breaker", group=grp_risk)
+max_consec_losses_input    = input.int(2, "Max Consecutive Losses Before Pause", minval=1, maxval=5, group=grp_risk)
+circuit_breaker_pause_bars = input.int(16, "Circuit Breaker Pause Duration (Bars)", minval=4, maxval=48, group=grp_risk)
 
 // 2. Higher Timeframe Setup Parameters
 grp_htf = "Higher Timeframe (1H & Daily) Setup"
@@ -187,6 +190,17 @@ var line cur_sl_line = na
 var line cur_tp_line = na
 var box  cur_ob_box = na
 
+// Circuit Breaker State Tracking
+var int consec_losses = 0
+var int lockout_until_bar = -999
+is_locked_out = use_circuit_breaker and (bar_index < lockout_until_bar)
+
+// Donchian Range Anti-Chop Filter (ensures market is not in tight horizontal compression)
+h1_don_h_raw = request.security(syminfo.tickerid, sig_tf, ta.highest(high[1], donchian_len)[1], barmerge.gaps_off, barmerge.lookahead_off)
+h1_don_l_raw = request.security(syminfo.tickerid, sig_tf, ta.lowest(low[1], donchian_len)[1], barmerge.gaps_off, barmerge.lookahead_off)
+h1_don_w = (na(h1_don_h_raw) or na(h1_don_l_raw)) ? 0.0 : (h1_don_h_raw - h1_don_l_raw)
+is_compressed_chop = h1_don_w < (h1_atr * 1.5)
+
 // Precision & Units
 clean_ticker = str.upper(syminfo.ticker)
 is_whitelisted = str.contains(clean_ticker, "EURUSD") or 
@@ -196,12 +210,15 @@ is_whitelisted = str.contains(clean_ticker, "EURUSD") or
                  str.contains(clean_ticker, "XAUUSD") or 
                  str.contains(clean_ticker, "GOLD")
 
-var table pair_warn_tbl = table.new(position.bottom_center, 1, 1)
+var table status_tbl = table.new(position.bottom_center, 1, 1)
 if barstate.islast
     if not is_whitelisted and enforce_pair_whitelist
-        table.cell(pair_warn_tbl, 0, 0, "⚠️ UNVERIFIED PAIR (" + syminfo.ticker + "): Non-suitable pair removed. Best performance on EURUSD, GBPUSD, USDJPY, USDCAD, XAUUSD.", bgcolor=color.new(#7f1d1d, 10), text_color=color.white, text_size=size.small)
+        table.cell(status_tbl, 0, 0, "⚠️ UNVERIFIED PAIR (" + syminfo.ticker + "): Non-suitable pair removed. Best performance on EURUSD, GBPUSD, USDJPY, USDCAD, XAUUSD.", bgcolor=color.new(#7f1d1d, 10), text_color=color.white, text_size=size.small)
+    else if is_locked_out
+        rem_bars = lockout_until_bar - bar_index
+        table.cell(status_tbl, 0, 0, "🛡️ CIRCUIT BREAKER ACTIVE: 2 consecutive SL hits in chop. Paused for " + str.tostring(rem_bars) + " bars to protect capital.", bgcolor=color.new(#854d0e, 10), text_color=color.white, text_size=size.small)
     else
-        table.clear(pair_warn_tbl, 0, 0)
+        table.clear(status_tbl, 0, 0)
 
 is_gold = str.contains(syminfo.ticker, "XAU") or str.contains(clean_ticker, "GOLD")
 is_jpy = str.contains(syminfo.ticker, "JPY")
@@ -226,10 +243,10 @@ f_calc_units(sl_dist) =>
     units
 
 // =============================================================================
-// STEP 1: DETECT 1H SETUP (CAN ONLY HUNT IF FLAT & COOLDOWN SATISFIED)
+// STEP 1: DETECT 1H SETUP (CAN ONLY HUNT IF FLAT, NOT CHOPPING & COOLDOWN SATISFIED)
 // =============================================================================
 pair_permitted = not enforce_pair_whitelist or is_whitelisted
-can_hunt = pair_permitted and (active_trade_state == 0) and (setup_hunting == 0) and in_session and h1_pulse and ((bar_index - last_trade_exit_bar) >= cooldown_bars) and (strategy.position_size == 0)
+can_hunt = pair_permitted and not is_locked_out and not is_compressed_chop and (active_trade_state == 0) and (setup_hunting == 0) and in_session and h1_pulse and ((bar_index - last_trade_exit_bar) >= cooldown_bars) and (strategy.position_size == 0)
 
 if can_hunt
     if h1_short_setup
@@ -256,20 +273,18 @@ if (setup_hunting != 0) and ((bar_index - hunting_start_bar) > max_hunting_bars)
     setup_hunting := 0
 
 // =============================================================================
-// STEP 2: ENTRY REFINEMENT & FIXED SL/TP ASSIGNMENT
+// STEP 2: ENTRY REFINEMENT & FIXED SL/TP ASSIGNMENT (ICT OTE PULLBACK CONFIRMATION)
 // =============================================================================
 sig_long_fired = false
 sig_short_fired = false
 
-// TRIGGER SHORT:
+// TRIGGER SHORT (Both 1H and LTF):
+// Price MUST retrace into Premium (50% Equilibrium or Order Block) + Bearish Rejection
 short_entry_trigger = false
 if (active_trade_state == 0) and (setup_hunting == -1) and in_session and (strategy.position_size == 0)
-    if is_sub_1h
-        retrace_into_premium = (high >= hunt_fib_50) or (high >= hunt_ob_l) or (ltf_fvg_bearish and high >= ltf_fvg_bear_bottom)
-        rejection_confirmed = (close < open) and (close < low[1])
-        short_entry_trigger := retrace_into_premium and rejection_confirmed
-    else
-        short_entry_trigger := true
+    retrace_into_premium = (high >= hunt_fib_50) or (high >= hunt_ob_l) or (is_sub_1h and ltf_fvg_bearish and high >= ltf_fvg_bear_bottom)
+    rejection_confirmed = (close < open) and (close < low[1])
+    short_entry_trigger := retrace_into_premium and rejection_confirmed
 
 if short_entry_trigger
     active_trade_state := -1
@@ -329,15 +344,13 @@ if short_entry_trigger
     cur_sl_line    := line.new(bar_index, fixed_sl, bar_index + 1, fixed_sl, color=color.new(#e11d48, 0), width=2, style=line.style_solid)
     cur_tp_line    := line.new(bar_index, fixed_tp, bar_index + 1, fixed_tp, color=color.new(#059669, 0), width=2, style=line.style_solid)
 
-// TRIGGER LONG:
+// TRIGGER LONG (Both 1H and LTF):
+// Price MUST retrace into Discount (50% Equilibrium or Order Block) + Bullish Rejection
 long_entry_trigger = false
 if (active_trade_state == 0) and (setup_hunting == 1) and in_session and (strategy.position_size == 0)
-    if is_sub_1h
-        retrace_into_discount = (low <= hunt_fib_50) or (low <= hunt_ob_h) or (ltf_fvg_bullish and low <= ltf_fvg_bull_top)
-        rejection_confirmed = (close > open) and (close > high[1])
-        long_entry_trigger := retrace_into_discount and rejection_confirmed
-    else
-        long_entry_trigger := true
+    retrace_into_discount = (low <= hunt_fib_50) or (low <= hunt_ob_h) or (is_sub_1h and ltf_fvg_bullish and low <= ltf_fvg_bull_top)
+    rejection_confirmed = (close > open) and (close > high[1])
+    long_entry_trigger := retrace_into_discount and rejection_confirmed
 
 if long_entry_trigger
     active_trade_state := 1
@@ -415,9 +428,14 @@ if (active_trade_state != 0) and not sig_long_fired and not sig_short_fired
     if active_trade_state == 1
         if high >= fixed_tp
             trade_concluded := true
+            consec_losses := 0 // Reset loss streak on win!
             label.new(bar_index, high + (pip_unit * 8), text="🎯 TP HIT\n+" + str.tostring(fixed_pips_tp, "#.#") + " p", style=label.style_label_down, color=color.new(#059669, 0), textcolor=color.white, size=size.small)
         else if low <= fixed_sl
             trade_concluded := true
+            consec_losses += 1
+            if use_circuit_breaker and (consec_losses >= max_consec_losses_input)
+                lockout_until_bar := bar_index + circuit_breaker_pause_bars
+                consec_losses := 0
             label.new(bar_index, low - (pip_unit * 8), text="🛑 SL HIT\n-" + str.tostring(fixed_pips_sl, "#.#") + " p", style=label.style_label_up, color=color.new(#e11d48, 0), textcolor=color.white, size=size.small)
         else if (bar_index - trade_entry_bar) >= max_trade_bars
             trade_concluded := true
@@ -425,9 +443,14 @@ if (active_trade_state != 0) and not sig_long_fired and not sig_short_fired
     else if active_trade_state == -1
         if low <= fixed_tp
             trade_concluded := true
+            consec_losses := 0 // Reset loss streak on win!
             label.new(bar_index, low - (pip_unit * 8), text="🎯 TP HIT\n+" + str.tostring(fixed_pips_tp, "#.#") + " p", style=label.style_label_up, color=color.new(#059669, 0), textcolor=color.white, size=size.small)
         else if high >= fixed_sl
             trade_concluded := true
+            consec_losses += 1
+            if use_circuit_breaker and (consec_losses >= max_consec_losses_input)
+                lockout_until_bar := bar_index + circuit_breaker_pause_bars
+                consec_losses := 0
             label.new(bar_index, high + (pip_unit * 8), text="🛑 SL HIT\n-" + str.tostring(fixed_pips_sl, "#.#") + " p", style=label.style_label_down, color=color.new(#e11d48, 0), textcolor=color.white, size=size.small)
         else if (bar_index - trade_entry_bar) >= max_trade_bars
             trade_concluded := true
