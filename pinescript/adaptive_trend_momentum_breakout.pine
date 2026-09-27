@@ -70,12 +70,13 @@ circuit_breaker_pause_bars = input.int(20, "Circuit Breaker Pause Duration (Bars
 
 // 2. Higher Timeframe Setup Parameters
 grp_htf = "Higher Timeframe (1H & Daily) Setup"
-sig_tf             = input.timeframe("60", "Signal Anchor Timeframe", group=grp_htf)
-donchian_len       = input.int(20, "Institutional Breakout Lookback (20h = 1 Daily Cycle)", minval=10, maxval=120, group=grp_htf)
+sig_tf             = input.timeframe("60", "Trend Anchor Timeframe", group=grp_htf)
+donchian_len       = input.int(20, "1H Breakout Lookback (Bars)", minval=10, maxval=120, group=grp_htf)
+m15_donchian_len   = input.int(28, "15m Breakout Lookback (Bars)", minval=10, maxval=120, group=grp_htf)
 htf_ema_len        = input.int(200, "1H Trend Filter EMA Length", minval=50, maxval=500, group=grp_htf)
 use_d1_filter      = input.bool(true, "Require Daily (D1) EMA 50 Alignment", group=grp_htf)
 d1_ema_len         = input.int(50, "Daily Macro EMA Length", minval=20, maxval=200, group=grp_htf)
-min_body_ratio     = input.float(0.35, "1H Minimum Candle Body Ratio (Anti-Wick)", minval=0.20, maxval=0.90, step=0.05, group=grp_htf)
+min_body_ratio     = input.float(0.35, "Minimum Candle Body Ratio (Anti-Wick)", minval=0.20, maxval=0.90, step=0.05, group=grp_htf)
 avoid_rollover     = input.bool(true, "Avoid 21:00 UTC Daily Rollover Spread Spikes", group=grp_htf)
 
 // 3. Volume & Anti-Exhaustion Filters
@@ -104,59 +105,55 @@ d1_bullish = not use_d1_filter or (d1_c_val > d1_ema_val)
 d1_bearish = not use_d1_filter or (d1_c_val < d1_ema_val)
 
 // =============================================================================
-// 1-HOUR (60m) SETUP ENGINE - NATIVE & ROBUST
+// MULTI-TIMEFRAME (1H TREND + 15m/1H ADAPTIVE EXECUTION) ENGINE
 // =============================================================================
-h1_cross_long  = request.security(syminfo.tickerid, sig_tf, ta.crossover(close, ta.highest(high[1], donchian_len))[1], barmerge.gaps_off, barmerge.lookahead_off)
-h1_cross_short = request.security(syminfo.tickerid, sig_tf, ta.crossunder(close, ta.lowest(low[1], donchian_len))[1], barmerge.gaps_off, barmerge.lookahead_off)
+is_sub_1h = timeframe.isintraday and timeframe.multiplier < 60
 
+// 1. MACRO 1-HOUR (60m) TREND ENGINE (Lag-free with lookahead_off)
 h1_c_raw    = request.security(syminfo.tickerid, sig_tf, close[1], barmerge.gaps_off, barmerge.lookahead_off)
-h1_o_raw    = request.security(syminfo.tickerid, sig_tf, open[1], barmerge.gaps_off, barmerge.lookahead_off)
-h1_h_raw    = request.security(syminfo.tickerid, sig_tf, high[1], barmerge.gaps_off, barmerge.lookahead_off)
-h1_l_raw    = request.security(syminfo.tickerid, sig_tf, low[1], barmerge.gaps_off, barmerge.lookahead_off)
-h1_v_raw    = request.security(syminfo.tickerid, sig_tf, volume[1], barmerge.gaps_off, barmerge.lookahead_off)
-h1_vma_raw  = request.security(syminfo.tickerid, sig_tf, ta.sma(volume, vol_ma_len)[1], barmerge.gaps_off, barmerge.lookahead_off)
 h1_e200_raw = request.security(syminfo.tickerid, sig_tf, ta.ema(close, htf_ema_len)[1], barmerge.gaps_off, barmerge.lookahead_off)
 h1_e20_raw  = request.security(syminfo.tickerid, sig_tf, ta.ema(close, 20)[1], barmerge.gaps_off, barmerge.lookahead_off)
 h1_e50_raw  = request.security(syminfo.tickerid, sig_tf, ta.ema(close, 50)[1], barmerge.gaps_off, barmerge.lookahead_off)
-h1_rsi_raw  = request.security(syminfo.tickerid, sig_tf, ta.rsi(close, rsi_len)[1], barmerge.gaps_off, barmerge.lookahead_off)
 h1_atr_raw  = request.security(syminfo.tickerid, sig_tf, ta.atr(14)[1], barmerge.gaps_off, barmerge.lookahead_off)
 
-// Fail-safe fallbacks:
 chart_atr = ta.atr(14)
 h1_c    = na(h1_c_raw) ? close : h1_c_raw
-h1_o    = na(h1_o_raw) ? open : h1_o_raw
-h1_h    = na(h1_h_raw) ? high : h1_h_raw
-h1_l    = na(h1_l_raw) ? low : h1_l_raw
 h1_e200 = na(h1_e200_raw) ? close : h1_e200_raw
 h1_e20  = na(h1_e20_raw) ? close : h1_e20_raw
 h1_e50  = na(h1_e50_raw) ? close : h1_e50_raw
-h1_rsi  = na(h1_rsi_raw) ? 50.0 : h1_rsi_raw
 h1_atr  = na(h1_atr_raw) ? (na(chart_atr) ? close * 0.005 : chart_atr) : h1_atr_raw
 
-vol_ok = not use_volume_filter or na(h1_v_raw) or na(h1_vma_raw) or (h1_v_raw == 0) or (h1_v_raw >= h1_vma_raw * vol_multiplier)
+// 1H Institutional Trend Alignment
+h1_macro_bull = (h1_c > h1_e200) and (h1_e20 > h1_e50) and d1_bullish
+h1_macro_bear = (h1_c < h1_e200) and (h1_e20 < h1_e50) and d1_bearish
 
-// Anti-Exhaustion RSI Filters:
-rsi_short_healthy = (h1_rsi >= 30.0) and (h1_rsi <= 55.0)
-rsi_long_healthy  = (h1_rsi >= 45.0) and (h1_rsi <= 70.0)
+// 2. NATIVE BREAKOUT ENGINE (Adapts to 15m on 15m chart, or 1H on 1H chart)
+active_breakout_len = is_sub_1h ? m15_donchian_len : donchian_len
+chart_cross_long  = ta.crossover(close, ta.highest(high[1], active_breakout_len))
+chart_cross_short = ta.crossunder(close, ta.lowest(low[1], active_breakout_len))
 
-// Candle Body Ratio Filter (Anti-Wick):
-h1_rng = h1_h - h1_l
-body_ratio_long  = h1_rng > 0 ? (h1_c - h1_l) / h1_rng : 0.5
-body_ratio_short = h1_rng > 0 ? (h1_h - h1_c) / h1_rng : 0.5
+chart_rsi = ta.rsi(close, rsi_len)
+rsi_short_healthy = (chart_rsi >= 30.0) and (chart_rsi <= 60.0)
+rsi_long_healthy  = (chart_rsi >= 40.0) and (chart_rsi <= 70.0)
 
-// Institutional Displacement Setup:
-h1_long_setup  = (h1_cross_long == true) and (h1_c > h1_e200) and (h1_e20 > h1_e50) and rsi_long_healthy and vol_ok and (body_ratio_long >= min_body_ratio) and d1_bullish
-h1_short_setup = (h1_cross_short == true) and (h1_c < h1_e200) and (h1_e20 < h1_e50) and rsi_short_healthy and vol_ok and (body_ratio_short >= min_body_ratio) and d1_bearish
+// Volume expansion check on execution chart:
+chart_vma = ta.sma(volume, vol_ma_len)
+vol_ok = not use_volume_filter or na(volume) or (volume == 0) or (volume >= chart_vma * vol_multiplier)
 
-// Order Block Origin (previous opposite candle high and low):
-ob_bull_h = (h1_c[1] < h1_o[1]) ? h1_h[1] : h1_h
-ob_bull_l = (h1_c[1] < h1_o[1]) ? h1_l[1] : h1_l
-ob_bear_h = (h1_c[1] > h1_o[1]) ? h1_h[1] : h1_h
-ob_bear_l = (h1_c[1] > h1_o[1]) ? h1_l[1] : h1_l
+// Anti-Wick candle body ratio on execution timeframe:
+cur_rng = high - low
+body_ratio_long  = cur_rng > 0 ? (close - low) / cur_rng : 0.5
+body_ratio_short = cur_rng > 0 ? (high - close) / cur_rng : 0.5
 
-is_sub_1h = timeframe.isintraday and timeframe.multiplier < 60
-is_new_1h_bar = ta.change(time(sig_tf)) != 0
-h1_pulse = is_sub_1h ? is_new_1h_bar : barstate.isconfirmed
+// Setup hunting trigger:
+h1_long_setup  = chart_cross_long and h1_macro_bull and rsi_long_healthy and vol_ok and (body_ratio_long >= min_body_ratio)
+h1_short_setup = chart_cross_short and h1_macro_bear and rsi_short_healthy and vol_ok and (body_ratio_short >= min_body_ratio)
+
+// Order Block Origin (previous opposite candle high and low on chart timeframe):
+ob_bull_h = (close[1] < open[1]) ? high[1] : high
+ob_bull_l = (close[1] < open[1]) ? low[1] : low
+ob_bear_h = (close[1] > open[1]) ? high[1] : high
+ob_bear_l = (close[1] > open[1]) ? low[1] : low
 
 in_session = not session_filter_enabled or not na(time(timeframe.period, allowed_session))
 is_rollover_hour = avoid_rollover and (hour(time, "UTC") == 21)
@@ -241,10 +238,10 @@ f_calc_units(sl_dist) =>
     units
 
 // =============================================================================
-// STEP 1: DETECT 1H SETUP (CAN ONLY HUNT IF FLAT & COOLDOWN SATISFIED)
+// STEP 1: DETECT SETUP (CAN ONLY HUNT IF FLAT & COOLDOWN SATISFIED)
 // =============================================================================
 pair_permitted = not enforce_pair_whitelist or is_whitelisted
-can_hunt = pair_permitted and not is_locked_out and (active_trade_state == 0) and (setup_hunting == 0) and in_session and h1_pulse and ((bar_index - last_trade_exit_bar) >= cooldown_bars) and (strategy.position_size == 0)
+can_hunt = pair_permitted and not is_locked_out and (active_trade_state == 0) and (setup_hunting == 0) and in_session and barstate.isconfirmed and ((bar_index - last_trade_exit_bar) >= cooldown_bars) and (strategy.position_size == 0)
 
 if can_hunt
     if h1_short_setup
@@ -252,9 +249,9 @@ if can_hunt
         hunting_start_bar := bar_index
         hunt_ob_h := ob_bear_h
         hunt_ob_l := ob_bear_l
-        hunt_atr  := h1_atr
-        swing_h = math.max(hunt_ob_h, h1_h)
-        swing_l = h1_l
+        hunt_atr  := na(chart_atr) ? h1_atr : chart_atr
+        swing_h = math.max(hunt_ob_h, high)
+        swing_l = low
         hunt_fib_50 := swing_l + (0.50 * (swing_h - swing_l))
 
     else if h1_long_setup
@@ -262,12 +259,14 @@ if can_hunt
         hunting_start_bar := bar_index
         hunt_ob_h := ob_bull_h
         hunt_ob_l := ob_bull_l
-        hunt_atr  := h1_atr
-        swing_l = math.min(hunt_ob_l, h1_l)
-        swing_h = h1_h
+        hunt_atr  := na(chart_atr) ? h1_atr : chart_atr
+        swing_l = math.min(hunt_ob_l, low)
+        swing_h = high
         hunt_fib_50 := swing_h - (0.50 * (swing_h - swing_l))
 
-if (setup_hunting != 0) and ((bar_index - hunting_start_bar) > max_hunting_bars)
+// Invalidate hunting if price wanders off without retracing
+max_wait_limit = is_sub_1h ? 8 : max_hunting_bars
+if (setup_hunting != 0) and ((bar_index - hunting_start_bar) > max_wait_limit)
     setup_hunting := 0
 
 // =============================================================================
@@ -431,8 +430,9 @@ if (active_trade_state != 0) and not sig_long_fired and not sig_short_fired
         else if low <= fixed_sl
             trade_concluded := true
             consec_losses += 1
+            cb_pause_len = is_sub_1h ? 24 : circuit_breaker_pause_bars
             if use_circuit_breaker and (consec_losses >= max_consec_losses_input)
-                lockout_until_bar := bar_index + circuit_breaker_pause_bars
+                lockout_until_bar := bar_index + cb_pause_len
                 consec_losses := 0
             label.new(bar_index, low - (pip_unit * 8), text="🛑 SL HIT\n-" + str.tostring(fixed_pips_sl, "#.#") + " p", style=label.style_label_up, color=color.new(#e11d48, 0), textcolor=color.white, size=size.small)
         else if (bar_index - trade_entry_bar) >= max_trade_bars
@@ -446,8 +446,9 @@ if (active_trade_state != 0) and not sig_long_fired and not sig_short_fired
         else if high >= fixed_sl
             trade_concluded := true
             consec_losses += 1
+            cb_pause_len = is_sub_1h ? 24 : circuit_breaker_pause_bars
             if use_circuit_breaker and (consec_losses >= max_consec_losses_input)
-                lockout_until_bar := bar_index + circuit_breaker_pause_bars
+                lockout_until_bar := bar_index + cb_pause_len
                 consec_losses := 0
             label.new(bar_index, high + (pip_unit * 8), text="🛑 SL HIT\n-" + str.tostring(fixed_pips_sl, "#.#") + " p", style=label.style_label_down, color=color.new(#e11d48, 0), textcolor=color.white, size=size.small)
         else if (bar_index - trade_entry_bar) >= max_trade_bars
