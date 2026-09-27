@@ -72,6 +72,10 @@ class Settings(BaseSettings):
     PROP_PHASE_1_RISK_PCT: float = 1.25  # Reduces Phase 1 time by ~20-50% safely
     PROP_PHASE_2_RISK_PCT: float = 1.00  # Conservative drawdown preservation
 
+    # Asymmetric Post-Loss Pullback Protection (Settlement Windows)
+    GOLD_LOSS_COOLDOWN_HOURS: int = 4    # Pauses 4 hours after SL to let pullbacks exhaust
+    FOREX_LOSS_COOLDOWN_HOURS: int = 6   # Pauses 6 hours after SL on Forex pairs
+
     # Supported Symbols - Strictly Verified Institutional Whitelist
     SUPPORTED_SYMBOLS: List[str] = [
         "EURUSD",

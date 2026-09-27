@@ -120,8 +120,14 @@ is_sub_1h = timeframe.isintraday and timeframe.multiplier < 60
 // Dynamic Parameter Selection (Zero impact on Forex pairs: Forex always retains 20-bar Donchian, 0.50 Fib, 3-bar CD):
 active_breakout_len = is_gold ? gold_donchian_len : (is_sub_1h ? m15_donchian_len : donchian_len)
 active_fib_ratio    = is_gold ? gold_retrace_fib  : 0.500
-active_cooldown     = is_gold ? gold_cooldown     : cooldown_bars
 active_sl_buffer    = is_gold ? gold_sl_atr_mult  : sl_atr_buffer
+
+// Asymmetric Post-Loss Pullback Protection & Sub-1H Resolution Scaling
+gold_loss_cd_bars   = 4
+forex_loss_cd_bars  = 6
+tf_cd_mult          = is_sub_1h ? 4 : 1
+base_win_cd         = is_gold ? gold_cooldown : cooldown_bars
+base_loss_cd        = is_gold ? gold_loss_cd_bars : forex_loss_cd_bars
 
 // =============================================================================
 // DAILY (D1) & 4-HOUR (4H) MACRO TREND ENGINE
@@ -261,6 +267,7 @@ var box  cur_ob_box = na
 // Circuit Breaker State Tracking
 var int consec_losses = 0
 var int lockout_until_bar = -999
+var bool last_exit_was_loss = false
 is_locked_out = use_circuit_breaker and (bar_index < lockout_until_bar)
 
 var table status_tbl = table.new(position.bottom_center, 1, 1)
@@ -270,6 +277,8 @@ if barstate.islast
     else if is_locked_out
         rem_bars = lockout_until_bar - bar_index
         table.cell(status_tbl, 0, 0, "🛡️ CIRCUIT BREAKER ACTIVE: 2 consecutive SL hits in chop. Paused for " + str.tostring(rem_bars) + " bars to protect capital.", bgcolor=color.new(#854d0e, 10), text_color=color.white, text_size=size.small)
+    else if is_sub_1h
+        table.cell(status_tbl, 0, 0, "ℹ️ SUB-1H TF DETECTED (" + timeframe.period + "m): Strategy is anchored to 1H macro structure. For optimal signal clarity, switch chart to 1H (60m).", bgcolor=color.new(#1e293b, 10), text_color=color.white, text_size=size.small)
     else
         table.clear(status_tbl, 0, 0)
 
@@ -298,7 +307,8 @@ f_calc_units(sl_dist) =>
 // STEP 1: DETECT SETUP (CAN ONLY HUNT IF FLAT & COOLDOWN SATISFIED)
 // =============================================================================
 pair_permitted = not enforce_pair_whitelist or is_whitelisted
-can_hunt = pair_permitted and not is_locked_out and (active_trade_state == 0) and (setup_hunting == 0) and in_session and barstate.isconfirmed and ((bar_index - last_trade_exit_bar) >= active_cooldown)
+effective_cooldown = (last_exit_was_loss ? base_loss_cd : base_win_cd) * tf_cd_mult
+can_hunt = pair_permitted and not is_locked_out and (active_trade_state == 0) and (setup_hunting == 0) and in_session and barstate.isconfirmed and ((bar_index - last_trade_exit_bar) >= effective_cooldown)
 
 if can_hunt
     if h1_short_setup
@@ -307,7 +317,7 @@ if can_hunt
         hunt_break_level := chart_don_l
         hunt_ob_h := ob_bear_h
         hunt_ob_l := ob_bear_l
-        hunt_atr  := na(chart_atr) ? h1_atr : chart_atr
+        hunt_atr  := is_sub_1h ? h1_atr : (na(chart_atr) ? h1_atr : chart_atr)
         swing_h = math.max(hunt_ob_h, high)
         swing_l = low
         hunt_fib_50 := swing_l + (active_fib_ratio * (swing_h - swing_l))
@@ -318,7 +328,7 @@ if can_hunt
         hunt_break_level := chart_don_h
         hunt_ob_h := ob_bull_h
         hunt_ob_l := ob_bull_l
-        hunt_atr  := na(chart_atr) ? h1_atr : chart_atr
+        hunt_atr  := is_sub_1h ? h1_atr : (na(chart_atr) ? h1_atr : chart_atr)
         swing_l = math.min(hunt_ob_l, low)
         swing_h = high
         hunt_fib_50 := swing_h - (active_fib_ratio * (swing_h - swing_l))
@@ -358,7 +368,7 @@ if short_entry_trigger
     if safe_ob_h <= safe_ob_l
         safe_ob_h := safe_ob_l + (pip_unit * 2)
 
-    safe_atr = na(hunt_atr) ? (na(chart_atr) ? close * 0.005 : chart_atr) : hunt_atr
+    safe_atr = is_sub_1h ? h1_atr : (na(hunt_atr) ? (na(chart_atr) ? close * 0.005 : chart_atr) : hunt_atr)
     raw_sl = safe_ob_h + (safe_atr * active_sl_buffer)
     calc_dist = math.abs(raw_sl - fixed_entry)
     actual_sl_dist = math.min(math.max(calc_dist, min_sl_dist), max_sl_dist)
@@ -429,7 +439,7 @@ if long_entry_trigger
     if safe_ob_h <= safe_ob_l
         safe_ob_h := safe_ob_l + (pip_unit * 2)
 
-    safe_atr = na(hunt_atr) ? (na(chart_atr) ? close * 0.005 : chart_atr) : hunt_atr
+    safe_atr = is_sub_1h ? h1_atr : (na(hunt_atr) ? (na(chart_atr) ? close * 0.005 : chart_atr) : hunt_atr)
     raw_sl = safe_ob_l - (safe_atr * active_sl_buffer)
     calc_dist = math.abs(fixed_entry - raw_sl)
     actual_sl_dist = math.min(math.max(calc_dist, min_sl_dist), max_sl_dist)
@@ -495,10 +505,12 @@ if (active_trade_state != 0) and not sig_long_fired and not sig_short_fired
         if high >= fixed_tp
             trade_concluded := true
             consec_losses := 0 // Reset loss streak on win!
+            last_exit_was_loss := false
             label.new(bar_index, high + (pip_unit * 8), text="🎯 TP HIT\n+" + str.tostring(fixed_pips_tp, "#.#") + " p", style=label.style_label_down, color=color.new(#059669, 0), textcolor=color.white, size=size.small)
         else if low <= fixed_sl
             trade_concluded := true
             consec_losses += 1
+            last_exit_was_loss := true
             cb_pause_len = is_sub_1h ? 48 : circuit_breaker_pause_bars
             if use_circuit_breaker and (consec_losses >= max_consec_losses_input)
                 lockout_until_bar := bar_index + cb_pause_len
@@ -512,10 +524,12 @@ if (active_trade_state != 0) and not sig_long_fired and not sig_short_fired
         if low <= fixed_tp
             trade_concluded := true
             consec_losses := 0 // Reset loss streak on win!
+            last_exit_was_loss := false
             label.new(bar_index, low - (pip_unit * 8), text="🎯 TP HIT\n+" + str.tostring(fixed_pips_tp, "#.#") + " p", style=label.style_label_up, color=color.new(#059669, 0), textcolor=color.white, size=size.small)
         else if high >= fixed_sl
             trade_concluded := true
             consec_losses += 1
+            last_exit_was_loss := true
             cb_pause_len = is_sub_1h ? 48 : circuit_breaker_pause_bars
             if use_circuit_breaker and (consec_losses >= max_consec_losses_input)
                 lockout_until_bar := bar_index + cb_pause_len
