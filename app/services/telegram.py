@@ -122,9 +122,15 @@ class TelegramService:
 
         targets_header = "ORDER BLOCK & FIBONACCI TARGETS" if smc_section else "REFINED ENTRY & RISK TARGETS"
 
+        tf_label = (
+            f"{timeframe}m"
+            if str(timeframe).isdigit() and int(timeframe) < 60
+            else ("1H" if str(timeframe) in ["60", "1H"] else str(timeframe))
+        )
+
         message = (
             f"{test_banner}"
-            f"{icon} <b>{symbol} {direction} (1H Signal)</b>\n"
+            f"{icon} <b>{symbol} {direction} ({tf_label} Signal)</b>\n"
             f"<i>{strategy_name}</i>\n"
             f"<b>Signal Quality:</b> {score_val}/100\n\n"
             f"{regime_section}"
@@ -140,7 +146,7 @@ class TelegramService:
             f"<b>METADATA</b>\n"
             f"• Signal Time: <code>{signal_time}</code>\n"
             f"• Strategy Version: <code>v{strategy_version}</code>\n\n"
-            f"ℹ️ <i>1H Confirmed signal with Order Block & Fib OTE confluence. Follow strict 1% risk management.</i>"
+            f"ℹ️ <i>MTF Confirmed signal (1H Trend + {tf_label} Entry) with Order Block & Fib OTE confluence. Follow strict 1% risk management.</i>"
         )
         return message
 
