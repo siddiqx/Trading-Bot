@@ -114,6 +114,9 @@ is_whitelisted = str.contains(clean_ticker, "USDCAD") or
                  str.contains(clean_ticker, "XAUUSD") or 
                  str.contains(clean_ticker, "GOLD")
 
+// Execution Chart Resolution Check:
+is_sub_1h = timeframe.isintraday and timeframe.multiplier < 60
+
 // Dynamic Parameter Selection (Zero impact on Forex pairs: Forex always retains 20-bar Donchian, 0.50 Fib, 3-bar CD):
 active_breakout_len = is_gold ? gold_donchian_len : (is_sub_1h ? m15_donchian_len : donchian_len)
 active_fib_ratio    = is_gold ? gold_retrace_fib  : 0.500
@@ -142,7 +145,6 @@ h4_bearish = not use_4h_filter or (h4_e20 < h4_e50)
 // =============================================================================
 // MULTI-TIMEFRAME (1H TREND + 15m/1H ADAPTIVE EXECUTION) ENGINE
 // =============================================================================
-is_sub_1h = timeframe.isintraday and timeframe.multiplier < 60
 
 // 1. MACRO 1-HOUR (60m) TREND ENGINE (Lag-free with lookahead_off)
 h1_c_raw    = request.security(syminfo.tickerid, sig_tf, close[1], barmerge.gaps_off, barmerge.lookahead_off)
