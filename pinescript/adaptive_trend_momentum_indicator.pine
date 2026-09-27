@@ -311,10 +311,10 @@ if raw_long_trigger
              border_width=1,
              bgcolor=color.new(#10b981, 88),
              text="+OB Demand Zone [" + str.tostring(ob_l, p_fmt) + " – " + str.tostring(ob_h, p_fmt) + "]",
-             text_color=#10b981,
+             text_color=color.new(#10b981, 0),
              text_size=size.small,
-             text_halign=text.left,
-             text_valign=text.top
+             text_halign=text.halign_left,
+             text_valign=text.valign_top
              )
 
     if show_trade_levels
@@ -399,10 +399,10 @@ if raw_short_trigger
              border_width=1,
              bgcolor=color.new(#ef4444, 88),
              text="-OB Supply Zone [" + str.tostring(ob_l, p_fmt) + " – " + str.tostring(ob_h, p_fmt) + "]",
-             text_color=#ef4444,
+             text_color=color.new(#ef4444, 0),
              text_size=size.small,
-             text_halign=text.left,
-             text_valign=text.top
+             text_halign=text.halign_left,
+             text_valign=text.valign_top
              )
 
     if show_trade_levels
