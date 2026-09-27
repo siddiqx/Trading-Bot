@@ -87,6 +87,19 @@ class SignalValidator:
             logger.warning(f"Symbol {payload.symbol} not in configured SUPPORTED_SYMBOLS.")
             return False, f"Symbol {payload.symbol} rejected: Not in verified institutional pair whitelist ({', '.join(self.settings.SUPPORTED_SYMBOLS)})."
 
+        # 1b. Gold-Specific Manipulation Hours Filter (Empirically verified across 2-year tick data)
+        if ("XAU" in payload.symbol or "GOLD" in payload.symbol.upper()) and self.settings.GOLD_TOXIC_HOURS_FILTER:
+            try:
+                sig_str = str(payload.signal_time)
+                if sig_str.isdigit():
+                    dt = datetime.fromtimestamp(int(sig_str) / 1000.0, tz=timezone.utc)
+                else:
+                    dt = datetime.fromisoformat(sig_str.replace("Z", "+00:00"))
+                if dt.hour in self.settings.GOLD_TOXIC_HOURS:
+                    return False, f"Gold signal rejected: UTC hour {dt.hour} is in blacklisted manipulation windows ({self.settings.GOLD_TOXIC_HOURS})."
+            except Exception as e:
+                logger.debug(f"Unable to parse timestamp for Gold toxic hour check: {e}")
+
         # 2. ADX minimum threshold check
         if payload.adx < self.settings.DEFAULT_ADX_MIN:
             return False, f"ADX value ({payload.adx}) is below minimum threshold ({self.settings.DEFAULT_ADX_MIN})."

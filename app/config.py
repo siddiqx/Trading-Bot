@@ -59,6 +59,13 @@ class Settings(BaseSettings):
     ANTI_WICK_FILTER_ENABLED: bool = True
     MIN_BODY_RATIO: float = 0.65
 
+    # Gold-Specific Adaptive Parameters (Isolated)
+    GOLD_DONCHIAN_LENGTH: int = 8
+    GOLD_RETRACE_FIB: float = 0.382
+    GOLD_SL_ATR_BUFFER: float = 0.35
+    GOLD_TOXIC_HOURS_FILTER: bool = True
+    GOLD_TOXIC_HOURS: List[int] = [0, 4, 15, 16, 19]
+
     # Supported Symbols - Strictly Verified Institutional Whitelist
     SUPPORTED_SYMBOLS: List[str] = [
         "EURUSD",

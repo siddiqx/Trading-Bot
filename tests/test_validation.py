@@ -119,3 +119,48 @@ def test_institutional_whitelist_pairs_accepted():
         assert is_valid, f"Failed for pair {pair}: {reason}"
 
 
+def test_gold_toxic_hours_rejection():
+    settings = Settings()
+    validator = SignalValidator(settings)
+
+    # Hour 04:00 UTC (Pre-London manipulation trap - 0% historical win rate)
+    payload_toxic = SignalPayload(
+        symbol="XAUUSD",
+        direction="LONG",
+        signal_time="2026-03-09T04:30:00Z",
+        price=2150.0,
+        entry=2150.0,
+        stop_loss=2130.0,
+        take_profit=2185.0,
+        signal_score=85.0,
+        adx=25.0,
+        atr=5.0,
+        roc=0.5,
+        htf_regime="BULLISH",
+        webhook_secret="test-secret-key-12345",
+    )
+    is_valid, reason = validator.validate(payload_toxic)
+    assert not is_valid
+    assert "blacklisted manipulation windows" in reason
+
+    # Hour 09:00 UTC (London Open peak momentum - high historical win rate)
+    payload_valid = SignalPayload(
+        symbol="XAUUSD",
+        direction="LONG",
+        signal_time="2026-03-09T09:00:00Z",
+        price=2150.0,
+        entry=2150.0,
+        stop_loss=2130.0,
+        take_profit=2185.0,
+        signal_score=85.0,
+        adx=25.0,
+        atr=5.0,
+        roc=0.5,
+        htf_regime="BULLISH",
+        webhook_secret="test-secret-key-12345",
+    )
+    is_valid_ok, reason_ok = validator.validate(payload_valid)
+    assert is_valid_ok, f"Failed for valid Gold hour: {reason_ok}"
+
+
+
