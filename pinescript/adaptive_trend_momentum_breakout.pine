@@ -571,20 +571,11 @@ if sig_short_fired
     alert(f_build_json(false), alert.freq_once_per_bar_close)
 
 // =============================================================================
-// CLEAN VISUAL PLOTS (ONLY NECESSARY ELEMENTS)
+// CLEAN VISUAL PLOTS (ONLY NECESSARY ELEMENTS: SIGNAL, ORDER BLOCK & TRADE LEVELS)
 // =============================================================================
-// Single Clean Entry Signal Badge (Placed cleanly at the trigger candle only)
-plotshape(show_entry_signals and sig_long_fired,  title="1H Clean Buy Signal",  style=shape.labelup,   location=location.belowbar, color=color.new(#10b981, 0), text="BUY\n" + str.tostring(entry_price, p_fmt), textcolor=color.white, size=size.normal)
-plotshape(show_entry_signals and sig_short_fired, title="1H Clean Sell Signal", style=shape.labeldown, location=location.abovebar, color=color.new(#ef4444, 0), text="SELL\n" + str.tostring(entry_price, p_fmt), textcolor=color.white, size=size.normal)
+plotshape(show_entry_signals and sig_long_fired,  title="1H Clean Buy Signal",  style=shape.labelup,   location=location.belowbar, color=color.new(#10b981, 0), text="BUY", textcolor=color.white, size=size.normal)
+plotshape(show_entry_signals and sig_short_fired, title="1H Clean Sell Signal", style=shape.labeldown, location=location.abovebar, color=color.new(#ef4444, 0), text="SELL", textcolor=color.white, size=size.normal)
 
-// Optional Detailed Mode Lines (Disabled by default to keep chart clean)
-p_min = plot(show_entry_zone_box and not na(entry_range_min) ? entry_range_min : na, "Entry Range Min", color=color.new(color.blue, 40), linewidth=1, style=plot.style_linebr)
-p_max = plot(show_entry_zone_box and not na(entry_range_max) ? entry_range_max : na, "Entry Range Max", color=color.new(color.blue, 40), linewidth=1, style=plot.style_linebr)
-fill(p_min, p_max, color=show_entry_zone_box ? color.new(#1f6feb, 85) : na, title="Optimal Entry Range Zone")
-
-plot(show_fib_lines and not na(ideal_retest_price) ? ideal_retest_price : na, "Ideal Retest / OTE", color=color.yellow, linewidth=1, style=plot.style_circles)
-plot(show_fib_lines and not na(active_fib_50) ? active_fib_50 : na, "Fib 50% Equilibrium", color=color.new(color.teal, 30), linewidth=1, style=plot.style_linebr)
-plot(show_fib_lines and not na(active_fib_618) ? active_fib_618 : na, "Fib 61.8% Golden Zone", color=color.new(color.orange, 30), linewidth=1, style=plot.style_linebr)
 
 // =============================================================================
 // REAL-TIME HUD DASHBOARD (CLEAN, INTUITIVE & ELEGANT)
