@@ -50,16 +50,16 @@ strategy(
 // =============================================================================
 // 0. Institutional Pair Whitelist Guard
 grp_pairs = "Institutional Pair Whitelist Guard"
-enforce_pair_whitelist = input.bool(true, "Enforce Tested Pairs Only (EURUSD, GBPUSD, USDJPY, USDCAD, XAUUSD)", group=grp_pairs)
+enforce_pair_whitelist = input.bool(true, "Enforce Tested Pairs Only (USDCAD, USDCHF, USDJPY, AUDUSD, XAUUSD)", group=grp_pairs)
 
 // 1. Trade & Risk Settings
 grp_risk = "Fixed Risk & Target Settings"
 risk_pct           = input.float(1.0, "Risk Per Trade (%)", minval=0.1, maxval=5.0, step=0.1, group=grp_risk)
 account_size_input = input.float(10000.0, "Account Size (USD)", minval=100.0, step=1000.0, group=grp_risk)
 use_compounding    = input.bool(true, "Compound Live Equity", group=grp_risk)
-rr_ratio           = input.float(1.50, "Target Risk/Reward Ratio", minval=1.2, maxval=5.0, step=0.05, group=grp_risk)
+rr_ratio           = input.float(1.75, "Target Risk/Reward Ratio", minval=1.2, maxval=5.0, step=0.05, group=grp_risk)
 sl_atr_buffer      = input.float(0.50, "Structural SL Buffer (ATR Multiple)", minval=0.10, maxval=1.5, step=0.05, group=grp_risk)
-min_sl_pips_input  = input.float(20.0, "Minimum Stop Loss Breathing Room (Pips)", minval=5.0, maxval=50.0, step=1.0, group=grp_risk)
+min_sl_pips_input  = input.float(18.0, "Minimum Stop Loss Breathing Room (Pips)", minval=5.0, maxval=50.0, step=1.0, group=grp_risk)
 max_sl_pips_input  = input.float(60.0, "Maximum Stop Loss Cap (Volatility Guard)", minval=25.0, maxval=150.0, step=5.0, group=grp_risk)
 cooldown_bars      = input.int(3, "Post-Trade Cooldown (Bars)", minval=1, maxval=30, group=grp_risk)
 max_trade_bars     = input.int(160, "Max Trade Hold Duration (Bars)", minval=20, maxval=400, group=grp_risk)
@@ -94,7 +94,7 @@ rsi_min_short      = input.float(32.0, "Min Short Entry RSI (Anti-Oversold)", mi
 // 4. Session & Webhook Credentials
 grp_session = "Session & Webhook Credentials"
 session_filter_enabled = input.bool(true, "Enable London/NY Session Filter (UTC)", group=grp_session)
-allowed_session        = input.session("0700-1630", "Allowed Session Window (UTC)", group=grp_session)
+allowed_session        = input.session("0700-1530", "Allowed Session Window (UTC)", group=grp_session)
 webhook_secret         = input.string("test-secret-key-12345", "Webhook Secret Key", group=grp_session)
 env_label              = input.string("LIVE", "Environment (LIVE or TEST)", options=["LIVE", "TEST"], group=grp_session)
 
@@ -215,17 +215,17 @@ is_locked_out = use_circuit_breaker and (bar_index < lockout_until_bar)
 
 // Precision & Units
 clean_ticker = str.upper(syminfo.ticker)
-is_whitelisted = str.contains(clean_ticker, "EURUSD") or 
-                 str.contains(clean_ticker, "GBPUSD") or 
+is_whitelisted = str.contains(clean_ticker, "USDCAD") or 
+                 str.contains(clean_ticker, "USDCHF") or 
                  str.contains(clean_ticker, "USDJPY") or 
-                 str.contains(clean_ticker, "USDCAD") or 
+                 str.contains(clean_ticker, "AUDUSD") or 
                  str.contains(clean_ticker, "XAUUSD") or 
                  str.contains(clean_ticker, "GOLD")
 
 var table status_tbl = table.new(position.bottom_center, 1, 1)
 if barstate.islast
     if not is_whitelisted and enforce_pair_whitelist
-        table.cell(status_tbl, 0, 0, "⚠️ UNVERIFIED PAIR (" + syminfo.ticker + "): Non-suitable pair removed. Best performance on EURUSD, GBPUSD, USDJPY, USDCAD, XAUUSD.", bgcolor=color.new(#7f1d1d, 10), text_color=color.white, text_size=size.small)
+        table.cell(status_tbl, 0, 0, "⚠️ UNVERIFIED PAIR (" + syminfo.ticker + "): Mean-reverting chop pairs removed. Top momentum yield on USDCAD, USDCHF, USDJPY, AUDUSD, XAUUSD.", bgcolor=color.new(#7f1d1d, 10), text_color=color.white, text_size=size.small)
     else if is_locked_out
         rem_bars = lockout_until_bar - bar_index
         table.cell(status_tbl, 0, 0, "🛡️ CIRCUIT BREAKER ACTIVE: 2 consecutive SL hits in chop. Paused for " + str.tostring(rem_bars) + " bars to protect capital.", bgcolor=color.new(#854d0e, 10), text_color=color.white, text_size=size.small)
