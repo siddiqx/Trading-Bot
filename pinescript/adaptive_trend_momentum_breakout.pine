@@ -494,7 +494,7 @@ f_build_json(is_long) =>
      "\"risk_reward\":" + str.tostring(rr_ratio, "#.#") + "," +
      "\"signal_score\":95," +
      "\"adx\":28.5," +
-     "\"rsi\":" + str.tostring(h1_rsi, "#.##") + "," +
+     "\"rsi\":" + str.tostring(chart_rsi, "#.##") + "," +
      "\"atr\":" + str.tostring(h1_atr, p_fmt) + "," +
      "\"roc\":0.35," +
      "\"suggested_lots\":" + str.tostring(fixed_lots, "#.##") + "," +
