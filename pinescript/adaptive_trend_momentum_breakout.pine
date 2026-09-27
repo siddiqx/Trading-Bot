@@ -266,7 +266,7 @@ is_jpy = str.contains(syminfo.ticker, "JPY")
 is_usd_base = (str.startswith(syminfo.ticker, "USD") or str.contains(syminfo.ticker, ":USD")) and not is_gold
 is_gold_or_jpy = is_gold or is_jpy
 p_fmt = is_gold_or_jpy ? "#.##" : "#.#####"
-pip_unit = is_gold_or_jpy ? 0.01 : 0.0001
+pip_unit = is_gold ? 1.00 : (is_jpy ? 0.01 : 0.0001)
 min_sl_dist = min_sl_pips_input * pip_unit
 max_sl_dist = max_sl_pips_input * pip_unit
 
@@ -357,21 +357,26 @@ if short_entry_trigger
     risk_dist = fixed_sl - fixed_entry
     fixed_tp := fixed_entry - (risk_dist * rr_ratio)
 
-    trade_units = f_calc_units(risk_dist)
-    fixed_lots := is_gold ? math.max(0.01, math.round(trade_units / 100.0, 2)) : math.max(0.01, math.round(trade_units / 100000.0, 2))
+    // Critical Signal Timing Guard: If price already reached TP on this candle, trade is exhausted / missed
+    if low <= fixed_tp
+        active_trade_state := 0
+        sig_short_fired := false
+    else
+        trade_units = f_calc_units(risk_dist)
+        fixed_lots := is_gold ? math.max(0.01, math.round(trade_units / 100.0, 2)) : math.max(0.01, math.round(trade_units / 100000.0, 2))
 
-    strategy.entry("15m-Short", strategy.short, qty=trade_units)
-    strategy.exit("Exit-Short", from_entry="15m-Short", stop=fixed_sl, limit=fixed_tp)
+        strategy.entry("15m-Short", strategy.short, qty=trade_units)
+        strategy.exit("Exit-Short", from_entry="15m-Short", stop=fixed_sl, limit=fixed_tp)
 
-    fixed_pips_sl := math.round(risk_dist / pip_unit, 1)
-    fixed_pips_tp := math.round((fixed_entry - fixed_tp) / pip_unit, 1)
+        fixed_pips_sl := math.round(risk_dist / pip_unit, 1)
+        fixed_pips_tp := math.round((fixed_entry - fixed_tp) / pip_unit, 1)
 
-    lbl_text = "▼ SELL @" + str.tostring(fixed_entry, p_fmt) + "\n" +
-               "SL: " + str.tostring(fixed_sl, p_fmt) + " (-" + str.tostring(fixed_pips_sl, "#.#") + " p)\n" +
-               "TP: " + str.tostring(fixed_tp, p_fmt) + " (+" + str.tostring(fixed_pips_tp, "#.#") + " p | 1:" + str.tostring(rr_ratio, "#.#") + ")\n" +
-               "Lots: " + str.tostring(fixed_lots, "#.##")
+        lbl_text = "▼ SELL @" + str.tostring(fixed_entry, p_fmt) + "\n" +
+                   "SL: " + str.tostring(fixed_sl, p_fmt) + " (-" + str.tostring(fixed_pips_sl, "#.#") + " p)\n" +
+                   "TP: " + str.tostring(fixed_tp, p_fmt) + " (+" + str.tostring(fixed_pips_tp, "#.#") + " p | 1:" + str.tostring(rr_ratio, "#.#") + ")\n" +
+                   "Lots: " + str.tostring(fixed_lots, "#.##")
 
-    label.new(bar_index, high + (pip_unit * 12), text=lbl_text, style=label.style_label_down, color=color.new(#9f1239, 0), textcolor=color.white, size=size.normal)
+        label.new(bar_index, high + (pip_unit * 12), text=lbl_text, style=label.style_label_down, color=color.new(#9f1239, 0), textcolor=color.white, size=size.normal)
 
     box_left = math.max(0, bar_index - 6)
     cur_ob_box := box.new(
@@ -424,21 +429,26 @@ if long_entry_trigger
     risk_dist = fixed_entry - fixed_sl
     fixed_tp := fixed_entry + (risk_dist * rr_ratio)
 
-    trade_units = f_calc_units(risk_dist)
-    fixed_lots := is_gold ? math.max(0.01, math.round(trade_units / 100.0, 2)) : math.max(0.01, math.round(trade_units / 100000.0, 2))
+    // Critical Signal Timing Guard: If price already reached TP on this candle, trade is exhausted / missed
+    if high >= fixed_tp
+        active_trade_state := 0
+        sig_long_fired := false
+    else
+        trade_units = f_calc_units(risk_dist)
+        fixed_lots := is_gold ? math.max(0.01, math.round(trade_units / 100.0, 2)) : math.max(0.01, math.round(trade_units / 100000.0, 2))
 
-    strategy.entry("15m-Long", strategy.long, qty=trade_units)
-    strategy.exit("Exit-Long", from_entry="15m-Long", stop=fixed_sl, limit=fixed_tp)
+        strategy.entry("15m-Long", strategy.long, qty=trade_units)
+        strategy.exit("Exit-Long", from_entry="15m-Long", stop=fixed_sl, limit=fixed_tp)
 
-    fixed_pips_sl := math.round(risk_dist / pip_unit, 1)
-    fixed_pips_tp := math.round((fixed_tp - fixed_entry) / pip_unit, 1)
+        fixed_pips_sl := math.round(risk_dist / pip_unit, 1)
+        fixed_pips_tp := math.round((fixed_tp - fixed_entry) / pip_unit, 1)
 
-    lbl_text = "▲ BUY @" + str.tostring(fixed_entry, p_fmt) + "\n" +
-               "SL: " + str.tostring(fixed_sl, p_fmt) + " (-" + str.tostring(fixed_pips_sl, "#.#") + " p)\n" +
-               "TP: " + str.tostring(fixed_tp, p_fmt) + " (+" + str.tostring(fixed_pips_tp, "#.#") + " p | 1:" + str.tostring(rr_ratio, "#.#") + ")\n" +
-               "Lots: " + str.tostring(fixed_lots, "#.##")
+        lbl_text = "▲ BUY @" + str.tostring(fixed_entry, p_fmt) + "\n" +
+                   "SL: " + str.tostring(fixed_sl, p_fmt) + " (-" + str.tostring(fixed_pips_sl, "#.#") + " p)\n" +
+                   "TP: " + str.tostring(fixed_tp, p_fmt) + " (+" + str.tostring(fixed_pips_tp, "#.#") + " p | 1:" + str.tostring(rr_ratio, "#.#") + ")\n" +
+                   "Lots: " + str.tostring(fixed_lots, "#.##")
 
-    label.new(bar_index, low - (pip_unit * 12), text=lbl_text, style=label.style_label_up, color=color.new(#065f46, 0), textcolor=color.white, size=size.normal)
+        label.new(bar_index, low - (pip_unit * 12), text=lbl_text, style=label.style_label_up, color=color.new(#065f46, 0), textcolor=color.white, size=size.normal)
 
     box_left = math.max(0, bar_index - 6)
     cur_ob_box := box.new(
@@ -473,7 +483,8 @@ if (active_trade_state != 0) and not sig_long_fired and not sig_short_fired
 
     trade_concluded = false
 
-    if active_trade_state == 1
+    // Long Trade Exit Check (Only on SUBSEQUENT bars after confirmed entry):
+    if (active_trade_state == 1) and (bar_index > trade_entry_bar)
         if high >= fixed_tp
             trade_concluded := true
             consec_losses := 0 // Reset loss streak on win!
@@ -489,7 +500,8 @@ if (active_trade_state != 0) and not sig_long_fired and not sig_short_fired
         else if (bar_index - trade_entry_bar) >= max_trade_bars
             trade_concluded := true
 
-    else if active_trade_state == -1
+    // Short Trade Exit Check (Only on SUBSEQUENT bars after confirmed entry):
+    else if (active_trade_state == -1) and (bar_index > trade_entry_bar)
         if low <= fixed_tp
             trade_concluded := true
             consec_losses := 0 // Reset loss streak on win!
