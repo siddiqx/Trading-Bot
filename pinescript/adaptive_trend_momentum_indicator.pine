@@ -54,7 +54,7 @@ min_sl_pips_input  = input.float(18.0, "Minimum Stop Loss Breathing Room (Pips)"
 max_sl_pips_input  = input.float(60.0, "Maximum Stop Loss Cap (Volatility Guard)", minval=25.0, maxval=150.0, step=5.0, group=grp_risk)
 cooldown_bars      = input.int(3, "Post-Trade Cooldown (Bars)", minval=1, maxval=30, group=grp_risk)
 max_trade_bars     = input.int(160, "Max Trade Hold Duration (Bars)", minval=20, maxval=400, group=grp_risk)
-max_hunting_bars   = input.int(4, "Max Retracement Wait (Bars)", minval=2, maxval=16, group=grp_risk)
+max_hunting_bars   = input.int(8, "Max Retracement Wait (Bars)", minval=2, maxval=24, group=grp_risk)
 use_circuit_breaker        = input.bool(true, "Enable Consecutive Loss Circuit Breaker", group=grp_risk)
 max_consec_losses_input    = input.int(2, "Max Consecutive Losses Before Pause", minval=1, maxval=5, group=grp_risk)
 circuit_breaker_pause_bars = input.int(48, "Circuit Breaker Pause Duration (Bars)", minval=4, maxval=96, group=grp_risk)
@@ -63,9 +63,10 @@ circuit_breaker_pause_bars = input.int(48, "Circuit Breaker Pause Duration (Bars
 grp_htf = "Higher Timeframe (1H & Daily) Setup"
 sig_tf             = input.timeframe("60", "Trend Anchor Timeframe", group=grp_htf)
 donchian_len       = input.int(20, "1H Breakout Lookback (Bars)", minval=10, maxval=120, group=grp_htf)
-m15_donchian_len   = input.int(28, "15m Breakout Lookback (Bars)", minval=10, maxval=120, group=grp_htf)
-htf_ema_len        = input.int(200, "1H Trend Filter EMA Length", minval=50, maxval=500, group=grp_htf)
-use_d1_filter      = input.bool(true, "Require Daily (D1) EMA 50 Alignment", group=grp_htf)
+m15_donchian_len   = input.int(32, "15m Breakout Lookback (Bars)", minval=10, maxval=120, group=grp_htf)
+use_h1_200         = input.bool(false, "Require 1H EMA 200 Macro Trend Filter (Disable for Responsive Swings)", group=grp_htf)
+htf_ema_len        = input.int(50, "1H Trend Filter EMA Length", minval=20, maxval=500, group=grp_htf)
+use_d1_filter      = input.bool(false, "Require Daily (D1) Macro EMA Alignment (Disable to Prevent Multi-Week Lockout)", group=grp_htf)
 d1_ema_len         = input.int(50, "Daily Macro EMA Length", minval=20, maxval=200, group=grp_htf)
 use_h1_slope       = input.bool(true, "Require 1H EMA 20 Velocity Slope Confluence", group=grp_htf)
 min_body_ratio     = input.float(0.35, "Minimum Candle Body Ratio (Anti-Wick)", minval=0.20, maxval=0.90, step=0.05, group=grp_htf)
@@ -73,19 +74,19 @@ avoid_rollover     = input.bool(true, "Avoid 21:00 UTC Daily Rollover Spread Spi
 
 // 3. Volatility & Anti-Exhaustion Filters
 grp_vol = "Volatility & Anti-Exhaustion Filters"
-use_vol_expansion  = input.bool(true, "Require Volatility Expansion (ATR >= 20 SMA)", group=grp_vol)
+use_vol_expansion  = input.bool(false, "Require Volatility Expansion (ATR >= 20 SMA)", group=grp_vol)
 use_volume_filter  = input.bool(false, "Require 1H Volume Expansion (Disable for Forex Tick Feeds)", group=grp_vol)
 vol_ma_len         = input.int(20, "Volume Moving Average Length", minval=5, maxval=50, group=grp_vol)
 vol_multiplier     = input.float(1.10, "Volume Multiplier vs Average", minval=1.0, maxval=2.5, step=0.05, group=grp_vol)
 rsi_len            = input.int(14, "RSI Length", minval=5, maxval=50, group=grp_vol)
 use_rsi_entry_guard= input.bool(true, "Enforce Anti-Exhaustion RSI Guard at Entry", group=grp_vol)
-rsi_max_long       = input.float(68.0, "Max Long Entry RSI (Anti-Overbought)", minval=55.0, maxval=80.0, group=grp_vol)
-rsi_min_short      = input.float(32.0, "Min Short Entry RSI (Anti-Oversold)", minval=20.0, maxval=45.0, group=grp_vol)
+rsi_max_long       = input.float(78.0, "Max Long Entry RSI (Anti-Overbought)", minval=55.0, maxval=85.0, group=grp_vol)
+rsi_min_short      = input.float(22.0, "Min Short Entry RSI (Anti-Oversold)", minval=15.0, maxval=45.0, group=grp_vol)
 
 // 4. Session & Webhook Credentials
 grp_session = "Session & Webhook Credentials"
-session_filter_enabled = input.bool(true, "Enable London/NY Session Filter (UTC)", group=grp_session)
-allowed_session        = input.session("0700-1530", "Allowed Session Window (UTC)", group=grp_session)
+session_filter_enabled = input.bool(false, "Enable Strict Session Filter (Disable to Capture Tokyo/Asian Moves on JPY & AUD)", group=grp_session)
+allowed_session        = input.session("0000-2000", "Allowed Session Window (UTC)", group=grp_session)
 webhook_secret         = input.string("test-secret-key-12345", "Webhook Secret Key", group=grp_session)
 env_label              = input.string("LIVE", "Environment (LIVE or TEST)", options=["LIVE", "TEST"], group=grp_session)
 
@@ -126,9 +127,9 @@ h1_e20_slope = (h1_e20 - h1_e20[2])
 h1_slope_bull = not use_h1_slope or (h1_e20_slope > 0)
 h1_slope_bear = not use_h1_slope or (h1_e20_slope < 0)
 
-// 1H Institutional Trend Alignment
-h1_macro_bull = (h1_c > h1_e200) and (h1_e20 > h1_e50) and d1_bullish and h1_slope_bull
-h1_macro_bear = (h1_c < h1_e200) and (h1_e20 < h1_e50) and d1_bearish and h1_slope_bear
+// 1H Institutional Trend Alignment (Responsive 1H Trend Confluence)
+h1_macro_bull = (not use_h1_200 or h1_c > h1_e200) and (h1_c > h1_e50) and (h1_e20 > h1_e50) and d1_bullish and h1_slope_bull
+h1_macro_bear = (not use_h1_200 or h1_c < h1_e200) and (h1_c < h1_e50) and (h1_e20 < h1_e50) and d1_bearish and h1_slope_bear
 
 // Local Chart EMA alignment (20 vs 50 on execution chart)
 chart_e20 = ta.ema(close, 20)
@@ -138,12 +139,14 @@ local_ema_bear = not is_sub_1h or (chart_e20 < chart_e50)
 
 // 2. NATIVE BREAKOUT ENGINE (Adapts to 15m on 15m chart, or 1H on 1H chart)
 active_breakout_len = is_sub_1h ? m15_donchian_len : donchian_len
-chart_cross_long  = ta.crossover(close, ta.highest(high[1], active_breakout_len))
-chart_cross_short = ta.crossunder(close, ta.lowest(low[1], active_breakout_len))
+chart_don_h = ta.highest(high[1], active_breakout_len)
+chart_don_l = ta.lowest(low[1], active_breakout_len)
+chart_cross_long  = ta.crossover(close, chart_don_h)
+chart_cross_short = ta.crossunder(close, chart_don_l)
 
 chart_rsi = ta.rsi(close, rsi_len)
-rsi_short_healthy = (chart_rsi >= 30.0) and (chart_rsi <= 60.0)
-rsi_long_healthy  = (chart_rsi >= 40.0) and (chart_rsi <= 70.0)
+rsi_short_healthy = (chart_rsi >= 20.0) and (chart_rsi <= 65.0)
+rsi_long_healthy  = (chart_rsi >= 35.0) and (chart_rsi <= 80.0)
 
 // Volume expansion check on execution chart:
 chart_vma = ta.sma(volume, vol_ma_len)
@@ -182,6 +185,7 @@ var int hunting_start_bar = na
 var int trade_entry_bar = na
 var int last_trade_exit_bar = -999
 
+var float hunt_break_level = na
 var float hunt_ob_h = na
 var float hunt_ob_l = na
 var float hunt_fib_50 = na
@@ -257,6 +261,7 @@ if can_hunt
     if h1_short_setup
         setup_hunting := -1
         hunting_start_bar := bar_index
+        hunt_break_level := chart_don_l
         hunt_ob_h := ob_bear_h
         hunt_ob_l := ob_bear_l
         hunt_atr  := na(chart_atr) ? h1_atr : chart_atr
@@ -267,6 +272,7 @@ if can_hunt
     else if h1_long_setup
         setup_hunting := 1
         hunting_start_bar := bar_index
+        hunt_break_level := chart_don_h
         hunt_ob_h := ob_bull_h
         hunt_ob_l := ob_bull_l
         hunt_atr  := na(chart_atr) ? h1_atr : chart_atr
@@ -275,7 +281,7 @@ if can_hunt
         hunt_fib_50 := swing_h - (0.50 * (swing_h - swing_l))
 
 // Invalidate hunting if price wanders off without retracing
-max_wait_limit = is_sub_1h ? 8 : max_hunting_bars
+max_wait_limit = max_hunting_bars
 if (setup_hunting != 0) and ((bar_index - hunting_start_bar) > max_wait_limit)
     setup_hunting := 0
 
@@ -286,10 +292,10 @@ sig_long_fired = false
 sig_short_fired = false
 
 // TRIGGER SHORT (Both 1H and LTF):
-// Price MUST retrace into Premium (50% Equilibrium or Order Block) + Bearish Rejection
+// Price MUST retrace into Premium (50% Equilibrium, Order Block, Broken Level, or EMA 20) + Bearish Rejection
 short_entry_trigger = false
 if (active_trade_state == 0) and (setup_hunting == -1) and in_session and not is_rollover_hour
-    retrace_into_premium = (high >= hunt_fib_50) or (high >= hunt_ob_l) or (is_sub_1h and ltf_fvg_bearish and high >= ltf_fvg_bear_bottom)
+    retrace_into_premium = (high >= hunt_fib_50) or (high >= hunt_ob_l) or (high >= hunt_break_level * 0.9995) or (high >= chart_e20) or (is_sub_1h and ltf_fvg_bearish and high >= ltf_fvg_bear_bottom)
     rejection_confirmed = (close < open)
     rsi_ok_short = not use_rsi_entry_guard or (chart_rsi >= rsi_min_short)
     short_entry_trigger := retrace_into_premium and rejection_confirmed and rsi_ok_short
@@ -352,10 +358,10 @@ if short_entry_trigger
     cur_tp_line    := line.new(bar_index, fixed_tp, bar_index + 1, fixed_tp, color=color.new(#059669, 0), width=2, style=line.style_solid)
 
 // TRIGGER LONG (Both 1H and LTF):
-// Price MUST retrace into Discount (50% Equilibrium or Order Block) + Bullish Rejection
+// Price MUST retrace into Discount (50% Equilibrium, Order Block, Broken Level, or EMA 20) + Bullish Rejection
 long_entry_trigger = false
 if (active_trade_state == 0) and (setup_hunting == 1) and in_session and not is_rollover_hour
-    retrace_into_discount = (low <= hunt_fib_50) or (low <= hunt_ob_h) or (is_sub_1h and ltf_fvg_bullish and low <= ltf_fvg_bull_top)
+    retrace_into_discount = (low <= hunt_fib_50) or (low <= hunt_ob_h) or (low <= hunt_break_level * 1.0005) or (low <= chart_e20) or (is_sub_1h and ltf_fvg_bullish and low <= ltf_fvg_bull_top)
     rejection_confirmed = (close > open)
     rsi_ok_long = not use_rsi_entry_guard or (chart_rsi <= rsi_max_long)
     long_entry_trigger := retrace_into_discount and rejection_confirmed and rsi_ok_long
