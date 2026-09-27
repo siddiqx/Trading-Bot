@@ -76,7 +76,12 @@ use_d1_filter      = input.bool(true, "Require Daily (D1) EMA 50 Alignment", gro
 d1_ema_len         = input.int(50, "Daily Macro EMA Length", minval=20, maxval=200, group=grp_htf)
 min_body_ratio     = input.float(0.40, "1H Minimum Candle Body Ratio (Anti-Wick)", minval=0.25, maxval=0.90, step=0.05, group=grp_htf)
 
-// 3. Volume & Anti-Exhaustion Filters
+// 3. ICT Dealing Range & Premium/Discount Architecture
+grp_ict = "ICT Dealing Range & Premium/Discount Architecture"
+use_prem_disc_filter = input.bool(true, "Enforce ICT Premium/Discount Rule (Only Sell Premium / Buy Discount)", group=grp_ict)
+dealing_range_len    = input.int(48, "Dealing Range Lookback (48h = 2 Days)", minval=20, maxval=120, group=grp_ict)
+
+// 4. Volume & Anti-Exhaustion Filters
 grp_vol = "Volume & Anti-Exhaustion Filters"
 use_volume_filter  = input.bool(false, "Require 1H Volume Expansion (Disable for Forex Tick Feeds)", group=grp_vol)
 vol_ma_len         = input.int(20, "Volume Moving Average Length", minval=5, maxval=50, group=grp_vol)
@@ -85,7 +90,7 @@ rsi_len            = input.int(14, "RSI Length", minval=5, maxval=50, group=grp_
 adx_len            = input.int(14, "ADX Length", minval=5, maxval=50, group=grp_vol)
 adx_min            = input.float(18.0, "ADX Minimum Trend Threshold", minval=10.0, maxval=35.0, group=grp_vol)
 
-// 4. Session & Webhook Credentials
+// 5. Session & Webhook Credentials
 grp_session = "Session & Webhook Credentials"
 session_filter_enabled = input.bool(false, "Enable London/NY Session Filter (UTC)", group=grp_session)
 allowed_session        = input.session("0700-1700", "Allowed Session Window (UTC)", group=grp_session)
@@ -139,12 +144,21 @@ vol_ok = not use_volume_filter or na(h1_v_raw) or na(h1_vma_raw) or (h1_v_raw ==
 rsi_short_healthy = (h1_rsi >= 30.0) and (h1_rsi <= 55.0)
 rsi_long_healthy  = (h1_rsi >= 45.0) and (h1_rsi <= 70.0)
 
+// ICT Dealing Range & Equilibrium (50% Fair Value Level)
+range_h_raw = request.security(syminfo.tickerid, sig_tf, ta.highest(high[1], dealing_range_len)[1], barmerge.gaps_off, barmerge.lookahead_off)
+range_l_raw = request.security(syminfo.tickerid, sig_tf, ta.lowest(low[1], dealing_range_len)[1], barmerge.gaps_off, barmerge.lookahead_off)
+dealing_range_eq = (na(range_h_raw) or na(range_l_raw)) ? h1_c : ((range_h_raw + range_l_raw) / 2.0)
+
+// Golden ICT Rule: ONLY SELL IN PREMIUM (upper half), ONLY BUY IN DISCOUNT (lower half)
+in_premium  = not use_prem_disc_filter or (h1_c >= dealing_range_eq)
+in_discount = not use_prem_disc_filter or (h1_c <= dealing_range_eq)
+
 h1_rng = h1_h - h1_l
 body_ratio_long  = h1_rng > 0 ? (h1_c - h1_l) / h1_rng : 0.5
 body_ratio_short = h1_rng > 0 ? (h1_h - h1_c) / h1_rng : 0.5
 
-h1_long_setup  = (h1_cross_long == true) and (h1_c > h1_e200) and (h1_e20 > h1_e50) and rsi_long_healthy and vol_ok and (body_ratio_long >= min_body_ratio) and d1_bullish
-h1_short_setup = (h1_cross_short == true) and (h1_c < h1_e200) and (h1_e20 < h1_e50) and rsi_short_healthy and vol_ok and (body_ratio_short >= min_body_ratio) and d1_bearish
+h1_long_setup  = (h1_cross_long == true) and (h1_c > h1_e200) and (h1_e20 > h1_e50) and rsi_long_healthy and vol_ok and (body_ratio_long >= min_body_ratio) and d1_bullish and in_discount
+h1_short_setup = (h1_cross_short == true) and (h1_c < h1_e200) and (h1_e20 < h1_e50) and rsi_short_healthy and vol_ok and (body_ratio_short >= min_body_ratio) and d1_bearish and in_premium
 
 // Order Block Origin (previous opposite candle high and low):
 ob_bull_h = (h1_c[1] < h1_o[1]) ? h1_h[1] : h1_h
