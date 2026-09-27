@@ -296,7 +296,7 @@ if short_entry_trigger
     safe_atr = na(hunt_atr) ? (na(chart_atr) ? close * 0.005 : chart_atr) : hunt_atr
     raw_sl = safe_ob_h + (safe_atr * sl_atr_buffer)
     calc_dist = math.abs(raw_sl - fixed_entry)
-    actual_sl_dist = math.clamp(calc_dist, min_sl_dist, max_sl_dist)
+    actual_sl_dist = math.min(math.max(calc_dist, min_sl_dist), max_sl_dist)
     fixed_sl := fixed_entry + actual_sl_dist
 
     risk_dist = fixed_sl - fixed_entry
@@ -361,7 +361,7 @@ if long_entry_trigger
     safe_atr = na(hunt_atr) ? (na(chart_atr) ? close * 0.005 : chart_atr) : hunt_atr
     raw_sl = safe_ob_l - (safe_atr * sl_atr_buffer)
     calc_dist = math.abs(fixed_entry - raw_sl)
-    actual_sl_dist = math.clamp(calc_dist, min_sl_dist, max_sl_dist)
+    actual_sl_dist = math.min(math.max(calc_dist, min_sl_dist), max_sl_dist)
     fixed_sl := fixed_entry - actual_sl_dist
 
     risk_dist = fixed_entry - fixed_sl
