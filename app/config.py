@@ -59,15 +59,12 @@ class Settings(BaseSettings):
     ANTI_WICK_FILTER_ENABLED: bool = True
     MIN_BODY_RATIO: float = 0.65
 
-    # Supported Symbols
+    # Supported Symbols - Strictly Verified Institutional Whitelist
     SUPPORTED_SYMBOLS: List[str] = [
         "EURUSD",
         "GBPUSD",
         "USDJPY",
-        "AUDUSD",
         "USDCAD",
-        "USDCHF",
-        "NZDUSD",
         "XAUUSD",
     ]
 

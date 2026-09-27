@@ -48,26 +48,30 @@ strategy(
 // =============================================================================
 // INPUT PARAMETERS
 // =============================================================================
+// 0. Institutional Pair Whitelist Guard
+grp_pairs = "Institutional Pair Whitelist Guard"
+enforce_pair_whitelist = input.bool(true, "Enforce Tested Pairs Only (EURUSD, GBPUSD, USDJPY, USDCAD, XAUUSD)", group=grp_pairs)
+
 // 1. Trade & Risk Settings
 grp_risk = "Fixed Risk & Target Settings"
 risk_pct           = input.float(1.0, "Risk Per Trade (%)", minval=0.1, maxval=5.0, step=0.1, group=grp_risk)
 account_size_input = input.float(10000.0, "Account Size (USD)", minval=100.0, step=1000.0, group=grp_risk)
 use_compounding    = input.bool(true, "Compound Live Equity", group=grp_risk)
-rr_ratio           = input.float(1.5, "Target Risk/Reward Ratio", minval=1.2, maxval=5.0, step=0.1, group=grp_risk)
+rr_ratio           = input.float(1.75, "Target Risk/Reward Ratio", minval=1.2, maxval=5.0, step=0.05, group=grp_risk)
 sl_atr_buffer      = input.float(0.25, "Structural SL Buffer (1H ATR Multiple)", minval=0.10, maxval=1.0, step=0.05, group=grp_risk)
 min_sl_pips_input  = input.float(12.0, "Minimum Stop Loss Breathing Room (Pips)", minval=5.0, maxval=50.0, step=1.0, group=grp_risk)
-cooldown_bars      = input.int(4, "Post-Trade Cooldown (Bars)", minval=1, maxval=30, group=grp_risk)
+cooldown_bars      = input.int(3, "Post-Trade Cooldown (Bars)", minval=1, maxval=30, group=grp_risk)
 max_trade_bars     = input.int(160, "Max Trade Hold Duration (Bars)", minval=20, maxval=400, group=grp_risk)
 max_hunting_bars   = input.int(20, "Max Retracement Wait (Bars)", minval=6, maxval=60, group=grp_risk)
 
 // 2. Higher Timeframe Setup Parameters
 grp_htf = "Higher Timeframe (1H & Daily) Setup"
 sig_tf             = input.timeframe("60", "Signal Anchor Timeframe", group=grp_htf)
-donchian_len       = input.int(24, "Institutional Breakout Lookback (24h = 1 Day)", minval=10, maxval=120, group=grp_htf)
+donchian_len       = input.int(20, "Institutional Breakout Lookback (20h = 1 Daily Cycle)", minval=10, maxval=120, group=grp_htf)
 htf_ema_len        = input.int(200, "1H Trend Filter EMA Length", minval=50, maxval=500, group=grp_htf)
 use_d1_filter      = input.bool(true, "Require Daily (D1) EMA 50 Alignment", group=grp_htf)
 d1_ema_len         = input.int(50, "Daily Macro EMA Length", minval=20, maxval=200, group=grp_htf)
-min_body_ratio     = input.float(0.45, "1H Minimum Candle Body Ratio (Anti-Wick)", minval=0.30, maxval=0.90, step=0.05, group=grp_htf)
+min_body_ratio     = input.float(0.40, "1H Minimum Candle Body Ratio (Anti-Wick)", minval=0.25, maxval=0.90, step=0.05, group=grp_htf)
 
 // 3. Volume & Anti-Exhaustion Filters
 grp_vol = "Volume & Anti-Exhaustion Filters"
@@ -76,7 +80,7 @@ vol_ma_len         = input.int(20, "Volume Moving Average Length", minval=5, max
 vol_multiplier     = input.float(1.10, "Volume Multiplier vs Average", minval=1.0, maxval=2.5, step=0.05, group=grp_vol)
 rsi_len            = input.int(14, "RSI Length", minval=5, maxval=50, group=grp_vol)
 adx_len            = input.int(14, "ADX Length", minval=5, maxval=50, group=grp_vol)
-adx_min            = input.float(20.0, "ADX Minimum Trend Threshold", minval=10.0, maxval=35.0, group=grp_vol)
+adx_min            = input.float(18.0, "ADX Minimum Trend Threshold", minval=10.0, maxval=35.0, group=grp_vol)
 
 // 4. Session & Webhook Credentials
 grp_session = "Session & Webhook Credentials"
@@ -183,7 +187,23 @@ var line cur_sl_line = na
 var line cur_tp_line = na
 var box  cur_ob_box = na
 
-is_gold = str.contains(syminfo.ticker, "XAU")
+// Precision & Units
+clean_ticker = str.upper(syminfo.ticker)
+is_whitelisted = str.contains(clean_ticker, "EURUSD") or 
+                 str.contains(clean_ticker, "GBPUSD") or 
+                 str.contains(clean_ticker, "USDJPY") or 
+                 str.contains(clean_ticker, "USDCAD") or 
+                 str.contains(clean_ticker, "XAUUSD") or 
+                 str.contains(clean_ticker, "GOLD")
+
+var table pair_warn_tbl = table.new(position.bottom_center, 1, 1)
+if barstate.islast
+    if not is_whitelisted and enforce_pair_whitelist
+        table.cell(pair_warn_tbl, 0, 0, "⚠️ UNVERIFIED PAIR (" + syminfo.ticker + "): Non-suitable pair removed. Best performance on EURUSD, GBPUSD, USDJPY, USDCAD, XAUUSD.", bgcolor=color.new(#7f1d1d, 10), text_color=color.white, text_size=size.small)
+    else
+        table.clear(pair_warn_tbl, 0, 0)
+
+is_gold = str.contains(syminfo.ticker, "XAU") or str.contains(clean_ticker, "GOLD")
 is_jpy = str.contains(syminfo.ticker, "JPY")
 is_usd_base = (str.startswith(syminfo.ticker, "USD") or str.contains(syminfo.ticker, ":USD")) and not is_gold
 is_gold_or_jpy = is_gold or is_jpy
@@ -208,7 +228,8 @@ f_calc_units(sl_dist) =>
 // =============================================================================
 // STEP 1: DETECT 1H SETUP (CAN ONLY HUNT IF FLAT & COOLDOWN SATISFIED)
 // =============================================================================
-can_hunt = (active_trade_state == 0) and (setup_hunting == 0) and in_session and h1_pulse and ((bar_index - last_trade_exit_bar) >= cooldown_bars) and (strategy.position_size == 0)
+pair_permitted = not enforce_pair_whitelist or is_whitelisted
+can_hunt = pair_permitted and (active_trade_state == 0) and (setup_hunting == 0) and in_session and h1_pulse and ((bar_index - last_trade_exit_bar) >= cooldown_bars) and (strategy.position_size == 0)
 
 if can_hunt
     if h1_short_setup

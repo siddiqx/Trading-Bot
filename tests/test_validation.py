@@ -63,3 +63,29 @@ def test_session_filter_evaluation():
     # 22:00 UTC is outside standard London/NY
     permitted_late, reason_late = SessionFilter.is_session_permitted("2026-03-09T22:00:00Z", ["LONDON", "NEW_YORK"])
     assert not permitted_late
+
+
+def test_unsupported_symbol_rejection():
+    settings = Settings()
+    validator = SignalValidator(settings)
+
+    payload_data = {
+        "symbol": "USDCHF",  # Removed non-suitable pair
+        "direction": "LONG",
+        "signal_time": "2026-03-09T14:00:00Z",
+        "price": 0.8850,
+        "entry": 0.8850,
+        "stop_loss": 0.8830,
+        "take_profit": 0.8890,
+        "signal_score": 85.0,
+        "adx": 25.0,
+        "atr": 0.0010,
+        "roc": 0.5,
+        "htf_regime": "BULLISH",
+        "webhook_secret": "test-secret-key-12345",
+    }
+    payload = SignalPayload(**payload_data)
+    is_valid, reason = validator.validate(payload)
+    assert not is_valid
+    assert "Not in verified institutional pair whitelist" in reason
+

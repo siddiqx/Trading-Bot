@@ -85,6 +85,7 @@ class SignalValidator:
         # 1. Check supported symbols if list is restricted
         if payload.symbol not in self.settings.SUPPORTED_SYMBOLS:
             logger.warning(f"Symbol {payload.symbol} not in configured SUPPORTED_SYMBOLS.")
+            return False, f"Symbol {payload.symbol} rejected: Not in verified institutional pair whitelist ({', '.join(self.settings.SUPPORTED_SYMBOLS)})."
 
         # 2. ADX minimum threshold check
         if payload.adx < self.settings.DEFAULT_ADX_MIN:
