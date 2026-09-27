@@ -69,6 +69,9 @@ htf_ema_len        = input.int(50, "1H Trend Filter EMA Length", minval=20, maxv
 use_d1_filter      = input.bool(false, "Require Daily (D1) Macro EMA Alignment (Disable to Prevent Multi-Week Lockout)", group=grp_htf)
 d1_ema_len         = input.int(50, "Daily Macro EMA Length", minval=20, maxval=200, group=grp_htf)
 use_h1_slope       = input.bool(true, "Require 1H EMA 20 Velocity Slope Confluence", group=grp_htf)
+use_h1_slope_strength = input.bool(true, "Enforce 1H Directional Velocity (Rejects Flat Consolidation)", group=grp_htf)
+min_slope_atr_mult    = input.float(0.10, "Minimum 1H Slope Threshold (x 1H ATR)", minval=0.02, maxval=0.50, step=0.02, group=grp_htf)
+use_4h_filter         = input.bool(true, "Require 4H Macro Trend Confluence (Rejects 4H Chop)", group=grp_htf)
 min_body_ratio     = input.float(0.35, "Minimum Candle Body Ratio (Anti-Wick)", minval=0.20, maxval=0.90, step=0.05, group=grp_htf)
 avoid_rollover     = input.bool(true, "Avoid 21:00 UTC Daily Rollover Spread Spikes", group=grp_htf)
 
@@ -91,7 +94,7 @@ webhook_secret         = input.string("test-secret-key-12345", "Webhook Secret K
 env_label              = input.string("LIVE", "Environment (LIVE or TEST)", options=["LIVE", "TEST"], group=grp_session)
 
 // =============================================================================
-// DAILY (D1) MACRO TREND ENGINE
+// DAILY (D1) & 4-HOUR (4H) MACRO TREND ENGINE
 // =============================================================================
 d1_c_raw   = request.security(syminfo.tickerid, "D", close[1], barmerge.gaps_off, barmerge.lookahead_off)
 d1_ema_raw = request.security(syminfo.tickerid, "D", ta.ema(close, d1_ema_len)[1], barmerge.gaps_off, barmerge.lookahead_off)
@@ -100,6 +103,14 @@ d1_c_val   = na(d1_c_raw) ? close : d1_c_raw
 d1_ema_val = na(d1_ema_raw) ? close : d1_ema_raw
 d1_bullish = not use_d1_filter or (d1_c_val > d1_ema_val)
 d1_bearish = not use_d1_filter or (d1_c_val < d1_ema_val)
+
+// 4H Trend Alignment (Anti-Consolidation Guard)
+h4_e20_raw = request.security(syminfo.tickerid, "240", ta.ema(close, 20)[1], barmerge.gaps_off, barmerge.lookahead_off)
+h4_e50_raw = request.security(syminfo.tickerid, "240", ta.ema(close, 50)[1], barmerge.gaps_off, barmerge.lookahead_off)
+h4_e20     = na(h4_e20_raw) ? close : h4_e20_raw
+h4_e50     = na(h4_e50_raw) ? close : h4_e50_raw
+h4_bullish = not use_4h_filter or (h4_e20 > h4_e50)
+h4_bearish = not use_4h_filter or (h4_e20 < h4_e50)
 
 // =============================================================================
 // MULTI-TIMEFRAME (1H TREND + 15m/1H ADAPTIVE EXECUTION) ENGINE
@@ -123,13 +134,14 @@ h1_e20  = na(h1_e20_raw) ? close : h1_e20_raw
 h1_e50  = na(h1_e50_raw) ? close : h1_e50_raw
 h1_atr  = na(h1_atr_raw) ? (na(chart_atr) ? close * 0.005 : chart_atr) : h1_atr_raw
 
-h1_e20_slope = (h1_e20 - h1_e20[2])
-h1_slope_bull = not use_h1_slope or (h1_e20_slope > 0)
-h1_slope_bear = not use_h1_slope or (h1_e20_slope < 0)
+h1_e20_slope  = (h1_e20 - h1_e20[2])
+min_slope_val = min_slope_atr_mult * h1_atr
+h1_slope_bull = not use_h1_slope or (use_h1_slope_strength ? (h1_e20_slope >= min_slope_val) : (h1_e20_slope > 0))
+h1_slope_bear = not use_h1_slope or (use_h1_slope_strength ? (-h1_e20_slope >= min_slope_val) : (h1_e20_slope < 0))
 
-// 1H Institutional Trend Alignment (Responsive 1H Trend Confluence)
-h1_macro_bull = (not use_h1_200 or h1_c > h1_e200) and (h1_c > h1_e50) and (h1_e20 > h1_e50) and d1_bullish and h1_slope_bull
-h1_macro_bear = (not use_h1_200 or h1_c < h1_e200) and (h1_c < h1_e50) and (h1_e20 < h1_e50) and d1_bearish and h1_slope_bear
+// 1H Institutional Trend Alignment (Responsive 1H Trend Confluence + 4H Anti-Consolidation Guard)
+h1_macro_bull = (not use_h1_200 or h1_c > h1_e200) and (h1_c > h1_e50) and (h1_e20 > h1_e50) and d1_bullish and h1_slope_bull and h4_bullish
+h1_macro_bear = (not use_h1_200 or h1_c < h1_e200) and (h1_c < h1_e50) and (h1_e20 < h1_e50) and d1_bearish and h1_slope_bear and h4_bearish
 
 // Local Chart EMA alignment (20 vs 50 on execution chart)
 chart_e20 = ta.ema(close, 20)
