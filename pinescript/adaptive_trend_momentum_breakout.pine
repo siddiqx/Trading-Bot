@@ -160,7 +160,8 @@ h1_c_raw    = request.security(syminfo.tickerid, sig_tf, close[1], barmerge.gaps
 h1_e200_raw = request.security(syminfo.tickerid, sig_tf, ta.ema(close, htf_ema_len)[1], barmerge.gaps_off, barmerge.lookahead_off)
 h1_e20_raw  = request.security(syminfo.tickerid, sig_tf, ta.ema(close, 20)[1], barmerge.gaps_off, barmerge.lookahead_off)
 h1_e50_raw  = request.security(syminfo.tickerid, sig_tf, ta.ema(close, 50)[1], barmerge.gaps_off, barmerge.lookahead_off)
-h1_atr_raw  = request.security(syminfo.tickerid, sig_tf, ta.atr(14)[1], barmerge.gaps_off, barmerge.lookahead_off)
+h1_atr_raw    = request.security(syminfo.tickerid, sig_tf, ta.atr(14)[1], barmerge.gaps_off, barmerge.lookahead_off)
+h1_slope_raw  = request.security(syminfo.tickerid, sig_tf, (ta.ema(close, 20)[1] - ta.ema(close, 20)[3]), barmerge.gaps_off, barmerge.lookahead_off)
 
 chart_atr = ta.atr(14)
 chart_atr_sma = ta.sma(chart_atr, 20)
@@ -172,7 +173,7 @@ h1_e20  = na(h1_e20_raw) ? close : h1_e20_raw
 h1_e50  = na(h1_e50_raw) ? close : h1_e50_raw
 h1_atr  = na(h1_atr_raw) ? (na(chart_atr) ? close * 0.005 : chart_atr) : h1_atr_raw
 
-h1_e20_slope  = (h1_e20 - h1_e20[2])
+h1_e20_slope  = is_sub_1h ? (na(h1_slope_raw) ? 0.0 : h1_slope_raw) : (h1_e20 - h1_e20[2])
 min_slope_val = min_slope_atr_mult * h1_atr
 h1_slope_bull = not use_h1_slope or (use_h1_slope_strength ? (h1_e20_slope >= min_slope_val) : (h1_e20_slope > 0))
 h1_slope_bear = not use_h1_slope or (use_h1_slope_strength ? (-h1_e20_slope >= min_slope_val) : (h1_e20_slope < 0))
