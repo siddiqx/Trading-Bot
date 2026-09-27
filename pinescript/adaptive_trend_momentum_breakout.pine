@@ -100,8 +100,10 @@ f_calc_d1() =>
      lookahead=barmerge.lookahead_off
      )
 
-d1_bullish = not use_d1_filter or (nz(d1_c_raw[1]) > nz(d1_ema_raw[1]))
-d1_bearish = not use_d1_filter or (nz(d1_c_raw[1]) < nz(d1_ema_raw[1]))
+d1_c_prev   = na(d1_c_raw[1]) ? close : d1_c_raw[1]
+d1_ema_prev = na(d1_ema_raw[1]) ? close : d1_ema_raw[1]
+d1_bullish  = not use_d1_filter or (d1_c_prev > d1_ema_prev)
+d1_bearish  = not use_d1_filter or (d1_c_prev < d1_ema_prev)
 
 // =============================================================================
 // 1-HOUR (60m) SETUP ENGINE - PURE, STATELESS, ROBUST
@@ -155,17 +157,18 @@ f_calculate_1h_state() =>
      lookahead=barmerge.lookahead_off
      )
 
-h1_long_setup      = nz(raw_long[1], false) and d1_bullish
-h1_short_setup     = nz(raw_short[1], false) and d1_bearish
-h1_atr_confirmed   = nz(raw_atr[1], ta.atr(14))
-h1_adx_confirmed   = nz(raw_adx[1], 25.0)
-h1_rsi_confirmed   = nz(raw_rsi[1], 50.0)
-h1_ob_hl_confirmed = nz(raw_ob_hl[1], high)
-h1_ob_ll_confirmed = nz(raw_ob_ll[1], low)
-h1_ob_hs_confirmed = nz(raw_ob_hs[1], high)
-h1_ob_ls_confirmed = nz(raw_ob_ls[1], low)
-h1_high_confirmed  = nz(raw_h[1], high)
-h1_low_confirmed   = nz(raw_l[1], low)
+chart_atr = ta.atr(14)
+h1_long_setup      = (raw_long[1] == true) and d1_bullish
+h1_short_setup     = (raw_short[1] == true) and d1_bearish
+h1_atr_confirmed   = na(raw_atr[1]) ? (na(chart_atr) ? close * 0.005 : chart_atr) : raw_atr[1]
+h1_adx_confirmed   = na(raw_adx[1]) ? 25.0 : raw_adx[1]
+h1_rsi_confirmed   = na(raw_rsi[1]) ? 50.0 : raw_rsi[1]
+h1_ob_hl_confirmed = na(raw_ob_hl[1]) ? high : raw_ob_hl[1]
+h1_ob_ll_confirmed = na(raw_ob_ll[1]) ? low : raw_ob_ll[1]
+h1_ob_hs_confirmed = na(raw_ob_hs[1]) ? high : raw_ob_hs[1]
+h1_ob_ls_confirmed = na(raw_ob_ls[1]) ? low : raw_ob_ls[1]
+h1_high_confirmed  = na(raw_h[1]) ? high : raw_h[1]
+h1_low_confirmed   = na(raw_l[1]) ? low : raw_l[1]
 
 is_sub_1h = timeframe.isintraday and timeframe.multiplier < 60
 is_new_1h_bar = ta.change(time(sig_tf)) != 0
@@ -218,7 +221,7 @@ risk_cash = current_capital * (risk_pct / 100.0)
 
 f_calc_units(sl_dist) =>
     units = 1000.0
-    safe_dist = math.max(nz(sl_dist, min_sl_dist), 0.0001)
+    safe_dist = math.max(na(sl_dist) ? min_sl_dist : sl_dist, 0.0001)
     if is_gold
         units := risk_cash / safe_dist
     else if is_jpy or is_usd_base
@@ -282,12 +285,14 @@ if short_entry_trigger
 
     fixed_entry := close
 
-    safe_ob_h = math.max(nz(hunt_ob_h, high), nz(hunt_ob_l, low))
-    safe_ob_l = math.min(nz(hunt_ob_h, high), nz(hunt_ob_l, low))
+    raw_h = na(hunt_ob_h) ? high : hunt_ob_h
+    raw_l = na(hunt_ob_l) ? low : hunt_ob_l
+    safe_ob_h = math.max(raw_h, raw_l)
+    safe_ob_l = math.min(raw_h, raw_l)
     if safe_ob_h <= safe_ob_l
         safe_ob_h := safe_ob_l + (pip_unit * 2)
 
-    safe_atr = nz(hunt_atr, nz(ta.atr(14), close * 0.005))
+    safe_atr = na(hunt_atr) ? (na(chart_atr) ? close * 0.005 : chart_atr) : hunt_atr
     raw_sl = safe_ob_h + (safe_atr * sl_atr_buffer)
     calc_dist = math.abs(raw_sl - fixed_entry)
     actual_sl_dist = math.max(calc_dist, min_sl_dist)
@@ -348,12 +353,14 @@ if long_entry_trigger
 
     fixed_entry := close
 
-    safe_ob_h = math.max(nz(hunt_ob_h, high), nz(hunt_ob_l, low))
-    safe_ob_l = math.min(nz(hunt_ob_h, high), nz(hunt_ob_l, low))
+    raw_h = na(hunt_ob_h) ? high : hunt_ob_h
+    raw_l = na(hunt_ob_l) ? low : hunt_ob_l
+    safe_ob_h = math.max(raw_h, raw_l)
+    safe_ob_l = math.min(raw_h, raw_l)
     if safe_ob_h <= safe_ob_l
         safe_ob_h := safe_ob_l + (pip_unit * 2)
 
-    safe_atr = nz(hunt_atr, nz(ta.atr(14), close * 0.005))
+    safe_atr = na(hunt_atr) ? (na(chart_atr) ? close * 0.005 : chart_atr) : hunt_atr
     raw_sl = safe_ob_l - (safe_atr * sl_atr_buffer)
     calc_dist = math.abs(fixed_entry - raw_sl)
     actual_sl_dist = math.max(calc_dist, min_sl_dist)
@@ -463,7 +470,7 @@ f_build_json(is_long) =>
      "\"exchange\":\"" + syminfo.prefix + "\"," +
      "\"timeframe\":\"" + timeframe.period + "\"," +
      "\"direction\":\"" + dir_str + "\"," +
-     "\"signal_time\":\"" + str.format_time(nz(time), "yyyy-MM-dd'T'HH:mm:ss'Z'", "UTC") + "\"," +
+     "\"signal_time\":\"" + str.format_time(time, "yyyy-MM-dd'T'HH:mm:ss'Z'", "UTC") + "\"," +
      "\"price\":" + str.tostring(close, p_fmt) + "," +
      "\"entry\":" + str.tostring(fixed_entry, p_fmt) + "," +
      "\"stop_loss\":" + str.tostring(fixed_sl, p_fmt) + "," +
