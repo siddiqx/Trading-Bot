@@ -336,9 +336,7 @@ if raw_long_trigger
              bgcolor=color.new(#10b981, 88),
              text="+OB Demand Zone [" + str.tostring(ob_l, p_fmt) + " – " + str.tostring(ob_h, p_fmt) + "]",
              text_color=color.new(#10b981, 0),
-             text_size=size.small,
-             text_halign=text.halign_left,
-             text_valign=text.valign_top
+             text_size=size.small
              )
 
     // Draw Clean Trade Levels (Entry, SL, TP)
@@ -431,9 +429,7 @@ if raw_short_trigger
              bgcolor=color.new(#ef4444, 88),
              text="-OB Supply Zone [" + str.tostring(ob_l, p_fmt) + " – " + str.tostring(ob_h, p_fmt) + "]",
              text_color=color.new(#ef4444, 0),
-             text_size=size.small,
-             text_halign=text.halign_left,
-             text_valign=text.valign_top
+             text_size=size.small
              )
 
     // Draw Clean Trade Levels (Entry, SL, TP)
