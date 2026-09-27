@@ -22,15 +22,15 @@ strategy(
 // =============================================================================
 // 1. MACRO BIAS (Daily D1): EMA 50 trend alignment filter.
 // 2. HIGHER TIMEFRAME SETUP (1-Hour 1H):
-//    - Institutional Displacement: Donchian 48 breakout with solid candle body (>=55%).
-//    - Volume Expansion: 1H Volume > 1.1x 20-period Volume MA to confirm institutional flow.
-//    - Anti-Exhaustion Protection: RSI must NOT be oversold (< 35) for Shorts and NOT
-//      overbought (> 65) for Longs. Prevents selling/buying the exhaustion extreme!
+//    - Institutional Displacement: Donchian 48 breakout of previous 48-period high/low.
+//    - Volume Expansion: 1H Volume > 1.1x 20-period Volume MA (configurable).
+//    - Anti-Exhaustion Protection: RSI must NOT be oversold (< 30) for Shorts and NOT
+//      overbought (> 70) for Longs.
 //    - Institutional Order Block (+OB Demand / -OB Supply) origin identified.
 // 3. LOWER TIMEFRAME REFINEMENT (15-Minute Execution Chart):
 //    - Waits for price to retrace into the 50% Equilibrium / Order Block / 15m FVG.
 //    - Confirms rejection on 15m before triggering entry.
-//    - Also supports direct 1H execution if loaded on a 1-Hour chart!
+//    - Direct 1H execution supported if chart is viewed on 1-Hour!
 // 4. FIXED NON-TRAILING STRUCTURAL SL & TP:
 //    - Stop Loss is STRICTLY FIXED at the Order Block Invalidation boundary + ATR buffer.
 //      It NEVER moves, trails, or tightens to a single candle wick. Price is given
@@ -57,7 +57,7 @@ use_compounding    = input.bool(true, "Compound Live Equity", group=grp_risk)
 rr_ratio           = input.float(2.0, "Target Risk/Reward Ratio", minval=1.2, maxval=5.0, step=0.25, group=grp_risk)
 sl_atr_buffer      = input.float(0.25, "Structural SL Buffer (1H ATR Multiple)", minval=0.10, maxval=1.0, step=0.05, group=grp_risk)
 min_sl_pips_input  = input.float(15.0, "Minimum Stop Loss Breathing Room (Pips)", minval=5.0, maxval=50.0, step=1.0, group=grp_risk)
-cooldown_bars      = input.int(12, "Post-Trade Cooldown (Bars)", minval=2, maxval=60, group=grp_risk)
+cooldown_bars      = input.int(8, "Post-Trade Cooldown (Bars)", minval=1, maxval=60, group=grp_risk)
 max_trade_bars     = input.int(160, "Max Trade Hold Duration (Bars)", minval=20, maxval=400, group=grp_risk)
 max_hunting_bars   = input.int(24, "Max Retracement Wait (Bars)", minval=6, maxval=60, group=grp_risk)
 
@@ -68,11 +68,11 @@ donchian_len       = input.int(48, "1H Breakout Lookback (48h = 2 Days)", minval
 htf_ema_len        = input.int(200, "1H Trend Filter EMA Length", minval=50, maxval=500, group=grp_htf)
 use_d1_filter      = input.bool(true, "Require Daily (D1) EMA 50 Alignment", group=grp_htf)
 d1_ema_len         = input.int(50, "Daily Macro EMA Length", minval=20, maxval=200, group=grp_htf)
-min_body_ratio     = input.float(0.55, "1H Minimum Candle Body Ratio (Anti-Wick)", minval=0.40, maxval=0.95, step=0.05, group=grp_htf)
+min_body_ratio     = input.float(0.50, "1H Minimum Candle Body Ratio (Anti-Wick)", minval=0.30, maxval=0.90, step=0.05, group=grp_htf)
 
 // 3. Volume & Anti-Exhaustion Filters
 grp_vol = "Volume & Anti-Exhaustion Filters"
-use_volume_filter  = input.bool(true, "Require 1H Institutional Volume Expansion (>1.1x)", group=grp_vol)
+use_volume_filter  = input.bool(false, "Require 1H Volume Expansion (Disable for Forex Tick Feeds)", group=grp_vol)
 vol_ma_len         = input.int(20, "Volume Moving Average Length", minval=5, maxval=50, group=grp_vol)
 vol_multiplier     = input.float(1.10, "Volume Multiplier vs Average", minval=1.0, maxval=2.5, step=0.05, group=grp_vol)
 rsi_len            = input.int(14, "RSI Length", minval=5, maxval=50, group=grp_vol)
@@ -81,13 +81,13 @@ adx_min            = input.float(20.0, "ADX Minimum Trend Threshold", minval=10.
 
 // 4. Session & Webhook Credentials
 grp_session = "Session & Webhook Credentials"
-session_filter_enabled = input.bool(true, "Enable London/NY Session Filter (UTC)", group=grp_session)
+session_filter_enabled = input.bool(false, "Enable London/NY Session Filter (UTC)", group=grp_session)
 allowed_session        = input.session("0700-1700", "Allowed Session Window (UTC)", group=grp_session)
 webhook_secret         = input.string("test-secret-key-12345", "Webhook Secret Key", group=grp_session)
 env_label              = input.string("LIVE", "Environment (LIVE or TEST)", options=["LIVE", "TEST"], group=grp_session)
 
 // =============================================================================
-// DAILY (D1) MACRO TREND - FAST, NATIVE MTF
+// DAILY (D1) MACRO TREND ENGINE
 // =============================================================================
 d1_c_raw   = request.security(syminfo.tickerid, "D", close[1], barmerge.gaps_off, barmerge.lookahead_off)
 d1_ema_raw = request.security(syminfo.tickerid, "D", ta.ema(close, d1_ema_len)[1], barmerge.gaps_off, barmerge.lookahead_off)
@@ -98,16 +98,18 @@ d1_bullish = not use_d1_filter or (d1_c_val > d1_ema_val)
 d1_bearish = not use_d1_filter or (d1_c_val < d1_ema_val)
 
 // =============================================================================
-// 1-HOUR (60m) SETUP ENGINE - ULTRA-FAST NATIVE PRIMITIVES
+// 1-HOUR (60m) SETUP ENGINE - NATIVE & ROBUST
 // =============================================================================
+// Crossover is evaluated on the 1-Hour timeframe:
+h1_cross_long  = request.security(syminfo.tickerid, sig_tf, ta.crossover(close, ta.highest(high[1], donchian_len))[1], barmerge.gaps_off, barmerge.lookahead_off)
+h1_cross_short = request.security(syminfo.tickerid, sig_tf, ta.crossunder(close, ta.lowest(low[1], donchian_len))[1], barmerge.gaps_off, barmerge.lookahead_off)
+
 h1_c_raw    = request.security(syminfo.tickerid, sig_tf, close[1], barmerge.gaps_off, barmerge.lookahead_off)
 h1_o_raw    = request.security(syminfo.tickerid, sig_tf, open[1], barmerge.gaps_off, barmerge.lookahead_off)
 h1_h_raw    = request.security(syminfo.tickerid, sig_tf, high[1], barmerge.gaps_off, barmerge.lookahead_off)
 h1_l_raw    = request.security(syminfo.tickerid, sig_tf, low[1], barmerge.gaps_off, barmerge.lookahead_off)
 h1_v_raw    = request.security(syminfo.tickerid, sig_tf, volume[1], barmerge.gaps_off, barmerge.lookahead_off)
 h1_vma_raw  = request.security(syminfo.tickerid, sig_tf, ta.sma(volume, vol_ma_len)[1], barmerge.gaps_off, barmerge.lookahead_off)
-h1_dh_raw   = request.security(syminfo.tickerid, sig_tf, ta.highest(high, donchian_len)[1], barmerge.gaps_off, barmerge.lookahead_off)
-h1_dl_raw   = request.security(syminfo.tickerid, sig_tf, ta.lowest(low, donchian_len)[1], barmerge.gaps_off, barmerge.lookahead_off)
 h1_e200_raw = request.security(syminfo.tickerid, sig_tf, ta.ema(close, htf_ema_len)[1], barmerge.gaps_off, barmerge.lookahead_off)
 h1_e20_raw  = request.security(syminfo.tickerid, sig_tf, ta.ema(close, 20)[1], barmerge.gaps_off, barmerge.lookahead_off)
 h1_e50_raw  = request.security(syminfo.tickerid, sig_tf, ta.ema(close, 50)[1], barmerge.gaps_off, barmerge.lookahead_off)
@@ -120,31 +122,24 @@ h1_c    = na(h1_c_raw) ? close : h1_c_raw
 h1_o    = na(h1_o_raw) ? open : h1_o_raw
 h1_h    = na(h1_h_raw) ? high : h1_h_raw
 h1_l    = na(h1_l_raw) ? low : h1_l_raw
-h1_v    = na(h1_v_raw) ? volume : h1_v_raw
-h1_vma  = na(h1_vma_raw) ? volume : h1_vma_raw
-h1_dh   = na(h1_dh_raw) ? high : h1_dh_raw
-h1_dl   = na(h1_dl_raw) ? low : h1_dl_raw
 h1_e200 = na(h1_e200_raw) ? close : h1_e200_raw
 h1_e20  = na(h1_e20_raw) ? close : h1_e20_raw
 h1_e50  = na(h1_e50_raw) ? close : h1_e50_raw
 h1_rsi  = na(h1_rsi_raw) ? 50.0 : h1_rsi_raw
 h1_atr  = na(h1_atr_raw) ? (na(chart_atr) ? close * 0.005 : chart_atr) : h1_atr_raw
 
-// Institutional Breakthrough & Flow Filters
-cross_long  = ta.crossover(h1_c, h1_dh[1])
-cross_short = ta.crossunder(h1_c, h1_dl[1])
-vol_ok = not use_volume_filter or (h1_v >= h1_vma * vol_multiplier) or (h1_v == 0)
+vol_ok = not use_volume_filter or na(h1_v_raw) or na(h1_vma_raw) or (h1_v_raw == 0) or (h1_v_raw >= h1_vma_raw * vol_multiplier)
 
 // Anti-Exhaustion RSI Filters:
-rsi_short_healthy = (h1_rsi >= 35.0) and (h1_rsi <= 52.0)
-rsi_long_healthy  = (h1_rsi >= 48.0) and (h1_rsi <= 65.0)
+rsi_short_healthy = (h1_rsi >= 30.0) and (h1_rsi <= 55.0)
+rsi_long_healthy  = (h1_rsi >= 45.0) and (h1_rsi <= 70.0)
 
 h1_rng = h1_h - h1_l
 body_ratio_long  = h1_rng > 0 ? (h1_c - h1_l) / h1_rng : 0.5
 body_ratio_short = h1_rng > 0 ? (h1_h - h1_c) / h1_rng : 0.5
 
-h1_long_setup  = cross_long  and (h1_c > h1_e200) and (h1_e20 > h1_e50) and rsi_long_healthy  and vol_ok and (body_ratio_long >= min_body_ratio) and d1_bullish
-h1_short_setup = cross_short and (h1_c < h1_e200) and (h1_e20 < h1_e50) and rsi_short_healthy and vol_ok and (body_ratio_short >= min_body_ratio) and d1_bearish
+h1_long_setup  = (h1_cross_long == true) and (h1_c > h1_e200) and (h1_e20 > h1_e50) and rsi_long_healthy and vol_ok and (body_ratio_long >= min_body_ratio) and d1_bullish
+h1_short_setup = (h1_cross_short == true) and (h1_c < h1_e200) and (h1_e20 < h1_e50) and rsi_short_healthy and vol_ok and (body_ratio_short >= min_body_ratio) and d1_bearish
 
 // Order Block Origin (previous opposite candle high and low):
 ob_bull_h = (h1_c[1] < h1_o[1]) ? h1_h[1] : h1_h
@@ -156,7 +151,7 @@ is_sub_1h = timeframe.isintraday and timeframe.multiplier < 60
 is_new_1h_bar = ta.change(time(sig_tf)) != 0
 h1_pulse = is_sub_1h ? is_new_1h_bar : barstate.isconfirmed
 
-in_session = not session_filter_enabled or not na(time(timeframe.period, allowed_session + ":1234567"))
+in_session = not session_filter_enabled or not na(time(timeframe.period, allowed_session))
 
 // 15m Fair Value Gap (FVG)
 ltf_fvg_bearish = high < low[2]
@@ -247,14 +242,12 @@ if (setup_hunting != 0) and ((bar_index - hunting_start_bar) > max_hunting_bars)
 sig_long_fired = false
 sig_short_fired = false
 
-ltf_vol_ok = volume >= (ta.sma(volume, 14) * 0.85) or (volume == 0)
-
 // TRIGGER SHORT:
 short_entry_trigger = false
 if (active_trade_state == 0) and (setup_hunting == -1) and in_session and (strategy.position_size == 0)
     if is_sub_1h
         retrace_into_premium = (high >= hunt_fib_50) or (high >= hunt_ob_l) or (ltf_fvg_bearish and high >= ltf_fvg_bear_bottom)
-        rejection_confirmed = (close < open) and (close < low[1]) and ltf_vol_ok
+        rejection_confirmed = (close < open) and (close < low[1])
         short_entry_trigger := retrace_into_premium and rejection_confirmed
     else
         short_entry_trigger := true
@@ -322,7 +315,7 @@ long_entry_trigger = false
 if (active_trade_state == 0) and (setup_hunting == 1) and in_session and (strategy.position_size == 0)
     if is_sub_1h
         retrace_into_discount = (low <= hunt_fib_50) or (low <= hunt_ob_h) or (ltf_fvg_bullish and low <= ltf_fvg_bull_top)
-        rejection_confirmed = (close > open) and (close > high[1]) and ltf_vol_ok
+        rejection_confirmed = (close > open) and (close > high[1])
         long_entry_trigger := retrace_into_discount and rejection_confirmed
     else
         long_entry_trigger := true
