@@ -1,7 +1,7 @@
 //@version=6
 indicator(
-     title="ICT Institutional Multi-Timeframe Strategy [Clean Signals & Exact Levels]",
-     shorttitle="ICT-MTF-Clean",
+     title="ICT Institutional MTF Strategy [Fixed Structural SL/TP & Isolated Trades]",
+     shorttitle="ICT-Fixed-MTF",
      overlay=true,
      max_boxes_count=100,
      max_lines_count=200,
@@ -9,61 +9,66 @@ indicator(
      )
 
 // =============================================================================
-// ARCHITECTURE SPECIFICATION: INSTITUTIONAL ICT MULTI-TIMEFRAME CONFLUENCE
+// ARCHITECTURE SPECIFICATION: FIXED STRUCTURAL SL/TP & ISOLATED TRADE LIFECYCLE
 // =============================================================================
 // 1. MACRO BIAS (Daily D1): EMA 50 trend alignment filter.
 // 2. HIGHER TIMEFRAME SETUP (1-Hour 1H):
-//    - Institutional Displacement: Donchian 48 breakout with strong candle body (>=55%).
-//    - Volume Expansion: 1H Volume must be above 20-period Volume SMA (>1.1x) to
-//      confirm real institutional order flow (eliminates low-liquidity false moves).
-//    - Anti-Exhaustion Protection: 1H RSI must NOT be oversold (RSI >= 35) for Shorts
-//      and NOT overbought (RSI <= 65) for Longs. Prevents selling the bottom!
+//    - Institutional Displacement: Donchian 48 breakout with solid candle body (>=55%).
+//    - Volume Expansion: 1H Volume > 1.1x 20-period Volume MA to confirm institutional flow.
+//    - Anti-Exhaustion Protection: RSI must NOT be oversold (< 35) for Shorts and NOT
+//      overbought (> 65) for Longs. Prevents selling/buying the exhaustion extreme!
+//    - Institutional Order Block (+OB Demand / -OB Supply) origin identified.
 // 3. LOWER TIMEFRAME REFINEMENT (15-Minute Execution Chart):
-//    - Does NOT chase breakout extremes! Enters Retracement Hunting mode.
-//    - Waits for price to retrace into the 50% Equilibrium / Order Block / 15m FVG zone.
-//    - Confirms rejection on 15m with volume before pulling the trigger.
-// 4. CLEAN PROFESSIONAL CHART DISPLAY:
-//    - All details (Entry, SL, TP, Pips, R:R, Lots) placed DIRECTLY ON THE SIGNAL LABEL.
-//    - No cluttering box at the top right!
-//    - Clear lines connect Entry, Stop Loss, and Take Profit across the trade duration.
-//    - Historical trades cleanly preserved with outcome tags (🎯 TP HIT / 🛑 SL HIT).
-// 5. STRICT 1-TRADE LOCK & STRUCTURAL COOLDOWN:
-//    - Exactly ONE trade active at a time. Zero signals can trigger while in a trade.
-//    - Mandatory cooldown period after trade exit prevents revenge/exhaustion re-entries.
+//    - Waits for price to retrace into the 50% Equilibrium / Order Block / 15m FVG.
+//    - Confirms rejection on 15m before triggering entry.
+// 4. FIXED NON-TRAILING STRUCTURAL SL & TP:
+//    - Stop Loss is STRICTLY FIXED at the Order Block Invalidation boundary + ATR buffer.
+//      It NEVER moves, trails, or tightens to a single candle wick. Price is given
+//      proper breathing room to retrace without premature stop-outs!
+//    - Take Profit is STRICTLY FIXED at entry price +/- (risk_dist * rr_ratio).
+// 5. STRICT SINGLE TRADE LOCK:
+//    - Starts looking for trades ONLY after the previous trade has hit TP or SL!
+//    - ZERO signals can trigger while a trade is live.
+// 6. ISOLATED TRADE DISPLAY (NO CONTINUOUS STEP-LINES):
+//    - Each trade has its own independent horizontal levels connecting Entry to Exit.
+//    - Completely frozen upon exit with outcome badges (🎯 TP HIT / 🛑 SL HIT).
+//    - All details (Entry, SL, TP, Pips, R:R, Lots) placed directly on the signal card.
+//    - No box at the top right!
 // =============================================================================
 
 // =============================================================================
 // INPUT PARAMETERS
 // =============================================================================
 // 1. Trade & Risk Settings
-grp_risk = "Institutional Risk & Execution Model"
+grp_risk = "Fixed Risk & Target Settings"
 risk_pct           = input.float(1.0, "Risk Per Trade (%)", minval=0.1, maxval=5.0, step=0.1, group=grp_risk)
 account_size_input = input.float(10000.0, "Account Size (USD)", minval=100.0, step=1000.0, group=grp_risk)
 rr_ratio           = input.float(2.0, "Target Risk/Reward Ratio", minval=1.2, maxval=5.0, step=0.25, group=grp_risk)
-sl_atr_buffer      = input.float(0.15, "Stop Loss ATR Buffer Multiple", minval=0.05, maxval=0.50, step=0.05, group=grp_risk)
-cooldown_bars      = input.int(16, "Post-Trade Cooldown (15m Bars = 4 Hours)", minval=4, maxval=60, group=grp_risk)
-max_trade_bars     = input.int(120, "Trade Invalidation Timeout (Bars)", minval=20, maxval=400, group=grp_risk)
+sl_atr_buffer      = input.float(0.25, "Structural SL Buffer (1H ATR Multiple)", minval=0.10, maxval=1.0, step=0.05, group=grp_risk)
+min_sl_pips_input  = input.float(15.0, "Minimum Stop Loss Breathing Room (Pips)", minval=5.0, maxval=50.0, step=1.0, group=grp_risk)
+cooldown_bars      = input.int(12, "Post-Trade Cooldown (15m Bars = 3 Hours)", minval=4, maxval=60, group=grp_risk)
+max_trade_bars     = input.int(160, "Max Trade Hold Duration (15m Bars = 40 Hours)", minval=40, maxval=400, group=grp_risk)
 max_hunting_bars   = input.int(24, "Max Retracement Wait (15m Bars = 6 Hours)", minval=8, maxval=60, group=grp_risk)
 
-// 2. Higher Timeframe (1H & Daily) Setup Parameters
-grp_htf = "Higher Timeframe (1H & Daily) Alignment"
+// 2. Higher Timeframe Setup Parameters
+grp_htf = "Higher Timeframe (1H & Daily) Setup"
 sig_tf             = input.timeframe("60", "Signal Anchor Timeframe", group=grp_htf)
-donchian_len       = input.int(48, "1H Breakout Lookback (48 bars = 2 Days)", minval=10, maxval=120, group=grp_htf)
+donchian_len       = input.int(48, "1H Breakout Lookback (48h = 2 Days)", minval=10, maxval=120, group=grp_htf)
 htf_ema_len        = input.int(200, "1H Trend Filter EMA Length", minval=50, maxval=500, group=grp_htf)
 use_d1_filter      = input.bool(true, "Require Daily (D1) EMA 50 Alignment", group=grp_htf)
 d1_ema_len         = input.int(50, "Daily Macro EMA Length", minval=20, maxval=200, group=grp_htf)
 min_body_ratio     = input.float(0.55, "1H Minimum Candle Body Ratio (Anti-Wick)", minval=0.40, maxval=0.95, step=0.05, group=grp_htf)
 
-// 3. Volume & Exhaustion Filters
+// 3. Volume & Anti-Exhaustion Filters
 grp_vol = "Volume & Anti-Exhaustion Filters"
-use_volume_filter  = input.bool(true, "Require Institutional Volume Expansion (>1.1x MA)", group=grp_vol)
+use_volume_filter  = input.bool(true, "Require 1H Institutional Volume Expansion (>1.1x)", group=grp_vol)
 vol_ma_len         = input.int(20, "Volume Moving Average Length", minval=5, maxval=50, group=grp_vol)
 vol_multiplier     = input.float(1.10, "Volume Multiplier vs Average", minval=1.0, maxval=2.5, step=0.05, group=grp_vol)
 rsi_len            = input.int(14, "RSI Length", minval=5, maxval=50, group=grp_vol)
 adx_len            = input.int(14, "ADX Length", minval=5, maxval=50, group=grp_vol)
 adx_min            = input.float(20.0, "ADX Minimum Trend Threshold", minval=10.0, maxval=35.0, group=grp_vol)
 
-// 4. Session & Webhook
+// 4. Session & Webhook Credentials
 grp_session = "Session & Webhook Credentials"
 session_filter_enabled = input.bool(true, "Enable London/NY Session Filter (UTC)", group=grp_session)
 allowed_session        = input.session("0700-1700", "Allowed Session Window (UTC)", group=grp_session)
@@ -88,7 +93,7 @@ d1_bullish = not use_d1_filter or (d1_c_raw[1] > d1_ema_raw[1])
 d1_bearish = not use_d1_filter or (d1_c_raw[1] < d1_ema_raw[1])
 
 // =============================================================================
-// 1-HOUR (60m) SETUP ENGINE - WITH VOLUME & EXHAUSTION PROTECTION
+// 1-HOUR (60m) SETUP ENGINE - VOLUME & EXHAUSTION PROTECTION
 // =============================================================================
 f_calculate_1h_state() =>
     c = close
@@ -103,26 +108,23 @@ f_calculate_1h_state() =>
     d_high = ta.highest(h[1], donchian_len)
     d_low  = ta.lowest(l[1], donchian_len)
 
-    // True Initial Breakout on 1H:
     cross_long  = ta.crossover(c, d_high)
     cross_short = ta.crossunder(c, d_low)
 
-    // Volume Expansion Filter on 1H:
     v_ma = ta.sma(v, vol_ma_len)
-    vol_ok = not use_volume_filter or (v >= v_ma * vol_multiplier) or (v == 0) // v == 0 fallback if exchange provides no tick volume
+    vol_ok = not use_volume_filter or (v >= v_ma * vol_multiplier) or (v == 0)
 
     [di_p, di_m, adx_val] = ta.dmi(adx_len, adx_len)
     adx_rising = adx_val > adx_val[1]
     rsi_val = ta.rsi(c, rsi_len)
     atr_val = ta.atr(14)
 
-    // Anti-Exhaustion Filter:
-    // Do NOT initiate Short if RSI is already oversold (< 35)
-    // Do NOT initiate Long if RSI is already overbought (> 65)
-    rsi_short_healthy = rsi_val >= 35.0 and rsi_val <= 50.0
-    rsi_long_healthy  = rsi_val >= 50.0 and rsi_val <= 65.0
+    // Anti-Exhaustion:
+    // Strictly forbid Short if RSI < 35 (already oversold)
+    // Strictly forbid Long if RSI > 65 (already overbought)
+    rsi_short_healthy = rsi_val >= 35.0 and rsi_val <= 52.0
+    rsi_long_healthy  = rsi_val >= 48.0 and rsi_val <= 65.0
 
-    // Anti-Wick Solid Body Filter:
     rng = h - l
     body_ratio_long  = rng > 0 ? (c - l) / rng : 0.5
     body_ratio_short = rng > 0 ? (h - c) / rng : 0.5
@@ -130,7 +132,6 @@ f_calculate_1h_state() =>
     cond_long  = cross_long  and (c > ema200) and (ema20 > ema50) and (adx_val >= adx_min) and adx_rising and rsi_long_healthy  and vol_ok and (body_ratio_long >= min_body_ratio)
     cond_short = cross_short and (c < ema200) and (ema20 < ema50) and (adx_val >= adx_min) and adx_rising and rsi_short_healthy and vol_ok and (body_ratio_short >= min_body_ratio)
 
-    // Institutional Order Block origin:
     var float ob_hl = na
     var float ob_ll = na
     ob_hl := h[1]
@@ -161,9 +162,8 @@ f_calculate_1h_state() =>
      lookahead=barmerge.lookahead_off
      )
 
-// Completed 1H bar setup:
-h1_long_setup  = raw_long[1] and d1_bullish
-h1_short_setup = raw_short[1] and d1_bearish
+h1_long_setup    = raw_long[1] and d1_bullish
+h1_short_setup   = raw_short[1] and d1_bearish
 h1_atr_confirmed = raw_atr[1]
 h1_adx_confirmed = raw_adx[1]
 h1_rsi_confirmed = raw_rsi[1]
@@ -171,8 +171,8 @@ h1_ob_hl_confirmed = raw_ob_hl[1]
 h1_ob_ll_confirmed = raw_ob_ll[1]
 h1_ob_hs_confirmed = raw_ob_hs[1]
 h1_ob_ls_confirmed = raw_ob_ls[1]
-h1_high_confirmed = raw_h[1]
-h1_low_confirmed  = raw_l[1]
+h1_high_confirmed  = raw_h[1]
+h1_low_confirmed   = raw_l[1]
 
 is_sub_1h = timeframe.isintraday and timeframe.multiplier < 60
 is_new_1h_bar = ta.change(time(sig_tf)) != 0
@@ -180,17 +180,17 @@ h1_pulse = is_sub_1h ? is_new_1h_bar : barstate.isconfirmed
 
 in_session = not session_filter_enabled or not na(time(timeframe.period, allowed_session + ":1234567"))
 
-// 15m Lower Timeframe Fair Value Gap (FVG)
+// 15m Fair Value Gap (FVG)
 ltf_fvg_bearish = high < low[2]
 ltf_fvg_bear_bottom = high
 ltf_fvg_bullish = low > high[2]
 ltf_fvg_bull_top = low
 
 // =============================================================================
-// STRICT 1-TRADE STATE MACHINE WITH STRUCTURAL COOLDOWN
+// STRICT 1-TRADE STATE MACHINE (LOCKED UNTIL EXIT)
 // =============================================================================
-var int active_trade_state = 0   // 0 = Flat, 1 = Long, -1 = Short
-var int setup_hunting = 0        // 0 = None, 1 = Hunting Long OTE, -1 = Hunting Short OTE
+var int active_trade_state = 0   // 0 = Flat, 1 = In Long, -1 = In Short
+var int setup_hunting = 0        // 0 = None, 1 = Hunting Long, -1 = Hunting Short
 var int hunting_start_bar = na
 var int trade_entry_bar = na
 var int last_trade_exit_bar = -999
@@ -200,24 +200,29 @@ var float hunt_ob_l = na
 var float hunt_fib_50 = na
 var float hunt_atr = na
 
-var float entry_price = na
-var float structural_sl = na
-var float target_tp = na
-var float suggested_lots = na
+// FIXED IMMUTABLE TRADE LEVELS FOR CURRENT ACTIVE TRADE
+var float fixed_entry = na
+var float fixed_sl = na
+var float fixed_tp = na
+var float fixed_lots = na
+var float fixed_pips_sl = na
+var float fixed_pips_tp = na
 
-// Active Graphic Objects
-var box   live_ob_box = na
-var line  live_entry_line = na
-var line  live_sl_line = na
-var line  live_tp_line = na
+// Handles to the ACTIVE trade's graphic objects (independent per trade)
+var line cur_entry_line = na
+var line cur_sl_line = na
+var line cur_tp_line = na
+var box  cur_ob_box = na
 
-// Dynamic Price Formatting & Lots
+// Precision & Units
 is_gold = str.contains(syminfo.ticker, "XAU")
 is_jpy = str.contains(syminfo.ticker, "JPY")
 is_usd_base = (str.startswith(syminfo.ticker, "USD") or str.contains(syminfo.ticker, ":USD")) and not is_gold
 is_gold_or_jpy = is_gold or is_jpy
 p_fmt = is_gold_or_jpy ? "#.##" : "#.#####"
 pip_unit = is_gold_or_jpy ? 0.01 : 0.0001
+min_sl_dist = min_sl_pips_input * pip_unit
+
 risk_cash = account_size_input * (risk_pct / 100.0)
 
 f_calc_units(sl_dist) =>
@@ -232,7 +237,7 @@ f_calc_units(sl_dist) =>
     units
 
 // =============================================================================
-// STEP 1: INITIATE SETUP HUNTING (1H DISPLACEMENT OCCURS)
+// STEP 1: DETECT 1H SETUP (CAN ONLY HUNT IF FLAT & COOLDOWN SATISFIED)
 // =============================================================================
 can_hunt = (active_trade_state == 0) and (setup_hunting == 0) and in_session and h1_pulse and ((bar_index - last_trade_exit_bar) >= cooldown_bars)
 
@@ -257,20 +262,19 @@ if can_hunt
         swing_h = h1_high_confirmed
         hunt_fib_50 := swing_h - (0.50 * (swing_h - swing_l))
 
-// Invalidate hunting if price wanders off without retracing within timeout
+// Invalidate hunting if price wanders off without retracing
 if (setup_hunting != 0) and ((bar_index - hunting_start_bar) > max_hunting_bars)
     setup_hunting := 0
 
 // =============================================================================
-// STEP 2: LOWER TIMEFRAME (15m) ENTRY REFINEMENT & CONFIRMATION
+// STEP 2: LOWER TIMEFRAME (15m) ENTRY REFINEMENT & FIXED SL/TP ASSIGNMENT
 // =============================================================================
 sig_long_fired = false
 sig_short_fired = false
 
-// 15m Volume confirmation:
 ltf_vol_ok = volume >= (ta.sma(volume, 14) * 0.85) or (volume == 0)
 
-// HUNTING SHORT TRIGGER:
+// TRIGGER SHORT: Retraces into Premium (tested 50% Fib, -OB, or FVG) + Bearish Rejection
 if (active_trade_state == 0) and (setup_hunting == -1) and in_session
     retrace_into_premium = (high >= hunt_fib_50) or (high >= hunt_ob_l) or (ltf_fvg_bearish and high >= ltf_fvg_bear_bottom)
     rejection_confirmed = (close < open) and (close < low[1]) and ltf_vol_ok
@@ -281,32 +285,39 @@ if (active_trade_state == 0) and (setup_hunting == -1) and in_session
         trade_entry_bar := bar_index
         sig_short_fired := true
 
-        entry_price := close
-        structural_sl := math.max(hunt_ob_h, high[1]) + (hunt_atr * sl_atr_buffer)
-        risk_dist = structural_sl - entry_price
-        target_tp := entry_price - (risk_dist * rr_ratio)
+        // FIXED ENTRY:
+        fixed_entry := close
 
-        sl_distance = math.abs(structural_sl - entry_price)
-        trade_units = f_calc_units(sl_distance)
-        suggested_lots := is_gold ? math.max(0.01, math.round(trade_units / 100.0, 2)) : math.max(0.01, math.round(trade_units / 100000.0, 2))
+        // PROPER STRUCTURAL STOP LOSS: Strictly anchored beyond the 1H Order Block High
+        raw_sl = hunt_ob_h + (hunt_atr * sl_atr_buffer)
+        calc_dist = raw_sl - fixed_entry
+        actual_sl_dist = math.max(calc_dist, min_sl_dist)
+        fixed_sl := fixed_entry + actual_sl_dist
 
-        pips_sl = math.abs(structural_sl - entry_price) / pip_unit
-        pips_tp = math.abs(entry_price - target_tp) / pip_unit
-        calc_rr = math.round(pips_tp / math.max(pips_sl, 0.1), 1)
+        // FIXED TAKE PROFIT TARGET: Strictly fixed based on entry and structural risk
+        risk_dist = fixed_sl - fixed_entry
+        fixed_tp := fixed_entry - (risk_dist * rr_ratio)
 
-        // Draw Rich Signal Label directly on the candle
-        lbl_text = "▼ SELL @" + str.tostring(entry_price, p_fmt) + "\n" +
-                   "SL: " + str.tostring(structural_sl, p_fmt) + " (-" + str.tostring(pips_sl, "#.#") + " p)\n" +
-                   "TP: " + str.tostring(target_tp, p_fmt) + " (+" + str.tostring(pips_tp, "#.#") + " p | 1:" + str.tostring(calc_rr, "#.#") + ")\n" +
-                   "Lots: " + str.tostring(suggested_lots, "#.##")
+        // Sizing
+        trade_units = f_calc_units(risk_dist)
+        fixed_lots := is_gold ? math.max(0.01, math.round(trade_units / 100.0, 2)) : math.max(0.01, math.round(trade_units / 100000.0, 2))
+
+        fixed_pips_sl := math.round(risk_dist / pip_unit, 1)
+        fixed_pips_tp := math.round((fixed_entry - fixed_tp) / pip_unit, 1)
+
+        // Draw Rich Signal Label directly on the execution candle
+        lbl_text = "▼ SELL @" + str.tostring(fixed_entry, p_fmt) + "\n" +
+                   "SL: " + str.tostring(fixed_sl, p_fmt) + " (-" + str.tostring(fixed_pips_sl, "#.#") + " p)\n" +
+                   "TP: " + str.tostring(fixed_tp, p_fmt) + " (+" + str.tostring(fixed_pips_tp, "#.#") + " p | 1:" + str.tostring(rr_ratio, "#.#") + ")\n" +
+                   "Lots: " + str.tostring(fixed_lots, "#.##")
 
         label.new(bar_index, high + (pip_unit * 12), text=lbl_text, style=label.style_label_down, color=color.new(#9f1239, 0), textcolor=color.white, size=size.normal)
 
-        // Draw Order Block Box
-        live_ob_box := box.new(
-             left=bar_index - 8,
+        // Create independent, isolated trade lines & Order Block box for this trade:
+        cur_ob_box := box.new(
+             left=bar_index - 6,
              top=hunt_ob_h,
-             right=bar_index + 8,
+             right=bar_index + 1,
              bottom=hunt_ob_l,
              border_color=color.new(#ef4444, 20),
              border_width=1,
@@ -316,12 +327,11 @@ if (active_trade_state == 0) and (setup_hunting == -1) and in_session
              text_size=size.small
              )
 
-        // Draw Trade Levels (Entry, SL, TP)
-        live_entry_line := line.new(bar_index, entry_price, bar_index + 8, entry_price, color=color.new(#0284c7, 0), width=2, style=line.style_dashed)
-        live_sl_line    := line.new(bar_index, structural_sl, bar_index + 8, structural_sl, color=color.new(#e11d48, 0), width=2, style=line.style_solid)
-        live_tp_line    := line.new(bar_index, target_tp, bar_index + 8, target_tp, color=color.new(#059669, 0), width=2, style=line.style_solid)
+        cur_entry_line := line.new(bar_index, fixed_entry, bar_index + 1, fixed_entry, color=color.new(#0284c7, 0), width=2, style=line.style_dashed)
+        cur_sl_line    := line.new(bar_index, fixed_sl, bar_index + 1, fixed_sl, color=color.new(#e11d48, 0), width=2, style=line.style_solid)
+        cur_tp_line    := line.new(bar_index, fixed_tp, bar_index + 1, fixed_tp, color=color.new(#059669, 0), width=2, style=line.style_solid)
 
-// HUNTING LONG TRIGGER:
+// TRIGGER LONG: Retraces into Discount + Bullish Rejection
 if (active_trade_state == 0) and (setup_hunting == 1) and in_session
     retrace_into_discount = (low <= hunt_fib_50) or (low <= hunt_ob_h) or (ltf_fvg_bullish and low <= ltf_fvg_bull_top)
     rejection_confirmed = (close > open) and (close > high[1]) and ltf_vol_ok
@@ -332,30 +342,33 @@ if (active_trade_state == 0) and (setup_hunting == 1) and in_session
         trade_entry_bar := bar_index
         sig_long_fired := true
 
-        entry_price := close
-        structural_sl := math.min(hunt_ob_l, low[1]) - (hunt_atr * sl_atr_buffer)
-        risk_dist = entry_price - structural_sl
-        target_tp := entry_price + (risk_dist * rr_ratio)
+        fixed_entry := close
 
-        sl_distance = math.abs(entry_price - structural_sl)
-        trade_units = f_calc_units(sl_distance)
-        suggested_lots := is_gold ? math.max(0.01, math.round(trade_units / 100.0, 2)) : math.max(0.01, math.round(trade_units / 100000.0, 2))
+        raw_sl = hunt_ob_l - (hunt_atr * sl_atr_buffer)
+        calc_dist = fixed_entry - raw_sl
+        actual_sl_dist = math.max(calc_dist, min_sl_dist)
+        fixed_sl := fixed_entry - actual_sl_dist
 
-        pips_sl = math.abs(entry_price - structural_sl) / pip_unit
-        pips_tp = math.abs(target_tp - entry_price) / pip_unit
-        calc_rr = math.round(pips_tp / math.max(pips_sl, 0.1), 1)
+        risk_dist = fixed_entry - fixed_sl
+        fixed_tp := fixed_entry + (risk_dist * rr_ratio)
 
-        lbl_text = "▲ BUY @" + str.tostring(entry_price, p_fmt) + "\n" +
-                   "SL: " + str.tostring(structural_sl, p_fmt) + " (-" + str.tostring(pips_sl, "#.#") + " p)\n" +
-                   "TP: " + str.tostring(target_tp, p_fmt) + " (+" + str.tostring(pips_tp, "#.#") + " p | 1:" + str.tostring(calc_rr, "#.#") + ")\n" +
-                   "Lots: " + str.tostring(suggested_lots, "#.##")
+        trade_units = f_calc_units(risk_dist)
+        fixed_lots := is_gold ? math.max(0.01, math.round(trade_units / 100.0, 2)) : math.max(0.01, math.round(trade_units / 100000.0, 2))
+
+        fixed_pips_sl := math.round(risk_dist / pip_unit, 1)
+        fixed_pips_tp := math.round((fixed_tp - fixed_entry) / pip_unit, 1)
+
+        lbl_text = "▲ BUY @" + str.tostring(fixed_entry, p_fmt) + "\n" +
+                   "SL: " + str.tostring(fixed_sl, p_fmt) + " (-" + str.tostring(fixed_pips_sl, "#.#") + " p)\n" +
+                   "TP: " + str.tostring(fixed_tp, p_fmt) + " (+" + str.tostring(fixed_pips_tp, "#.#") + " p | 1:" + str.tostring(rr_ratio, "#.#") + ")\n" +
+                   "Lots: " + str.tostring(fixed_lots, "#.##")
 
         label.new(bar_index, low - (pip_unit * 12), text=lbl_text, style=label.style_label_up, color=color.new(#065f46, 0), textcolor=color.white, size=size.normal)
 
-        live_ob_box := box.new(
-             left=bar_index - 8,
+        cur_ob_box := box.new(
+             left=bar_index - 6,
              top=hunt_ob_h,
-             right=bar_index + 8,
+             right=bar_index + 1,
              bottom=hunt_ob_l,
              border_color=color.new(#10b981, 20),
              border_width=1,
@@ -365,64 +378,66 @@ if (active_trade_state == 0) and (setup_hunting == 1) and in_session
              text_size=size.small
              )
 
-        live_entry_line := line.new(bar_index, entry_price, bar_index + 8, entry_price, color=color.new(#0284c7, 0), width=2, style=line.style_dashed)
-        live_sl_line    := line.new(bar_index, structural_sl, bar_index + 8, structural_sl, color=color.new(#e11d48, 0), width=2, style=line.style_solid)
-        live_tp_line    := line.new(bar_index, target_tp, bar_index + 8, target_tp, color=color.new(#059669, 0), width=2, style=line.style_solid)
+        cur_entry_line := line.new(bar_index, fixed_entry, bar_index + 1, fixed_entry, color=color.new(#0284c7, 0), width=2, style=line.style_dashed)
+        cur_sl_line    := line.new(bar_index, fixed_sl, bar_index + 1, fixed_sl, color=color.new(#e11d48, 0), width=2, style=line.style_solid)
+        cur_tp_line    := line.new(bar_index, fixed_tp, bar_index + 1, fixed_tp, color=color.new(#059669, 0), width=2, style=line.style_solid)
 
 // =============================================================================
-// STEP 3: ACTIVE TRADE LIFECYCLE (MONITORING UNTIL TP OR SL HIT)
+// STEP 3: ACTIVE TRADE LIFECYCLE (MONITORING UNTIL EXACT FIXED TP OR SL IS HIT)
 // =============================================================================
 if (active_trade_state != 0) and not sig_long_fired and not sig_short_fired
-    // Extend trade lines to follow current price
-    if not na(live_ob_box)
-        box.set_right(live_ob_box, bar_index + 4)
-    if not na(live_entry_line)
-        line.set_x2(live_entry_line, bar_index + 4)
-    if not na(live_sl_line)
-        line.set_x2(live_sl_line, bar_index + 4)
-    if not na(live_tp_line)
-        line.set_x2(live_tp_line, bar_index + 4)
+    // Extend current trade lines forward horizontally with price (y-levels NEVER change!)
+    if not na(cur_ob_box)
+        box.set_right(cur_ob_box, bar_index)
+    if not na(cur_entry_line)
+        line.set_x2(cur_entry_line, bar_index)
+    if not na(cur_sl_line)
+        line.set_x2(cur_sl_line, bar_index)
+    if not na(cur_tp_line)
+        line.set_x2(cur_tp_line, bar_index)
 
-    trade_finished = false
+    trade_concluded = false
 
-    // Long Outcome Check
+    // Long Trade Exit Check:
     if active_trade_state == 1
-        if high >= target_tp
-            trade_finished := true
-            p_won = math.abs(target_tp - entry_price) / pip_unit
-            label.new(bar_index, high + (pip_unit * 8), text="🎯 TP HIT\n+" + str.tostring(p_won, "#.#") + " p", style=label.style_label_down, color=color.new(#059669, 0), textcolor=color.white, size=size.small)
-        else if low <= structural_sl
-            trade_finished := true
-            p_lost = math.abs(entry_price - structural_sl) / pip_unit
-            label.new(bar_index, low - (pip_unit * 8), text="🛑 SL HIT\n-" + str.tostring(p_lost, "#.#") + " p", style=label.style_label_up, color=color.new(#e11d48, 0), textcolor=color.white, size=size.small)
+        if high >= fixed_tp
+            trade_concluded := true
+            label.new(bar_index, high + (pip_unit * 8), text="🎯 TP HIT\n+" + str.tostring(fixed_pips_tp, "#.#") + " p", style=label.style_label_down, color=color.new(#059669, 0), textcolor=color.white, size=size.small)
+        else if low <= fixed_sl
+            trade_concluded := true
+            label.new(bar_index, low - (pip_unit * 8), text="🛑 SL HIT\n-" + str.tostring(fixed_pips_sl, "#.#") + " p", style=label.style_label_up, color=color.new(#e11d48, 0), textcolor=color.white, size=size.small)
         else if (bar_index - trade_entry_bar) >= max_trade_bars
-            trade_finished := true
+            trade_concluded := true
 
-    // Short Outcome Check
+    // Short Trade Exit Check:
     else if active_trade_state == -1
-        if low <= target_tp
-            trade_finished := true
-            p_won = math.abs(entry_price - target_tp) / pip_unit
-            label.new(bar_index, low - (pip_unit * 8), text="🎯 TP HIT\n+" + str.tostring(p_won, "#.#") + " p", style=label.style_label_up, color=color.new(#059669, 0), textcolor=color.white, size=size.small)
-        else if high >= structural_sl
-            trade_finished := true
-            p_lost = math.abs(structural_sl - entry_price) / pip_unit
-            label.new(bar_index, high + (pip_unit * 8), text="🛑 SL HIT\n-" + str.tostring(p_lost, "#.#") + " p", style=label.style_label_down, color=color.new(#e11d48, 0), textcolor=color.white, size=size.small)
+        if low <= fixed_tp
+            trade_concluded := true
+            label.new(bar_index, low - (pip_unit * 8), text="🎯 TP HIT\n+" + str.tostring(fixed_pips_tp, "#.#") + " p", style=label.style_label_up, color=color.new(#059669, 0), textcolor=color.white, size=size.small)
+        else if high >= fixed_sl
+            trade_concluded := true
+            label.new(bar_index, high + (pip_unit * 8), text="🛑 SL HIT\n-" + str.tostring(fixed_pips_sl, "#.#") + " p", style=label.style_label_down, color=color.new(#e11d48, 0), textcolor=color.white, size=size.small)
         else if (bar_index - trade_entry_bar) >= max_trade_bars
-            trade_finished := true
+            trade_concluded := true
 
-    if trade_finished
-        // Lock endpoints to exit bar
-        if not na(live_ob_box)
-            box.set_right(live_ob_box, bar_index)
-        if not na(live_entry_line)
-            line.set_x2(live_entry_line, bar_index)
-        if not na(live_sl_line)
-            line.set_x2(live_sl_line, bar_index)
-        if not na(live_tp_line)
-            line.set_x2(live_tp_line, bar_index)
+    if trade_concluded
+        // Finalize line endpoints permanently at the exit candle:
+        if not na(cur_ob_box)
+            box.set_right(cur_ob_box, bar_index)
+        if not na(cur_entry_line)
+            line.set_x2(cur_entry_line, bar_index)
+        if not na(cur_sl_line)
+            line.set_x2(cur_sl_line, bar_index)
+        if not na(cur_tp_line)
+            line.set_x2(cur_tp_line, bar_index)
 
-        // Reset state & initiate cooldown
+        // Detach active handles so they remain frozen as historical record
+        cur_entry_line := na
+        cur_sl_line := na
+        cur_tp_line := na
+        cur_ob_box := na
+
+        // Reset state to Flat & start cooldown
         active_trade_state := 0
         last_trade_exit_bar := bar_index
 
@@ -431,7 +446,6 @@ if (active_trade_state != 0) and not sig_long_fired and not sig_short_fired
 // =============================================================================
 f_build_json(is_long) =>
     dir_str = is_long ? "LONG" : "SHORT"
-    calc_rr = (structural_sl != entry_price) ? math.abs(target_tp - entry_price) / math.abs(entry_price - structural_sl) : rr_ratio
 
     "{" +
      "\"event\":\"forex_signal\"," +
@@ -443,16 +457,16 @@ f_build_json(is_long) =>
      "\"direction\":\"" + dir_str + "\"," +
      "\"signal_time\":\"" + str.format_time(time, "yyyy-MM-dd'T'HH:mm:ss'Z'", "UTC") + "\"," +
      "\"price\":" + str.tostring(close, p_fmt) + "," +
-     "\"entry\":" + str.tostring(entry_price, p_fmt) + "," +
-     "\"stop_loss\":" + str.tostring(structural_sl, p_fmt) + "," +
-     "\"take_profit\":" + str.tostring(target_tp, p_fmt) + "," +
-     "\"risk_reward\":" + str.tostring(calc_rr, "#.#") + "," +
+     "\"entry\":" + str.tostring(fixed_entry, p_fmt) + "," +
+     "\"stop_loss\":" + str.tostring(fixed_sl, p_fmt) + "," +
+     "\"take_profit\":" + str.tostring(fixed_tp, p_fmt) + "," +
+     "\"risk_reward\":" + str.tostring(rr_ratio, "#.#") + "," +
      "\"signal_score\":95," +
      "\"adx\":" + str.tostring(h1_adx_confirmed, "#.##") + "," +
      "\"rsi\":" + str.tostring(h1_rsi_confirmed, "#.##") + "," +
      "\"atr\":" + str.tostring(h1_atr_confirmed, p_fmt) + "," +
      "\"roc\":0.35," +
-     "\"suggested_lots\":" + str.tostring(suggested_lots, "#.##") + "," +
+     "\"suggested_lots\":" + str.tostring(fixed_lots, "#.##") + "," +
      "\"risk_percent\":" + str.tostring(risk_pct, "#.#") + "," +
      "\"entry_type\":\"ICT_OTE_REFINEMENT\"," +
      "\"htf_regime\":\"" + (is_long ? "BULLISH" : "BEARISH") + "\"," +
