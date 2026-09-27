@@ -163,4 +163,88 @@ def test_gold_toxic_hours_rejection():
     assert is_valid_ok, f"Failed for valid Gold hour: {reason_ok}"
 
 
+def test_friday_cutoff_gold_vs_forex():
+    settings = Settings()
+    validator = SignalValidator(settings)
+
+    # 1. EURUSD Friday 11:00 UTC (Before 12:00 UTC cutoff -> PERMITTED)
+    p_eur_allowed = SignalPayload(
+        symbol="EURUSD",
+        direction="LONG",
+        signal_time="2026-03-13T11:00:00Z",  # Friday
+        price=1.0850,
+        entry=1.0850,
+        stop_loss=1.0830,
+        take_profit=1.0890,
+        signal_score=85.0,
+        adx=25.0,
+        atr=0.0010,
+        roc=0.5,
+        htf_regime="BULLISH",
+        webhook_secret="test-secret-key-12345",
+    )
+    ok_eur, _ = validator.validate(p_eur_allowed)
+    assert ok_eur
+
+    # 2. EURUSD Friday 13:00 UTC (After 12:00 UTC cutoff -> BLOCKED)
+    p_eur_blocked = SignalPayload(
+        symbol="EURUSD",
+        direction="LONG",
+        signal_time="2026-03-13T13:00:00Z",  # Friday
+        price=1.0850,
+        entry=1.0850,
+        stop_loss=1.0830,
+        take_profit=1.0890,
+        signal_score=85.0,
+        adx=25.0,
+        atr=0.0010,
+        roc=0.5,
+        htf_regime="BULLISH",
+        webhook_secret="test-secret-key-12345",
+    )
+    ok_eur_bl, reason_eur = validator.validate(p_eur_blocked)
+    assert not ok_eur_bl
+    assert "Friday PM cutoff active" in reason_eur
+
+    # 3. XAUUSD Friday 13:00 UTC (Allowed under Gold 15:00 UTC cutoff -> PERMITTED)
+    p_gold_allowed = SignalPayload(
+        symbol="XAUUSD",
+        direction="LONG",
+        signal_time="2026-03-13T13:00:00Z",  # Friday
+        price=2150.0,
+        entry=2150.0,
+        stop_loss=2130.0,
+        take_profit=2185.0,
+        signal_score=85.0,
+        adx=25.0,
+        atr=5.0,
+        roc=0.5,
+        htf_regime="BULLISH",
+        webhook_secret="test-secret-key-12345",
+    )
+    ok_gold, _ = validator.validate(p_gold_allowed)
+    assert ok_gold
+
+    # 4. XAUUSD Friday 17:00 UTC (Exceeds Gold 15:00 UTC cutoff -> BLOCKED)
+    p_gold_blocked = SignalPayload(
+        symbol="XAUUSD",
+        direction="LONG",
+        signal_time="2026-03-13T17:00:00Z",  # Friday
+        price=2150.0,
+        entry=2150.0,
+        stop_loss=2130.0,
+        take_profit=2185.0,
+        signal_score=85.0,
+        adx=25.0,
+        atr=5.0,
+        roc=0.5,
+        htf_regime="BULLISH",
+        webhook_secret="test-secret-key-12345",
+    )
+    ok_gold_bl, reason_gold = validator.validate(p_gold_blocked)
+    assert not ok_gold_bl
+    assert "Friday PM cutoff active" in reason_gold
+
+
+
 

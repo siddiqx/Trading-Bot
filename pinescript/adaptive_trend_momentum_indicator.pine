@@ -210,7 +210,8 @@ cur_hour_utc = hour(time, "UTC")
 is_fri       = (cur_wday == dayofweek.friday)
 is_mon       = (cur_wday == dayofweek.monday)
 
-is_fri_pm_blocked  = filter_friday_pm and is_fri and (cur_hour_utc >= 12)
+is_fri_pm_cutoff   = is_gold ? 15 : 12
+is_fri_pm_blocked  = filter_friday_pm and is_fri and (cur_hour_utc >= is_fri_pm_cutoff)
 is_full_fri_blocked= filter_full_friday and is_fri
 is_mon_am_blocked  = filter_monday_am and is_mon and (cur_hour_utc < 12)
 wday_allowed       = not is_fri_pm_blocked and not is_full_fri_blocked and not is_mon_am_blocked

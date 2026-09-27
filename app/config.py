@@ -65,6 +65,12 @@ class Settings(BaseSettings):
     GOLD_SL_ATR_BUFFER: float = 0.35
     GOLD_TOXIC_HOURS_FILTER: bool = True
     GOLD_TOXIC_HOURS: List[int] = [0, 4, 15, 16, 19]
+    GOLD_FRIDAY_CUTOFF_HOUR: int = 15
+    FOREX_FRIDAY_CUTOFF_HOUR: int = 12
+
+    # Prop Firm Challenge Acceleration Sizing (Asymmetric)
+    PROP_PHASE_1_RISK_PCT: float = 1.25  # Reduces Phase 1 time by ~20-50% safely
+    PROP_PHASE_2_RISK_PCT: float = 1.00  # Conservative drawdown preservation
 
     # Supported Symbols - Strictly Verified Institutional Whitelist
     SUPPORTED_SYMBOLS: List[str] = [

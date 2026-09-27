@@ -100,6 +100,21 @@ class SignalValidator:
             except Exception as e:
                 logger.debug(f"Unable to parse timestamp for Gold toxic hour check: {e}")
 
+        # 1c. Friday Cutoff Filter (12:00 UTC for Forex, 15:00 UTC for Gold)
+        try:
+            sig_str = str(payload.signal_time)
+            if sig_str.isdigit():
+                dt = datetime.fromtimestamp(int(sig_str) / 1000.0, tz=timezone.utc)
+            else:
+                dt = datetime.fromisoformat(sig_str.replace("Z", "+00:00"))
+            if dt.weekday() == 4:  # Friday
+                is_gold = "XAU" in payload.symbol or "GOLD" in payload.symbol.upper()
+                cutoff = self.settings.GOLD_FRIDAY_CUTOFF_HOUR if is_gold else self.settings.FOREX_FRIDAY_CUTOFF_HOUR
+                if dt.hour >= cutoff:
+                    return False, f"Friday PM cutoff active: Signal at {dt.hour:02d}:00 UTC reaches or exceeds {payload.symbol} Friday cutoff ({cutoff:02d}:00 UTC)."
+        except Exception as e:
+            logger.debug(f"Unable to parse timestamp for Friday cutoff check: {e}")
+
         # 2. ADX minimum threshold check
         if payload.adx < self.settings.DEFAULT_ADX_MIN:
             return False, f"ADX value ({payload.adx}) is below minimum threshold ({self.settings.DEFAULT_ADX_MIN})."
