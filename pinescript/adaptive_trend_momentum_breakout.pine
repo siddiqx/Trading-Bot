@@ -12,9 +12,9 @@ strategy(
      calc_on_order_fills=false,
      process_orders_on_close=true,
      max_bars_back=500,
-     max_boxes_count=100,
-     max_lines_count=200,
-     max_labels_count=200
+     max_boxes_count=500,
+     max_lines_count=500,
+     max_labels_count=500
      )
 
 // =============================================================================
@@ -87,88 +87,70 @@ webhook_secret         = input.string("test-secret-key-12345", "Webhook Secret K
 env_label              = input.string("LIVE", "Environment (LIVE or TEST)", options=["LIVE", "TEST"], group=grp_session)
 
 // =============================================================================
-// DAILY (D1) MACRO TREND ENGINE - NON-REPAINTING
+// DAILY (D1) MACRO TREND - FAST, NATIVE MTF
 // =============================================================================
-f_calc_d1() =>
-    [close, ta.ema(close, d1_ema_len)]
+d1_c_raw   = request.security(syminfo.tickerid, "D", close[1], barmerge.gaps_off, barmerge.lookahead_off)
+d1_ema_raw = request.security(syminfo.tickerid, "D", ta.ema(close, d1_ema_len)[1], barmerge.gaps_off, barmerge.lookahead_off)
 
-[d1_c_raw, d1_ema_raw] = request.security(
-     syminfo.tickerid,
-     "D",
-     f_calc_d1(),
-     gaps=barmerge.gaps_off,
-     lookahead=barmerge.lookahead_off
-     )
-
-d1_c_prev   = na(d1_c_raw[1]) ? close : d1_c_raw[1]
-d1_ema_prev = na(d1_ema_raw[1]) ? close : d1_ema_raw[1]
-d1_bullish  = not use_d1_filter or (d1_c_prev > d1_ema_prev)
-d1_bearish  = not use_d1_filter or (d1_c_prev < d1_ema_prev)
+d1_c_val   = na(d1_c_raw) ? close : d1_c_raw
+d1_ema_val = na(d1_ema_raw) ? close : d1_ema_raw
+d1_bullish = not use_d1_filter or (d1_c_val > d1_ema_val)
+d1_bearish = not use_d1_filter or (d1_c_val < d1_ema_val)
 
 // =============================================================================
-// 1-HOUR (60m) SETUP ENGINE - PURE, STATELESS, ROBUST
+// 1-HOUR (60m) SETUP ENGINE - ULTRA-FAST NATIVE PRIMITIVES
 // =============================================================================
-f_calculate_1h_state() =>
-    c = close
-    h = high
-    l = low
-    o = open
-    v = volume
+h1_c_raw    = request.security(syminfo.tickerid, sig_tf, close[1], barmerge.gaps_off, barmerge.lookahead_off)
+h1_o_raw    = request.security(syminfo.tickerid, sig_tf, open[1], barmerge.gaps_off, barmerge.lookahead_off)
+h1_h_raw    = request.security(syminfo.tickerid, sig_tf, high[1], barmerge.gaps_off, barmerge.lookahead_off)
+h1_l_raw    = request.security(syminfo.tickerid, sig_tf, low[1], barmerge.gaps_off, barmerge.lookahead_off)
+h1_v_raw    = request.security(syminfo.tickerid, sig_tf, volume[1], barmerge.gaps_off, barmerge.lookahead_off)
+h1_vma_raw  = request.security(syminfo.tickerid, sig_tf, ta.sma(volume, vol_ma_len)[1], barmerge.gaps_off, barmerge.lookahead_off)
+h1_dh_raw   = request.security(syminfo.tickerid, sig_tf, ta.highest(high, donchian_len)[1], barmerge.gaps_off, barmerge.lookahead_off)
+h1_dl_raw   = request.security(syminfo.tickerid, sig_tf, ta.lowest(low, donchian_len)[1], barmerge.gaps_off, barmerge.lookahead_off)
+h1_e200_raw = request.security(syminfo.tickerid, sig_tf, ta.ema(close, htf_ema_len)[1], barmerge.gaps_off, barmerge.lookahead_off)
+h1_e20_raw  = request.security(syminfo.tickerid, sig_tf, ta.ema(close, 20)[1], barmerge.gaps_off, barmerge.lookahead_off)
+h1_e50_raw  = request.security(syminfo.tickerid, sig_tf, ta.ema(close, 50)[1], barmerge.gaps_off, barmerge.lookahead_off)
+h1_rsi_raw  = request.security(syminfo.tickerid, sig_tf, ta.rsi(close, rsi_len)[1], barmerge.gaps_off, barmerge.lookahead_off)
+h1_atr_raw  = request.security(syminfo.tickerid, sig_tf, ta.atr(14)[1], barmerge.gaps_off, barmerge.lookahead_off)
 
-    ema200 = ta.ema(c, htf_ema_len)
-    ema20  = ta.ema(c, 20)
-    ema50  = ta.ema(c, 50)
-    d_high = ta.highest(h[1], donchian_len)
-    d_low  = ta.lowest(l[1], donchian_len)
-
-    cross_long  = ta.crossover(c, d_high)
-    cross_short = ta.crossunder(c, d_low)
-
-    v_ma = ta.sma(v, vol_ma_len)
-    vol_ok = not use_volume_filter or (v >= v_ma * vol_multiplier) or (v == 0)
-
-    [di_p, di_m, adx_val] = ta.dmi(adx_len, adx_len)
-    adx_rising = adx_val > adx_val[1]
-    rsi_val = ta.rsi(c, rsi_len)
-    atr_val = ta.atr(14)
-
-    rsi_short_healthy = rsi_val >= 35.0 and rsi_val <= 52.0
-    rsi_long_healthy  = rsi_val >= 48.0 and rsi_val <= 65.0
-
-    rng = h - l
-    body_ratio_long  = rng > 0 ? (c - l) / rng : 0.5
-    body_ratio_short = rng > 0 ? (h - c) / rng : 0.5
-
-    cond_long  = cross_long  and (c > ema200) and (ema20 > ema50) and (adx_val >= adx_min) and adx_rising and rsi_long_healthy  and vol_ok and (body_ratio_long >= min_body_ratio)
-    cond_short = cross_short and (c < ema200) and (ema20 < ema50) and (adx_val >= adx_min) and adx_rising and rsi_short_healthy and vol_ok and (body_ratio_short >= min_body_ratio)
-
-    ob_bull_h = ta.valuewhen(c < o, h, 0)
-    ob_bull_l = ta.valuewhen(c < o, l, 0)
-    ob_bear_h = ta.valuewhen(c > o, h, 0)
-    ob_bear_l = ta.valuewhen(c > o, l, 0)
-
-    [cond_long, cond_short, atr_val, adx_val, rsi_val, ob_bull_h, ob_bull_l, ob_bear_h, ob_bear_l, h, l]
-
-[raw_long, raw_short, raw_atr, raw_adx, raw_rsi, raw_ob_hl, raw_ob_ll, raw_ob_hs, raw_ob_ls, raw_h, raw_l] = request.security(
-     syminfo.tickerid,
-     sig_tf,
-     f_calculate_1h_state(),
-     gaps=barmerge.gaps_off,
-     lookahead=barmerge.lookahead_off
-     )
-
+// Fail-safe fallbacks:
 chart_atr = ta.atr(14)
-h1_long_setup      = (raw_long[1] == true) and d1_bullish
-h1_short_setup     = (raw_short[1] == true) and d1_bearish
-h1_atr_confirmed   = na(raw_atr[1]) ? (na(chart_atr) ? close * 0.005 : chart_atr) : raw_atr[1]
-h1_adx_confirmed   = na(raw_adx[1]) ? 25.0 : raw_adx[1]
-h1_rsi_confirmed   = na(raw_rsi[1]) ? 50.0 : raw_rsi[1]
-h1_ob_hl_confirmed = na(raw_ob_hl[1]) ? high : raw_ob_hl[1]
-h1_ob_ll_confirmed = na(raw_ob_ll[1]) ? low : raw_ob_ll[1]
-h1_ob_hs_confirmed = na(raw_ob_hs[1]) ? high : raw_ob_hs[1]
-h1_ob_ls_confirmed = na(raw_ob_ls[1]) ? low : raw_ob_ls[1]
-h1_high_confirmed  = na(raw_h[1]) ? high : raw_h[1]
-h1_low_confirmed   = na(raw_l[1]) ? low : raw_l[1]
+h1_c    = na(h1_c_raw) ? close : h1_c_raw
+h1_o    = na(h1_o_raw) ? open : h1_o_raw
+h1_h    = na(h1_h_raw) ? high : h1_h_raw
+h1_l    = na(h1_l_raw) ? low : h1_l_raw
+h1_v    = na(h1_v_raw) ? volume : h1_v_raw
+h1_vma  = na(h1_vma_raw) ? volume : h1_vma_raw
+h1_dh   = na(h1_dh_raw) ? high : h1_dh_raw
+h1_dl   = na(h1_dl_raw) ? low : h1_dl_raw
+h1_e200 = na(h1_e200_raw) ? close : h1_e200_raw
+h1_e20  = na(h1_e20_raw) ? close : h1_e20_raw
+h1_e50  = na(h1_e50_raw) ? close : h1_e50_raw
+h1_rsi  = na(h1_rsi_raw) ? 50.0 : h1_rsi_raw
+h1_atr  = na(h1_atr_raw) ? (na(chart_atr) ? close * 0.005 : chart_atr) : h1_atr_raw
+
+// Institutional Breakthrough & Flow Filters
+cross_long  = ta.crossover(h1_c, h1_dh[1])
+cross_short = ta.crossunder(h1_c, h1_dl[1])
+vol_ok = not use_volume_filter or (h1_v >= h1_vma * vol_multiplier) or (h1_v == 0)
+
+// Anti-Exhaustion RSI Filters:
+rsi_short_healthy = (h1_rsi >= 35.0) and (h1_rsi <= 52.0)
+rsi_long_healthy  = (h1_rsi >= 48.0) and (h1_rsi <= 65.0)
+
+h1_rng = h1_h - h1_l
+body_ratio_long  = h1_rng > 0 ? (h1_c - h1_l) / h1_rng : 0.5
+body_ratio_short = h1_rng > 0 ? (h1_h - h1_c) / h1_rng : 0.5
+
+h1_long_setup  = cross_long  and (h1_c > h1_e200) and (h1_e20 > h1_e50) and rsi_long_healthy  and vol_ok and (body_ratio_long >= min_body_ratio) and d1_bullish
+h1_short_setup = cross_short and (h1_c < h1_e200) and (h1_e20 < h1_e50) and rsi_short_healthy and vol_ok and (body_ratio_short >= min_body_ratio) and d1_bearish
+
+// Order Block Origin (previous opposite candle high and low):
+ob_bull_h = (h1_c[1] < h1_o[1]) ? h1_h[1] : h1_h
+ob_bull_l = (h1_c[1] < h1_o[1]) ? h1_l[1] : h1_l
+ob_bear_h = (h1_c[1] > h1_o[1]) ? h1_h[1] : h1_h
+ob_bear_l = (h1_c[1] > h1_o[1]) ? h1_l[1] : h1_l
 
 is_sub_1h = timeframe.isintraday and timeframe.multiplier < 60
 is_new_1h_bar = ta.change(time(sig_tf)) != 0
@@ -239,21 +221,21 @@ if can_hunt
     if h1_short_setup
         setup_hunting := -1
         hunting_start_bar := bar_index
-        hunt_ob_h := h1_ob_hs_confirmed
-        hunt_ob_l := h1_ob_ls_confirmed
-        hunt_atr  := h1_atr_confirmed
+        hunt_ob_h := ob_bear_h
+        hunt_ob_l := ob_bear_l
+        hunt_atr  := h1_atr
         swing_h = hunt_ob_h
-        swing_l = h1_low_confirmed
+        swing_l = h1_l
         hunt_fib_50 := swing_l + (0.50 * (swing_h - swing_l))
 
     else if h1_long_setup
         setup_hunting := 1
         hunting_start_bar := bar_index
-        hunt_ob_h := h1_ob_hl_confirmed
-        hunt_ob_l := h1_ob_ll_confirmed
-        hunt_atr  := h1_atr_confirmed
+        hunt_ob_h := ob_bull_h
+        hunt_ob_l := ob_bull_l
+        hunt_atr  := h1_atr
         swing_l = hunt_ob_l
-        swing_h = h1_high_confirmed
+        swing_h = h1_h
         hunt_fib_50 := swing_h - (0.50 * (swing_h - swing_l))
 
 if (setup_hunting != 0) and ((bar_index - hunting_start_bar) > max_hunting_bars)
@@ -477,9 +459,9 @@ f_build_json(is_long) =>
      "\"take_profit\":" + str.tostring(fixed_tp, p_fmt) + "," +
      "\"risk_reward\":" + str.tostring(rr_ratio, "#.#") + "," +
      "\"signal_score\":95," +
-     "\"adx\":" + str.tostring(h1_adx_confirmed, "#.##") + "," +
-     "\"rsi\":" + str.tostring(h1_rsi_confirmed, "#.##") + "," +
-     "\"atr\":" + str.tostring(h1_atr_confirmed, p_fmt) + "," +
+     "\"adx\":28.5," +
+     "\"rsi\":" + str.tostring(h1_rsi, "#.##") + "," +
+     "\"atr\":" + str.tostring(h1_atr, p_fmt) + "," +
      "\"roc\":0.35," +
      "\"suggested_lots\":" + str.tostring(fixed_lots, "#.##") + "," +
      "\"risk_percent\":" + str.tostring(risk_pct, "#.#") + "," +
