@@ -45,7 +45,7 @@ class Settings(BaseSettings):
     DEFAULT_DONCHIAN_LENGTH: int = 20
     DEFAULT_ATR_PERIOD: int = 14
     DEFAULT_ATR_MULTIPLIER: float = 1.75
-    DEFAULT_RISK_REWARD: float = 2.0
+    DEFAULT_RISK_REWARD: float = 1.75
     MIN_SIGNAL_SCORE: float = 60.0
 
     # Session Filter
@@ -65,6 +65,8 @@ class Settings(BaseSettings):
         "GBPUSD",
         "USDJPY",
         "USDCAD",
+        "USDCHF",
+        "AUDUSD",
         "XAUUSD",
     ]
 

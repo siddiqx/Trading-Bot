@@ -51,7 +51,7 @@ account_size_input = input.float(10000.0, "Account Size (USD)", minval=100.0, st
 rr_ratio           = input.float(1.75, "Target Risk/Reward Ratio", minval=1.2, maxval=5.0, step=0.05, group=grp_risk)
 sl_atr_buffer      = input.float(0.50, "Structural SL Buffer (ATR Multiple)", minval=0.10, maxval=1.5, step=0.05, group=grp_risk)
 min_sl_pips_input  = input.float(18.0, "Minimum Stop Loss Breathing Room (Pips)", minval=5.0, maxval=50.0, step=1.0, group=grp_risk)
-max_sl_pips_input  = input.float(60.0, "Maximum Stop Loss Cap (Volatility Guard)", minval=25.0, maxval=150.0, step=5.0, group=grp_risk)
+max_sl_pips_input  = input.float(25.0, "Maximum Stop Loss Cap (Volatility Guard)", minval=15.0, maxval=60.0, step=1.0, group=grp_risk, tooltip="Hard cap preventing catastrophic pip bleed when order blocks or candles are unusually wide.")
 cooldown_bars      = input.int(3, "Post-Trade Cooldown (Bars)", minval=1, maxval=30, group=grp_risk)
 max_trade_bars     = input.int(160, "Max Trade Hold Duration (Bars)", minval=20, maxval=400, group=grp_risk)
 max_hunting_bars   = input.int(8, "Max Retracement Wait (Bars)", minval=2, maxval=24, group=grp_risk)

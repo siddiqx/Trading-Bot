@@ -70,13 +70,13 @@ def test_unsupported_symbol_rejection():
     validator = SignalValidator(settings)
 
     payload_data = {
-        "symbol": "USDCHF",  # Removed non-suitable pair
+        "symbol": "NZDCHF",  # Unverified non-whitelist pair
         "direction": "LONG",
         "signal_time": "2026-03-09T14:00:00Z",
-        "price": 0.8850,
-        "entry": 0.8850,
-        "stop_loss": 0.8830,
-        "take_profit": 0.8890,
+        "price": 0.5250,
+        "entry": 0.5250,
+        "stop_loss": 0.5230,
+        "take_profit": 0.5290,
         "signal_score": 85.0,
         "adx": 25.0,
         "atr": 0.0010,
@@ -88,4 +88,34 @@ def test_unsupported_symbol_rejection():
     is_valid, reason = validator.validate(payload)
     assert not is_valid
     assert "Not in verified institutional pair whitelist" in reason
+
+
+def test_institutional_whitelist_pairs_accepted():
+    settings = Settings()
+    validator = SignalValidator(settings)
+
+    institutional_pairs = ["USDCAD", "USDCHF", "USDJPY", "AUDUSD", "XAUUSD"]
+    for pair in institutional_pairs:
+        price = 2000.0 if pair == "XAUUSD" else (145.0 if "JPY" in pair else 1.3000)
+        sl = price - (5.0 if pair == "XAUUSD" else (0.30 if "JPY" in pair else 0.0020))
+        tp = price + (10.0 if pair == "XAUUSD" else (0.60 if "JPY" in pair else 0.0040))
+        payload_data = {
+            "symbol": pair,
+            "direction": "LONG",
+            "signal_time": "2026-03-09T14:00:00Z",
+            "price": price,
+            "entry": price,
+            "stop_loss": sl,
+            "take_profit": tp,
+            "signal_score": 85.0,
+            "adx": 25.0,
+            "atr": 0.0010,
+            "roc": 0.5,
+            "htf_regime": "BULLISH",
+            "webhook_secret": "test-secret-key-12345",
+        }
+        payload = SignalPayload(**payload_data)
+        is_valid, reason = validator.validate(payload)
+        assert is_valid, f"Failed for pair {pair}: {reason}"
+
 
