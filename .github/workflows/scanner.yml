@@ -48,9 +48,9 @@ jobs:
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git pull --rebase origin main || true
-          if [ -n "$(git status --porcelain trade_records.json)" ]; then
-            git add trade_records.json
-            git commit -m "chore(ledger): update forward trade records from 24/7 cloud scanner"
+          if [ -n "$(git status --porcelain trade_records.json data/ journals/)" ]; then
+            git add trade_records.json data/ journals/
+            git commit -m "chore(ledger): update trade records and post-mortem journals"
             git push origin main
           fi
 

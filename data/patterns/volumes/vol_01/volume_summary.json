@@ -1,0 +1,19 @@
+{
+  "volume_no": 1,
+  "volume_id": "VOL_01",
+  "trade_count": 1,
+  "capacity": 100,
+  "status": "IN_PROGRESS",
+  "wins": 0,
+  "losses": 1,
+  "win_rate_pct": 0.0,
+  "net_pips": -18.7,
+  "net_r": -1.0,
+  "profit_factor": 0.0,
+  "average_loss_mfe_pips": 4.7,
+  "top_loss_factors": {
+    "STRUCTURAL_INVALIDATION": 1
+  },
+  "top_win_factors": {},
+  "last_updated": "2026-09-28T18:10:32Z"
+}

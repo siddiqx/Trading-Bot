@@ -33,7 +33,8 @@ ENV/
 # Database
 *.db
 *.sqlite3
-data/
+data/*
+!data/patterns/
 
 # Testing
 .pytest_cache/

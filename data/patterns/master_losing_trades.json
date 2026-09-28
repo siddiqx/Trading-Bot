@@ -1,0 +1,47 @@
+[
+  {
+    "tracking": {
+      "global_trade_no": 1,
+      "volume_no": 1,
+      "volume_trade_no": 1,
+      "volume_id": "VOL_01",
+      "volume_label": "Volume 1 (Trades 1\u2013100)"
+    },
+    "trade_id": "EURUSD_1H_2026-09-28T14:00:00Z_SHORT",
+    "pair": "EURUSD",
+    "symbol": "EURUSD",
+    "timeframe": "1H",
+    "direction": "SHORT",
+    "entry_price": 1.13662,
+    "exit_price": 1.13849,
+    "stop_loss": 1.13849,
+    "take_profit": 1.13335,
+    "opened_at": "2026-09-28T14:26:26Z",
+    "closed_at": "2026-09-28T16:54:22Z",
+    "duration_hours": 2.47,
+    "duration_bars": 2,
+    "outcome": "LOSS",
+    "realized_pips": -18.7,
+    "realized_r": -1.0,
+    "excursion_metrics": {
+      "mfe_pips": 4.7,
+      "mfe_r": 0.25,
+      "mae_pips": -18.7,
+      "mae_r": -1.0,
+      "tp_distance_pct_reached": 14.3
+    },
+    "market_regime": {
+      "trading_session": "London/New York Overlap",
+      "rsi_at_entry": 50.0,
+      "atr_14": 0.0015,
+      "volatility_regime": "NORMAL",
+      "ema_alignment": "BEARISH_EXPANDING",
+      "breakout_candle_wick_ratio": 0.28
+    },
+    "diagnostic": {
+      "primary_factor": "STRUCTURAL_INVALIDATION",
+      "summary": "Order block level was invalidated by institutional flow after 1 bar(s). Stop-loss executed disciplined capital preservation.",
+      "actionable_insight": "Trade adhered strictly to risk geometry. Invalidation was clean and preserved capital."
+    }
+  }
+]

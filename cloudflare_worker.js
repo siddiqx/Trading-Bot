@@ -172,6 +172,7 @@ async function handleTelegramUpdate(update, env) {
     else if (action === "cmd_prices") await sendPricesMessage(chatId);
     else if (action === "cmd_history") await sendHistoryMessage(chatId, "ALL", "ALL", env);
     else if (action === "cmd_performance") await sendPerformanceMessage(chatId, "ALL", env);
+    else if (action === "cmd_patterns") await sendPatternsMessage(chatId, env);
     else if (action === "cmd_status") await sendStatusMessage(chatId, env);
     else if (action === "cmd_strategy") await sendStrategyMessage(chatId);
     else if (action === "cmd_menu") await sendMenuMessage(chatId, env);
@@ -225,6 +226,8 @@ async function handleTelegramUpdate(update, env) {
     } else if (cmd === "/performance" || cmd === "/stats") {
       const filterPair = parts[1] ? parts[1].toUpperCase().replace("/", "") : "ALL";
       await sendPerformanceMessage(chatId, filterPair, env);
+    } else if (cmd === "/patterns" || cmd === "/pattern" || cmd === "/journal" || cmd === "/journals") {
+      await sendPatternsMessage(chatId, env);
     } else if (cmd === "/status") {
       await sendStatusMessage(chatId, env);
     } else if (cmd === "/strategy" || cmd === "/rules") {
@@ -666,6 +669,104 @@ async function sendPerformanceMessage(chatId, filterPair = "ALL", env) {
 }
 
 /**
+ * /patterns - Volume-partitioned trade pattern diagnostics & failure analysis
+ */
+async function sendPatternsMessage(chatId, env) {
+  const utcNow = new Date().toISOString().replace("T", " ").substring(0, 16) + " UTC";
+  const { completed } = await getLedger(env);
+
+  const totalTrades = completed.length;
+  const volNo = totalTrades > 0 ? Math.floor((totalTrades - 1) / 100) + 1 : 1;
+  const volTradeNo = totalTrades > 0 ? ((totalTrades - 1) % 100) + 1 : 0;
+  const volStart = (volNo - 1) * 100 + 1;
+  const volEnd = volNo * 100;
+
+  // Filter trades belonging to the current active volume
+  const volTrades = completed.slice(volStart - 1, volEnd);
+  const wins = volTrades.filter(t => t.outcome === "WIN");
+  const losses = volTrades.filter(t => t.outcome === "LOSS");
+  const winCount = wins.length;
+  const lossCount = losses.length;
+  const winRate = volTrades.length > 0 ? ((winCount / volTrades.length) * 100).toFixed(1) : "0.0";
+
+  let netPips = 0;
+  let netR = 0;
+  let grossWins = 0;
+  let grossLosses = 0;
+
+  for (const t of volTrades) {
+    const p = t.realized_pips || 0;
+    const r = t.realized_r || 0;
+    netPips += p;
+    netR += r;
+    if (p > 0) grossWins += p;
+    else grossLosses += Math.abs(p);
+  }
+
+  let pf = "0.00";
+  if (grossLosses > 0) pf = (grossWins / grossLosses).toFixed(2);
+  else if (grossWins > 0) pf = "MAX (0 Loss)";
+
+  const pipsSign = netPips >= 0 ? "+" : "";
+  const rSign = netR >= 0 ? "+" : "";
+
+  // Diagnostic factor aggregation
+  let lossReasons = {};
+  for (const t of losses) {
+    const factor = t.diagnostic?.primary_factor || "STRUCTURAL_INVALIDATION";
+    lossReasons[factor] = (lossReasons[factor] || 0) + 1;
+  }
+
+  let lossBreakdown = "<i>No closed losses in current volume.</i>";
+  if (losses.length > 0) {
+    lossBreakdown = Object.entries(lossReasons)
+      .map(([f, cnt]) => {
+        const pct = ((cnt / losses.length) * 100).toFixed(0);
+        const readable = f.replace(/_/g, " ").toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
+        return `• <b>${readable}:</b> <code>${cnt} trade(s) (${pct}%)</code>`;
+      })
+      .join("\n");
+  }
+
+  const text =
+    `📚 <b>TRADE PATTERN & VOLUME ANALYTICS</b>\n` +
+    `━━━━━━━━━━━━━━━━━━\n` +
+    `Active Cohort: <b>Volume ${volNo} (Trades ${volStart}–${volEnd})</b>\n` +
+    `Progress: <code>${volTradeNo} / 100 Trades (${volTradeNo}%)</code>\n` +
+    `━━━━━━━━━━━━━━━━━━\n\n` +
+    `<b>📊 VOLUME ${volNo} BENCHMARKS</b>\n` +
+    `• <b>Win Rate:</b> <b>${winRate}%</b> (${winCount}W / ${lossCount}L)\n` +
+    `• <b>Net Pips:</b> <b>${pipsSign}${netPips.toFixed(1)} pips</b>\n` +
+    `• <b>Net R-Return:</b> <b>${rSign}${netR.toFixed(2)} R</b>\n` +
+    `• <b>Profit Factor:</b> <code>${pf}</code>\n\n` +
+    `<b>🔬 OBSERVED FAILURE MODES</b>\n` +
+    lossBreakdown + "\n\n`" +
+    `<b>💡 STRATEGY OPTIMIZATION PROTOCOL</b>\n` +
+    `• Post-mortem data tracks MFE/MAE excursions.\n` +
+    `• At 100-trade completion, baseline parameters calibrate to reduce repeat failure factors.\n` +
+    `━━━━━━━━━━━━━━━━━━\n` +
+    `🕒 <code>${utcNow}</code> · <i>Volume Engine</i>`;
+
+  const keyboard = {
+    inline_keyboard: [
+      [
+        { text: "🔄 Refresh Patterns", callback_data: "cmd_patterns" },
+        { text: "📜 History (Closed)", callback_data: "cmd_history" }
+      ],
+      [
+        { text: "⚡ Active Trades", callback_data: "cmd_active" },
+        { text: "📈 Performance", callback_data: "cmd_performance" }
+      ],
+      [
+        { text: "« Main Menu", callback_data: "cmd_menu" }
+      ]
+    ]
+  };
+
+  await sendTelegramMessage(chatId, text, keyboard);
+}
+
+/**
  * /prices - Raw live price table
  */
 async function sendPricesMessage(chatId) {
@@ -800,8 +901,9 @@ async function sendMenuMessage(chatId, env) {
     `3. /prices ── Live quotes across all 6 pairs\n` +
     `4. /history ── Completed trade history ledger\n` +
     `5. /performance ── Win rate & return metrics\n` +
-    `6. /strategy ── Systematic entry/exit rules\n` +
-    `7. /status ── 24/7 serverless engine health\n\n` +
+    `6. /patterns ── Volume post-mortems & pattern stats\n` +
+    `7. /strategy ── Systematic entry/exit rules\n` +
+    `8. /status ── 24/7 serverless engine health\n\n` +
     `Select a dashboard module below:`;
 
   const keyboard = {
@@ -815,10 +917,11 @@ async function sendMenuMessage(chatId, env) {
         { text: "📈 Performance", callback_data: "cmd_performance" }
       ],
       [
-        { text: "📊 Quotes", callback_data: "cmd_prices" },
-        { text: "🎯 Strategy", callback_data: "cmd_strategy" }
+        { text: "📚 Pattern Analytics", callback_data: "cmd_patterns" },
+        { text: "📊 Quotes", callback_data: "cmd_prices" }
       ],
       [
+        { text: "🎯 Strategy", callback_data: "cmd_strategy" },
         { text: "🟢 System Status", callback_data: "cmd_status" }
       ]
     ]

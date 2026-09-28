@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 import httpx
 import numpy as np
 import pandas as pd
+from core.post_mortem import record_trade_post_mortem
 
 logging.basicConfig(
     level=logging.INFO,
@@ -97,7 +98,14 @@ def sync_worker(records):
         logger.warning(f"Could not sync with worker: {e}")
 
 
-def format_exit_message(trade: dict, outcome: str, exit_price: float, realized_pips: float, realized_r: float) -> str:
+def format_exit_message(
+    trade: dict,
+    outcome: str,
+    exit_price: float,
+    realized_pips: float,
+    realized_r: float,
+    post_mortem_record: dict = None
+) -> str:
     is_win = outcome == "WIN"
     icon = "🎯" if is_win else "🛑"
     header = "TARGET REACHED: TAKE PROFIT HIT" if is_win else "STRUCTURAL EXIT: STOP LOSS HIT"
@@ -106,11 +114,32 @@ def format_exit_message(trade: dict, outcome: str, exit_price: float, realized_p
     r_sign = "+" if realized_r >= 0 else ""
     pair_name = trade.get('pair', trade.get('symbol'))
 
+    vol_text = ""
+    diag_text = ""
+    if post_mortem_record:
+        trk = post_mortem_record.get("tracking", {})
+        vol_trade = trk.get("volume_trade_no", 1)
+        global_trade = trk.get("global_trade_no", 1)
+        vol_num = trk.get("volume_no", 1)
+        vol_text = f"📚 <b>Volume:</b> <b>Volume {vol_num} · Trade #{vol_trade}/100</b> (Global #{global_trade})\n"
+
+        diag = post_mortem_record.get("diagnostic", {})
+        ex = post_mortem_record.get("excursion_metrics", {})
+        mfe_sign = "+" if ex.get("mfe_pips", 0) >= 0 else ""
+        diag_text = (
+            f"<b>🔬 POST-MORTEM DIAGNOSTIC</b>\n"
+            f"• <b>Classification:</b> <code>{diag.get('primary_factor', 'STRUCTURAL_INVALIDATION')}</code>\n"
+            f"• <b>Max Profit (MFE):</b> <code>{mfe_sign}{ex.get('mfe_pips', 0)} pips</code> ({ex.get('tp_distance_pct_reached', 0)}% of TP)\n"
+            f"• <b>Drawdown (MAE):</b> <code>{ex.get('mae_pips', 0)} pips</code>\n"
+            f"💡 <i>Insight: {diag.get('actionable_insight', '')}</i>\n\n"
+        )
+
     return (
         f"{icon} <b>{header}</b>\n"
         f"━━━━━━━━━━━━━━━━━━\n"
         f"📊 <b>Asset:</b> <b>{pair_name}</b> ({trade.get('timeframe', '1H')})\n"
         f"🧭 <b>Position:</b> <b>{trade.get('direction', 'TRADE')} CLOSED</b>\n"
+        f"{vol_text}"
         f"━━━━━━━━━━━━━━━━━━\n\n"
         f"<b>📋 EXECUTION OUTCOME</b>\n"
         f"• <b>Entry Price:</b> <code>{trade.get('entry')}</code>\n"
@@ -118,6 +147,7 @@ def format_exit_message(trade: dict, outcome: str, exit_price: float, realized_p
         f"• <b>Net Realized:</b> <b>{sign}{realized_pips:.1f} pips</b>\n"
         f"• <b>Realized Return:</b> <b>{r_sign}{realized_r:.2f} R</b>\n"
         f"• <b>Outcome:</b> <b>{status_text}</b>\n\n"
+        f"{diag_text}"
         f"━━━━━━━━━━━━━━━━━━\n"
         f"🕒 <b>Closed At:</b> <code>{datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}</code>\n"
         f"🔓 <i>Pair unlocked. Surveillance resumed.</i>"
@@ -188,8 +218,6 @@ def check_active_trades(records: dict):
             outcome = "WIN"
 
             logger.info(f"==> TRADE RESOLVED (TP): {pair} {trade.get('direction')} (+{realized_pips} pips)")
-            msg = format_exit_message(trade, outcome, exit_price, realized_pips, realized_r)
-            send_telegram_alert(msg)
 
             completed_record = {
                 **trade,
@@ -200,6 +228,17 @@ def check_active_trades(records: dict):
                 "closed_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
                 "status": "CLOSED"
             }
+
+            # Run Institutional Post-Mortem Diagnostics and Volume Logging
+            pm_record = None
+            try:
+                pm_record = record_trade_post_mortem(completed_record, df_trade)
+            except Exception as e:
+                logger.error(f"Error recording post-mortem for {pair}: {e}")
+
+            msg = format_exit_message(trade, outcome, exit_price, realized_pips, realized_r, pm_record)
+            send_telegram_alert(msg)
+
             records.setdefault("completed_trades", []).append(completed_record)
             del records["active_trades"][pair]
             resolved_pairs.append(pair)
@@ -211,8 +250,6 @@ def check_active_trades(records: dict):
             outcome = "LOSS"
 
             logger.info(f"==> TRADE RESOLVED (SL): {pair} {trade.get('direction')} ({realized_pips} pips)")
-            msg = format_exit_message(trade, outcome, exit_price, realized_pips, realized_r)
-            send_telegram_alert(msg)
 
             completed_record = {
                 **trade,
@@ -223,6 +260,17 @@ def check_active_trades(records: dict):
                 "closed_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
                 "status": "CLOSED"
             }
+
+            # Run Institutional Post-Mortem Diagnostics and Volume Logging
+            pm_record = None
+            try:
+                pm_record = record_trade_post_mortem(completed_record, df_trade)
+            except Exception as e:
+                logger.error(f"Error recording post-mortem for {pair}: {e}")
+
+            msg = format_exit_message(trade, outcome, exit_price, realized_pips, realized_r, pm_record)
+            send_telegram_alert(msg)
+
             records.setdefault("completed_trades", []).append(completed_record)
             del records["active_trades"][pair]
             resolved_pairs.append(pair)
