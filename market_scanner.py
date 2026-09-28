@@ -166,19 +166,28 @@ def scan_pair_timeframe(pair_name: str, config: dict, tf: str, state: dict) -> l
     
     df = compute_indicators(df, donchian_len=20)
     
-    # The last row [ -1 ] is the currently forming candle.
-    # The row [ -2 ] is the most recently CLOSED candle.
-    closed_bar = df.iloc[-2]
-    prev_bar = df.iloc[-3]
+    # In Yahoo Finance, bar timestamp is the OPEN time.
+    # Compute the true CLOSE time for each bar.
+    tf_delta = pd.Timedelta(minutes=15) if tf == "15m" else pd.Timedelta(hours=1)
+    df["close_time"] = df["time"] + tf_delta
     
-    # Check if the closed bar is fresh (closed within the last 30 minutes)
     now_utc = datetime.now(timezone.utc)
-    bar_age_seconds = (now_utc - closed_bar["time"]).total_seconds()
-    if bar_age_seconds > 1800:
-        # Candle is older than 30 minutes, ignore to avoid re-triggering historical signals
+    
+    # Strictly select bars that have finished closing
+    closed_bars = df[df["close_time"] <= now_utc]
+    if len(closed_bars) < 30:
         return []
     
-    bar_time_str = closed_bar["time"].strftime("%Y-%m-%dT%H:%M:%SZ")
+    closed_bar = closed_bars.iloc[-1]
+    prev_bar = closed_bars.iloc[-2]
+    
+    # Freshness check: only alert if the candle closed recently
+    max_age_seconds = 1800 if tf == "15m" else 3600
+    seconds_since_close = (now_utc - closed_bar["close_time"]).total_seconds()
+    if seconds_since_close > max_age_seconds:
+        return []
+    
+    bar_time_str = closed_bar["close_time"].strftime("%Y-%m-%dT%H:%M:%SZ")
     
     signals = []
     
@@ -205,8 +214,9 @@ def scan_pair_timeframe(pair_name: str, config: dict, tf: str, state: dict) -> l
         if sig_id not in state["alerted_signals"]:
             # Find Origin Order Block: last down-close candle prior to displacement
             ob_low = closed_bar["low"]
-            for i in range(len(df) - 3, max(0, len(df) - 10), -1):
-                c = df.iloc[i]
+            closed_idx = closed_bars.index[-1]
+            for i in range(closed_idx - 1, max(0, closed_idx - 10), -1):
+                c = df.loc[i]
                 if c["close"] < c["open"]:
                     ob_low = c["low"]
                     break
@@ -241,8 +251,9 @@ def scan_pair_timeframe(pair_name: str, config: dict, tf: str, state: dict) -> l
         if sig_id not in state["alerted_signals"]:
             # Find Origin Order Block: last up-close candle prior to displacement
             ob_high = closed_bar["high"]
-            for i in range(len(df) - 3, max(0, len(df) - 10), -1):
-                c = df.iloc[i]
+            closed_idx = closed_bars.index[-1]
+            for i in range(closed_idx - 1, max(0, closed_idx - 10), -1):
+                c = df.loc[i]
                 if c["close"] > c["open"]:
                     ob_high = c["high"]
                     break

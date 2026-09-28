@@ -100,9 +100,32 @@ Every trade setup generates an objective, deterministic heuristic score:
 
 *Note: The Signal Quality Score is an engineering heuristic, NOT a probability of winning.*
 
+## 4. 24/7 Standalone Cloud Market Scanner (Zero PC / 100% Free Mode)
+
+For automated 24/7 signal monitoring without keeping your computer running and without paying for a TradingView subscription:
+
+```
+LIVE MARKET (Yahoo Finance API)
+       │
+       ▼ (Every 15 min via GitHub Actions / Cloud Cron)
+MARKET SCANNER (market_scanner.py)
+   • Pairs: EURUSD, USDJPY, USDCAD, USDCHF, AUDUSD, XAUUSD
+   • Timeframes: 15M & 1H
+   • Strategies: Donchian 20, EMA 20/50 Slope, RSI 14, Order Blocks
+       │
+       ▼ (Confirmed Breakout)
+TELEGRAM BOT API ──► YOUR PHONE
+```
+
+### Automation & Deployment
+The system includes [`.github/workflows/scanner.yml`](file:///.github/workflows/scanner.yml) which executes automatically on GitHub's free runners every 15 minutes during Forex market hours (Monday through Friday).
+- **Manual Scan**: Run `python market_scanner.py`
+- **Background Daemon**: Run `python market_scanner.py --loop`
+- **Test Alert**: Run `python market_scanner.py --test`
+
 ---
 
-## 4. Local Installation & Setup (Windows PowerShell)
+## 5. Local Installation & Setup (Windows PowerShell)
 
 Open **PowerShell** in `C:\trading-bot` and execute:
 
