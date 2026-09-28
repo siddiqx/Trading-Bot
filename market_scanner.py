@@ -108,17 +108,17 @@ def format_exit_message(trade: dict, outcome: str, exit_price: float, realized_p
 
     return (
         f"{icon} <b>{header}</b>\n"
-        f"━━━━━━━━━━━━━━━━━━━━\n"
+        f"━━━━━━━━━━━━━━━━━━\n"
         f"📊 <b>Asset:</b> <b>{pair_name}</b> ({trade.get('timeframe', '1H')})\n"
         f"🧭 <b>Position:</b> <b>{trade.get('direction', 'TRADE')} CLOSED</b>\n"
-        f"━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"━━━━━━━━━━━━━━━━━━\n\n"
         f"<b>📋 EXECUTION OUTCOME</b>\n"
         f"• <b>Entry Price:</b> <code>{trade.get('entry')}</code>\n"
         f"• <b>Exit Price:</b> <code>{exit_price}</code>\n"
         f"• <b>Net Realized:</b> <b>{sign}{realized_pips:.1f} pips</b>\n"
         f"• <b>Realized Return:</b> <b>{r_sign}{realized_r:.2f} R</b>\n"
         f"• <b>Outcome:</b> <b>{status_text}</b>\n\n"
-        f"━━━━━━━━━━━━━━━━━━━━\n"
+        f"━━━━━━━━━━━━━━━━━━\n"
         f"🕒 <b>Closed At:</b> <code>{datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}</code>\n"
         f"🔓 <i>Pair unlocked. Surveillance resumed.</i>"
     )
@@ -469,10 +469,10 @@ def format_alert_message(sig: dict) -> str:
 
     return (
         f"{icon} <b>NEW TRADE SIGNAL · {display_pair}</b>\n"
-        f"━━━━━━━━━━━━━━━━━━━━\n"
+        f"━━━━━━━━━━━━━━━━━━\n"
         f"🧭 <b>Direction:</b> <b>{action_text}</b>\n"
         f"⏱ <b>Timeframe:</b> <b>{tf_label}</b>\n"
-        f"━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"━━━━━━━━━━━━━━━━━━\n\n"
         f"<b>📋 TRADE PARAMETERS</b>\n"
         f"• <b>Entry Price:</b> <code>{sig['entry']}</code>\n"
         f"• <b>Stop Loss:</b> <code>{sig['stop_loss']}</code> <i>({sl_sign}{sig['sl_pips']} pips)</i>\n"
@@ -486,7 +486,7 @@ def format_alert_message(sig: dict) -> str:
         f"• <b>Momentum RSI:</b> <code>{sig['rsi']}</code> (Optimal Zone)\n"
         f"• <b>Volatility ATR:</b> <code>{sig['atr']}</code> pips\n"
         f"• <b>Signal Score:</b> <b>{sig['score']} / 100</b>\n\n"
-        f"━━━━━━━━━━━━━━━━━━━━\n"
+        f"━━━━━━━━━━━━━━━━━━\n"
         f"🕒 <b>Confirmed Bar:</b> <code>{sig['time']}</code>\n"
         f"⚠️ <i>Bar strictly closed. Execute with strict risk discipline.</i>"
     )
