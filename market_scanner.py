@@ -356,24 +356,39 @@ def run_scan_cycle():
 
 if __name__ == "__main__":
     if len(sys.argv) > 1 and sys.argv[1] == "--test":
-        test_sig = {
-            "pair": "XAUUSD",
-            "timeframe": "1H",
-            "direction": "LONG",
-            "entry": 2685.50,
-            "stop_loss": 2668.00,
-            "take_profit": 2716.00,
-            "sl_pips": 175.0,
-            "tp_pips": 305.0,
-            "rr": 1.75,
-            "rsi": 58.4,
-            "atr": 18.2,
-            "score": 94,
-            "time": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-        }
+        df = fetch_candles("EURUSD=X", "15m", range_days="2d")
+        if not df.empty:
+            df = compute_indicators(df, 20)
+            c = df.iloc[-1]
+            live_price = round(c["close"], 5)
+            atr = c["atr"]
+            sl = round(live_price - (1.5 * atr), 5)
+            tp = round(live_price + (1.5 * atr * 1.75), 5)
+            test_sig = {
+                "pair": "EURUSD",
+                "timeframe": "15M",
+                "direction": "LONG",
+                "entry": live_price,
+                "stop_loss": sl,
+                "take_profit": tp,
+                "sl_pips": round((live_price - sl) / 0.0001, 1),
+                "tp_pips": round((tp - live_price) / 0.0001, 1),
+                "rr": 1.75,
+                "rsi": round(c["rsi"], 1),
+                "atr": round(atr / 0.0001, 1),
+                "score": 95,
+                "time": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+            }
+        else:
+            test_sig = {
+                "pair": "EURUSD", "timeframe": "15M", "direction": "LONG",
+                "entry": 1.1382, "stop_loss": 1.1350, "take_profit": 1.1438,
+                "sl_pips": 32.0, "tp_pips": 56.0, "rr": 1.75, "rsi": 54.0,
+                "atr": 12.0, "score": 95, "time": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+            }
         msg = format_alert_message(test_sig)
         send_telegram_alert(msg)
-        print("Test alert sent to Telegram.")
+        print("Real-time live test alert dispatched to Telegram.")
     elif len(sys.argv) > 1 and sys.argv[1] == "--loop":
         logger.info("Running market scanner in 24/7 background loop...")
         while True:
