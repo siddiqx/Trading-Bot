@@ -6,6 +6,9 @@ on:
     - cron: '*/15 * * * 1-5'
   workflow_dispatch: # Allows manual trigger from GitHub web UI at any time
 
+permissions:
+  contents: write
+
 jobs:
   scan-markets:
     runs-on: ubuntu-latest
@@ -23,13 +26,15 @@ jobs:
         run: |
           pip install httpx pandas numpy
 
-      - name: Restore Signal State Cache
+      - name: Restore Signal State & Trade Records Cache
         uses: actions/cache@v4
         with:
-          path: market_scanner_state.json
-          key: market-scanner-state-${{ github.run_id }}
+          path: |
+            market_scanner_state.json
+            trade_records.json
+          key: market-state-${{ github.run_id }}
           restore-keys: |
-            market-scanner-state-
+            market-state-
 
       - name: Execute Market Scan
         env:
@@ -38,9 +43,22 @@ jobs:
         run: |
           python market_scanner.py
 
-      - name: Save Signal State Cache
+      - name: Commit & Push Updated Trade Records
+        if: always()
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          if [ -n "$(git status --porcelain trade_records.json)" ]; then
+            git add trade_records.json
+            git commit -m "chore(ledger): update forward trade records from 24/7 cloud scanner"
+            git push
+          fi
+
+      - name: Save Signal State & Trade Records Cache
         uses: actions/cache@v4
         if: always()
         with:
-          path: market_scanner_state.json
-          key: market-scanner-state-${{ github.run_id }}
+          path: |
+            market_scanner_state.json
+            trade_records.json
+          key: market-state-${{ github.run_id }}
