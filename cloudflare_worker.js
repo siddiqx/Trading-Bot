@@ -181,7 +181,8 @@ async function sendRadarMessage(chatId) {
   let activeCount = 0;
 
   const results = await Promise.all(
-    ASSETS.map(async (asset) => {
+    ASSETS.map(async (asset, idx) => {
+      const num = String(idx + 1).padStart(2, "0");
       try {
         const url = `https://query1.finance.yahoo.com/v8/finance/chart/${asset.ticker}?range=5d&interval=15m`;
         const res = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0" } });
@@ -192,7 +193,7 @@ async function sendRadarMessage(chatId) {
         const highs = quote?.high?.filter(v => v !== null && v !== undefined) || [];
         const lows = quote?.low?.filter(v => v !== null && v !== undefined) || [];
 
-        if (closes.length < 25) return `• <b>${asset.name}</b> ── <i>Data Syncing...</i>`;
+        if (closes.length < 25) return `<b>[${num}] ${asset.name}</b> ── <i>Data Syncing...</i>`;
 
         const price = closes[closes.length - 1];
 
@@ -206,11 +207,11 @@ async function sendRadarMessage(chatId) {
           const icon = isLong ? "🟢" : "🔴";
 
           return (
-            `• <b>${asset.name}</b> ── <code>${price.toFixed(asset.digits)}</code>\n` +
-            `  ${icon} <b>LIVE ${activeTrade.direction}</b> (${activeTrade.timeframe})\n` +
-            `  ├ <b>Float:</b> <code>${pnlSign}${pnlPips.toFixed(1)} pips</code>\n` +
-            `  ├ <b>Entry:</b> <code>${activeTrade.entry}</code>\n` +
-            `  └ <b>SL:</b> <code>${activeTrade.stop_loss}</code> · <b>TP:</b> <code>${activeTrade.take_profit}</code>`
+            `<b>[${num}] ${asset.name}</b> ── <code>${price.toFixed(asset.digits)}</code>\n` +
+            `     ${icon} <b>LIVE ${activeTrade.direction}</b> (${activeTrade.timeframe})\n` +
+            `     • Float: <code>${pnlSign}${pnlPips.toFixed(1)} pips</code>\n` +
+            `     • Entry: <code>${activeTrade.entry}</code>\n` +
+            `     • SL: <code>${activeTrade.stop_loss}</code> | TP: <code>${activeTrade.take_profit}</code>`
           );
         }
 
@@ -234,11 +235,11 @@ async function sendRadarMessage(chatId) {
         if (rsi > 75) {
           badge = "🛡";
           status = "RSI Guard Active";
-          detail = `RSI ${rsi.toFixed(1)} (Overbought)`;
+          detail = `RSI ${rsi.toFixed(1)} Overbought`;
         } else if (rsi < 25) {
           badge = "🛡";
           status = "RSI Guard Active";
-          detail = `RSI ${rsi.toFixed(1)} (Oversold)`;
+          detail = `RSI ${rsi.toFixed(1)} Oversold`;
         } else if (distHigh <= 8.0) {
           badge = "⚡";
           status = "Imminent Breakout";
@@ -261,9 +262,9 @@ async function sendRadarMessage(chatId) {
           detail = `±${Math.min(distHigh, distLow).toFixed(1)}p in Band`;
         }
 
-        return `• <b>${asset.name}</b> ── <code>${price.toFixed(asset.digits)}</code>\n  └ ${badge} <b>${status}</b> · <i>${detail}</i>`;
+        return `<b>[${num}] ${asset.name}</b> ── <code>${price.toFixed(asset.digits)}</code>\n     ${badge} <b>${status}</b> (${detail})`;
       } catch (e) {
-        return `• <b>${asset.name}</b> ── <i>Feed Offline</i>`;
+        return `<b>[${num}] ${asset.name}</b> ── <i>Feed Offline</i>`;
       }
     })
   );
@@ -335,40 +336,44 @@ async function sendHistoryMessage(chatId, filterPair = "ALL", filterRange = "ALL
   // Build Output Rows
   let activeRows = [];
   let closedRows = [];
+  let activeIdx = 1;
+  let closedIdx = 1;
 
   for (const t of allTrades) {
     const dateStr = (t.opened_at || "").substring(0, 10);
     const pName = t.pair || t.symbol;
 
     if (t.is_active) {
+      const num = String(activeIdx++).padStart(2, "0");
       const isLong = t.direction === "LONG";
       const dirIcon = isLong ? "🟢" : "🔴";
       const openTime = (t.opened_at || "").substring(11, 16) || "00:00";
       activeRows.push(
-        `• <b>${pName}</b> · <b>${t.timeframe}</b> · ${dirIcon} <b>${t.direction}</b>\n` +
-        `  ├ <b>Entry:</b> <code>${t.entry}</code> (Opened: <code>${openTime} UTC</code>)\n` +
-        `  └ <b>Targets:</b> SL <code>${t.stop_loss}</code> · TP <code>${t.take_profit}</code> (1:1.75 RR)`
+        `<b>[${num}] ${pName}</b> · <b>${t.timeframe}</b> · ${dirIcon} <b>${t.direction}</b>\n` +
+        `     • Entry: <code>${t.entry}</code> (Opened: <code>${openTime} UTC</code>)\n` +
+        `     • Targets: SL <code>${t.stop_loss}</code> | TP <code>${t.take_profit}</code> (1:1.75 RR)`
       );
     } else {
+      const num = String(closedIdx++).padStart(2, "0");
       const isWin = t.outcome === "WIN";
       const outcomeBadge = isWin ? "🎯 <b>WIN</b>" : "🛑 <b>LOSS</b>";
       const sign = t.realized_pips >= 0 ? "+" : "";
       const rSign = t.realized_r >= 0 ? "+" : "";
 
       closedRows.push(
-        `• <b>${dateStr}</b> · <b>${pName}</b> (${t.timeframe}) · <b>${t.direction}</b>\n` +
-        `  ├ <b>Execution:</b> <code>${t.entry}</code> ➔ <code>${t.exit_price}</code>\n` +
-        `  └ <b>Result:</b> ${outcomeBadge} · <code>${sign}${t.realized_pips}p</code> · <code>${rSign}${t.realized_r}R</code>`
+        `<b>[${num}] ${dateStr}</b> · <b>${pName}</b> (${t.timeframe}) · <b>${t.direction}</b>\n` +
+        `     • Execution: <code>${t.entry}</code> ➔ <code>${t.exit_price}</code>\n` +
+        `     • Result: ${outcomeBadge} (<code>${sign}${t.realized_pips}p</code> / <code>${rSign}${t.realized_r}R</code>)`
       );
     }
   }
 
   let bodyText = "";
   if (activeRows.length > 0) {
-    bodyText += `🟢 <b>ACTIVE POSITIONS (${activeRows.length})</b>\n` + activeRows.join("\n\n") + "\n\n";
+    bodyText += `🟢 <b>ACTIVE POSITIONS (${activeRows.length})</b>\n\n` + activeRows.join("\n\n") + "\n\n";
   }
   if (closedRows.length > 0) {
-    bodyText += `📁 <b>COMPLETED TRADES (${closedRows.length})</b>\n` + closedRows.join("\n\n") + "\n\n";
+    bodyText += `📁 <b>COMPLETED TRADES (${closedRows.length})</b>\n\n` + closedRows.join("\n\n") + "\n\n";
   }
   if (allTrades.length === 0) {
     bodyText = `<i>No recorded trades found for ${filterPair} (${rangeLabel}).</i>\n\n`;
@@ -458,16 +463,16 @@ async function sendPerformanceMessage(chatId, filterPair = "ALL") {
     `Scope: <b>${scopeLabel}</b>\n` +
     `Tracking Baseline: <code>2026-09-28</code> (Strict Forward Live Only)\n` +
     `━━━━━━━━━━━━━━━━━━━━\n\n` +
-    `<b>TRADE EXECUTION</b>\n` +
-    `• <b>Total Closed:</b> <code>${totalClosed}</code>\n` +
-    `• <b>Active Live:</b> <code>${active.length} positions</code>\n` +
-    `• <b>Win / Loss:</b> <b>${wins}W</b> · <b>${losses}L</b>\n` +
-    `• <b>Win Rate:</b> <b>${winRate}${totalClosed > 0 ? "%" : ""}</b>\n\n` +
-    `<b>RETURNS & PROFITABILITY</b>\n` +
-    `• <b>Net Realized Pips:</b> <b>${pipsSign}${netPips.toFixed(1)} pips</b>\n` +
-    `• <b>Net Realized Return:</b> <b>${rSign}${netR.toFixed(2)} R</b>\n` +
-    `• <b>Profit Factor:</b> <code>${profitFactor}</code>\n` +
-    `• <b>Target R:R:</b> <code>1 : 1.75</code>\n\n` +
+    `<b>[1] TRADE EXECUTION</b>\n` +
+    `• Total Closed: <code>${totalClosed}</code>\n` +
+    `• Active Live: <code>${active.length} positions</code>\n` +
+    `• Win / Loss: <b>${wins}W</b> · <b>${losses}L</b>\n` +
+    `• Win Rate: <b>${winRate}${totalClosed > 0 ? "%" : ""}</b>\n\n` +
+    `<b>[2] RETURNS & PROFITABILITY</b>\n` +
+    `• Net Realized Pips: <b>${pipsSign}${netPips.toFixed(1)} pips</b>\n` +
+    `• Net Realized Return: <b>${rSign}${netR.toFixed(2)} R</b>\n` +
+    `• Profit Factor: <code>${profitFactor}</code>\n` +
+    `• Target R:R: <code>1 : 1.75</code>\n\n` +
     `━━━━━━━━━━━━━━━━━━━━\n` +
     `⚡ <i>Zero backtest data included. Forward verified only.</i>\n` +
     `🕒 <code>${utcNow}</code>`;
@@ -500,16 +505,17 @@ async function sendPerformanceMessage(chatId, filterPair = "ALL") {
 async function sendPricesMessage(chatId) {
   const utcNow = new Date().toISOString().replace("T", " ").substring(0, 16) + " UTC";
   const rows = await Promise.all(
-    ASSETS.map(async (asset) => {
+    ASSETS.map(async (asset, idx) => {
+      const num = String(idx + 1).padStart(2, "0");
       try {
         const url = `https://query1.finance.yahoo.com/v8/finance/chart/${asset.ticker}?range=1d&interval=15m`;
         const res = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0" } });
         const json = await res.json();
         const closes = json?.chart?.result?.[0]?.indicators?.quote?.[0]?.close?.filter(v => v !== null) || [];
-        if (closes.length > 0) return `• <b>${asset.name}</b> ── <code>${closes[closes.length - 1].toFixed(asset.digits)}</code>`;
-        return `• <b>${asset.name}</b> ── <i>Closed</i>`;
+        if (closes.length > 0) return `<b>[${num}] ${asset.name}</b> ── <code>${closes[closes.length - 1].toFixed(asset.digits)}</code>`;
+        return `<b>[${num}] ${asset.name}</b> ── <i>Closed</i>`;
       } catch (e) {
-        return `• <b>${asset.name}</b> ── <i>Offline</i>`;
+        return `<b>[${num}] ${asset.name}</b> ── <i>Offline</i>`;
       }
     })
   );
@@ -547,13 +553,13 @@ async function sendStatusMessage(chatId) {
   const text = 
     `⚡ <b>SYSTEM ARCHITECTURE STATUS</b>\n` +
     `━━━━━━━━━━━━━━━━━━━━\n` +
-    `• <b>Engine State:</b> 🟢 <b>OPERATIONAL (24/7)</b>\n` +
-    `• <b>Cloud Edge:</b> Cloudflare Workers (Global)\n` +
-    `• <b>Scanner Host:</b> GitHub Actions (Automated Cron)\n` +
-    `• <b>Monitored Assets:</b> <code>6 pairs</code> (Forex + Gold)\n` +
-    `• <b>Active Positions:</b> <code>${activeCount} locked</code>\n` +
-    `• <b>Recorded Trades:</b> <code>${closedCount} closed</code>\n` +
-    `• <b>Local PC Dependency:</b> Zero (100% Serverless)\n` +
+    `<b>[1] Engine Core:</b> 🟢 <b>OPERATIONAL (24/7)</b>\n` +
+    `<b>[2] Cloud Edge:</b> Cloudflare Workers (Global)\n` +
+    `<b>[3] Scanner Host:</b> GitHub Actions (Automated Cron)\n` +
+    `<b>[4] Monitored Assets:</b> <code>6 pairs</code> (Forex + Gold)\n` +
+    `<b>[5] Active Positions:</b> <code>${activeCount} locked</code>\n` +
+    `<b>[6] Recorded Trades:</b> <code>${closedCount} closed</code>\n` +
+    `<b>[7] PC Dependency:</b> Zero (100% Serverless)\n` +
     `━━━━━━━━━━━━━━━━━━━━\n` +
     `🕒 <code>${utcNow}</code>`;
 
@@ -580,14 +586,14 @@ async function sendStrategyMessage(chatId) {
     `🎯 <b>STRATEGY SPECIFICATIONS</b>\n` +
     `━━━━━━━━━━━━━━━━━━━━\n` +
     `<b>INSTITUTIONAL BREAKOUT & ORDER BLOCK MODEL</b>\n\n` +
-    `<b>1. Structural Breakout Trigger</b>\n` +
+    `<b>[1] Structural Breakout Trigger</b>\n` +
     `• 20-period Donchian Channel High/Low breach\n` +
     `• Confirmation requires strict candle close outside channel\n\n` +
-    `<b>2. Trend Bias & Momentum Guard</b>\n` +
+    `<b>[2] Trend Bias & Momentum Guard</b>\n` +
     `• Longs: EMA 20 above EMA 50 (Bullish trend)\n` +
     `• Shorts: EMA 20 below EMA 50 (Bearish trend)\n` +
     `• Anti-Exhaustion RSI Guard: <code>25.0 ≤ RSI ≤ 75.0</code>\n\n` +
-    `<b>3. Structural Protection & Sizing</b>\n` +
+    `<b>[3] Structural Protection & Sizing</b>\n` +
     `• Stop Loss anchored to Origin Order Block structure\n` +
     `• Fixed Risk-to-Reward: <b>1 : 1.75</b>\n` +
     `• Fixed Risk per Trade: <b>1.0% Equity</b>\n` +
@@ -619,13 +625,13 @@ async function sendMenuMessage(chatId) {
     `━━━━━━━━━━━━━━━━━━━━\n` +
     `Automated 24/7 Algorithmic Trading & Forward Verification\n` +
     `Coverage: <b>EURUSD · USDJPY · USDCAD · USDCHF · AUDUSD · GOLD</b>\n\n` +
-    `<b>COMMAND DIRECTORY</b>\n` +
-    `• /radar ── Market surveillance & live trade status\n` +
-    `• /prices ── Live spot quotes across all 6 pairs\n` +
-    `• /history ── Historical trade log & filterable ledger\n` +
-    `• /performance ── Win rate, net pips, and return metrics\n` +
-    `• /strategy ── Systematic entry/exit rules & risk model\n` +
-    `• /status ── 24/7 serverless engine health\n\n` +
+    `<b>SYSTEM MODULES</b>\n` +
+    `<b>[1] /radar</b>       ── Market surveillance & live trade status\n` +
+    `<b>[2] /prices</b>      ── Live spot quotes across all 6 pairs\n` +
+    `<b>[3] /history</b>     ── Historical trade log & filterable ledger\n` +
+    `<b>[4] /performance</b> ── Win rate, net pips, and return metrics\n` +
+    `<b>[5] /strategy</b>    ── Systematic entry/exit rules & risk model\n` +
+    `<b>[6] /status</b>      ── 24/7 serverless engine health\n\n` +
     `Select a dashboard module below:`;
 
   const keyboard = {
