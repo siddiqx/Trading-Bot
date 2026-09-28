@@ -1,7 +1,7 @@
 //@version=6
 indicator(
-     title="ICT Institutional MTF Strategy [Fixed Structural SL/TP & High Frequency]",
-     shorttitle="ICT-Fixed-MTF",
+     title="Institutional Trend Breakout & Order Block Engine [Finalized]",
+     shorttitle="ICT-Breakout-Engine",
      overlay=true,
      max_bars_back=500,
      max_boxes_count=500,
@@ -10,587 +10,286 @@ indicator(
      )
 
 // =============================================================================
-// ARCHITECTURE SPECIFICATION: HIGH-FREQUENCY INSTITUTIONAL ICT MTF ENGINE
+// STRATEGY SPECIFICATION (FINALIZED 24/7 INSTITUTIONAL ARCHITECTURE)
 // =============================================================================
-// 1. MACRO BIAS (Daily D1): EMA 50 trend alignment filter for positive expectancy across all pairs.
-// 2. DAILY 24H BREAKOUT SETUP (1-Hour 1H):
-//    - Institutional Displacement: Donchian 24 breakout (captures the full 24-hour cycle:
-//      Asian consolidation -> London breakout -> New York continuation).
-//    - High Frequency: Delivers ~80-120 high-conviction trades per pair with 44-47% win rate.
-//    - Anti-Exhaustion Protection: RSI must NOT be oversold (< 30) for Shorts and NOT
-//      overbought (> 70) for Longs.
-//    - Institutional Order Block (+OB Demand / -OB Supply) origin identified immediately.
-// 3. RETRACEMENT EXECUTION (15m OTE or Direct 1H):
-//    - Waits for price to retrace into the 50% Equilibrium / Order Block / 15m FVG.
-//    - Confirms rejection before triggering entry.
-// 4. FIXED NON-TRAILING STRUCTURAL SL & TP:
-//    - Stop Loss is STRICTLY FIXED at the Order Block Invalidation boundary + ATR buffer.
-//      It NEVER moves, trails, or tightens to a single candle wick.
-//    - Take Profit is STRICTLY FIXED at entry price +/- (risk_dist * rr_ratio). Default 1:1.5.
-// 5. STRICT SINGLE TRADE LOCK:
-//    - Starts looking for trades ONLY after the previous trade has hit TP or SL!
-//    - ZERO signals can trigger while a trade is live.
-// 6. ISOLATED TRADE DISPLAY:
-//    - Each trade has its own independent horizontal levels connecting Entry to Exit.
-//    - Completely frozen upon exit with outcome badges (🎯 TP HIT / 🛑 SL HIT).
-//    - All details (Entry, SL, TP, Pips, R:R, Lots) placed directly on the signal card.
-//    - No box at the top right!
+// 1. BREAKOUT SETUP:
+//    - Confirmed 20-period Donchian Channel High/Low breach on completed bar.
+// 2. TREND ALIGNMENT:
+//    - Longs: Close > EMA 50 AND EMA 20 > EMA 50 AND EMA 20 Slope > 0.
+//    - Shorts: Close < EMA 50 AND EMA 20 < EMA 50 AND EMA 20 Slope < 0.
+// 3. ANTI-EXHAUSTION MOMENTUM GUARD:
+//    - Longs: 45.0 <= RSI (14) <= 75.0 (Rejects overbought exhaustion).
+//    - Shorts: 25.0 <= RSI (14) <= 55.0 (Rejects oversold exhaustion).
+// 4. STRUCTURAL ORDER BLOCK STOP LOSS:
+//    - Anchored to the Origin Order Block (last opposite candle prior to breakout)
+//    - SL Buffer: 0.50 * ATR (14).
+//    - Bounded: Minimum 18.0 pips, Maximum 60.0 pips.
+// 5. TARGET MATRIX:
+//    - Fixed 1 : 1.75 Risk-to-Reward ratio (TP = Entry +/- SL_Dist * 1.75).
+// 6. STRICT SINGLE-TRADE LOCK:
+//    - While a trade is active (between Entry and TP/SL), ZERO duplicate signals
+//      can trigger. A pair only unlocks once price touches either TP or SL.
 // =============================================================================
 
 // =============================================================================
 // INPUT PARAMETERS
 // =============================================================================
-// 0. Institutional Pair Whitelist Guard
-grp_pairs = "Institutional Pair Whitelist Guard"
-enforce_pair_whitelist = input.bool(true, "Enforce Tested Pairs Only (USDCAD, USDCHF, USDJPY, AUDUSD, XAUUSD)", group=grp_pairs)
+grp_strat = "Strategy Execution Parameters"
+donchian_len     = input.int(20, "Donchian Breakout Lookback", minval=10, maxval=50, group=grp_strat)
+rr_ratio         = input.float(1.75, "Risk / Reward Ratio", minval=1.0, maxval=4.0, step=0.05, group=grp_strat)
+sl_atr_mult      = input.float(0.50, "Order Block ATR Buffer", minval=0.10, maxval=1.5, step=0.05, group=grp_strat)
+min_sl_pips      = input.float(18.0, "Minimum SL Breathing Room (Pips)", minval=5.0, maxval=40.0, step=1.0, group=grp_strat)
+max_sl_pips      = input.float(60.0, "Maximum SL Volatility Cap (Pips)", minval=30.0, maxval=120.0, step=5.0, group=grp_strat)
+risk_pct         = input.float(1.0, "Risk Per Trade (%)", minval=0.1, maxval=5.0, step=0.1, group=grp_strat)
+account_size     = input.float(10000.0, "Account Size (USD)", minval=100.0, step=1000.0, group=grp_strat)
 
-// 1. Trade & Risk Settings
-grp_risk = "Fixed Risk & Target Settings"
-risk_pct           = input.float(1.0, "Risk Per Trade (%)", minval=0.1, maxval=5.0, step=0.1, group=grp_risk)
-account_size_input = input.float(10000.0, "Account Size (USD)", minval=100.0, step=1000.0, group=grp_risk)
-rr_ratio           = input.float(1.75, "Target Risk/Reward Ratio", minval=1.2, maxval=5.0, step=0.05, group=grp_risk)
-sl_atr_buffer      = input.float(0.50, "Structural SL Buffer (ATR Multiple)", minval=0.10, maxval=1.5, step=0.05, group=grp_risk)
-min_sl_pips_input  = input.float(18.0, "Minimum Stop Loss Breathing Room (Pips)", minval=5.0, maxval=50.0, step=1.0, group=grp_risk)
-max_sl_pips_input  = input.float(25.0, "Maximum Stop Loss Cap (Volatility Guard)", minval=15.0, maxval=60.0, step=1.0, group=grp_risk, tooltip="Hard cap preventing catastrophic pip bleed when order blocks or candles are unusually wide.")
-cooldown_bars      = input.int(3, "Post-Trade Cooldown (Bars)", minval=1, maxval=30, group=grp_risk)
-max_trade_bars     = input.int(160, "Max Trade Hold Duration (Bars)", minval=20, maxval=400, group=grp_risk)
-max_hunting_bars   = input.int(8, "Max Retracement Wait (Bars)", minval=2, maxval=24, group=grp_risk)
-use_circuit_breaker        = input.bool(true, "Enable Consecutive Loss Circuit Breaker", group=grp_risk)
-max_consec_losses_input    = input.int(2, "Max Consecutive Losses Before Pause", minval=1, maxval=5, group=grp_risk)
-circuit_breaker_pause_bars = input.int(48, "Circuit Breaker Pause Duration (Bars)", minval=4, maxval=96, group=grp_risk)
+grp_alerts = "Cloud Webhook Relay Settings"
+webhook_secret   = input.string("test-secret-key-12345", "Webhook Secret Key", group=grp_alerts)
+env_label        = input.string("LIVE", "Environment (LIVE or TEST)", options=["LIVE", "TEST"], group=grp_alerts)
 
-// 2. Higher Timeframe Setup Parameters
-grp_htf = "Higher Timeframe (1H & Daily) Setup"
-sig_tf             = input.timeframe("60", "Trend Anchor Timeframe", group=grp_htf)
-donchian_len       = input.int(20, "1H Breakout Lookback (Bars)", minval=10, maxval=120, group=grp_htf)
-m15_donchian_len   = input.int(32, "15m Breakout Lookback (Bars)", minval=10, maxval=120, group=grp_htf)
-use_h1_200         = input.bool(false, "Require 1H EMA 200 Macro Trend Filter (Disable for Responsive Swings)", group=grp_htf)
-htf_ema_len        = input.int(50, "1H Trend Filter EMA Length", minval=20, maxval=500, group=grp_htf)
-use_d1_filter      = input.bool(false, "Require Daily (D1) Macro EMA Alignment (Disable to Prevent Multi-Week Lockout)", group=grp_htf)
-d1_ema_len         = input.int(50, "Daily Macro EMA Length", minval=20, maxval=200, group=grp_htf)
-use_h1_slope       = input.bool(true, "Require 1H EMA 20 Velocity Slope Confluence", group=grp_htf)
-use_h1_slope_strength = input.bool(true, "Enforce 1H Directional Velocity (Rejects Flat Consolidation)", group=grp_htf)
-min_slope_atr_mult    = input.float(0.10, "Minimum 1H Slope Threshold (x 1H ATR)", minval=0.02, maxval=0.50, step=0.02, group=grp_htf)
-use_4h_filter         = input.bool(true, "Require 4H Macro Trend Confluence (Rejects 4H Chop)", group=grp_htf)
-min_body_ratio     = input.float(0.35, "Minimum Candle Body Ratio (Anti-Wick)", minval=0.20, maxval=0.90, step=0.05, group=grp_htf)
-avoid_rollover     = input.bool(true, "Avoid 21:00 UTC Daily Rollover Spread Spikes", group=grp_htf)
-
-// 3. Volatility & Anti-Exhaustion Filters
-grp_vol = "Volatility & Anti-Exhaustion Filters"
-use_vol_expansion  = input.bool(false, "Require Volatility Expansion (ATR >= 20 SMA)", group=grp_vol)
-use_volume_filter  = input.bool(false, "Require 1H Volume Expansion (Disable for Forex Tick Feeds)", group=grp_vol)
-vol_ma_len         = input.int(20, "Volume Moving Average Length", minval=5, maxval=50, group=grp_vol)
-vol_multiplier     = input.float(1.10, "Volume Multiplier vs Average", minval=1.0, maxval=2.5, step=0.05, group=grp_vol)
-rsi_len            = input.int(14, "RSI Length", minval=5, maxval=50, group=grp_vol)
-use_rsi_entry_guard= input.bool(true, "Enforce Anti-Exhaustion RSI Guard at Entry", group=grp_vol)
-rsi_max_long       = input.float(78.0, "Max Long Entry RSI (Anti-Overbought)", minval=55.0, maxval=85.0, group=grp_vol)
-rsi_min_short      = input.float(22.0, "Min Short Entry RSI (Anti-Oversold)", minval=15.0, maxval=45.0, group=grp_vol)
-
-// 4. Session & Weekday Execution Filters
-grp_session = "Session & Weekday Execution Filters"
-session_filter_enabled = input.bool(false, "Enable Strict Session Window Filter", group=grp_session)
-allowed_session        = input.session("0000-2000", "Allowed Session Window (UTC)", group=grp_session)
-filter_friday_pm       = input.bool(true, "Disable Friday PM (After 12:00 UTC Weekend Unwind)", group=grp_session)
-filter_full_friday     = input.bool(false, "Disable All Friday Trading (Mon - Thu Only)", group=grp_session)
-filter_monday_am       = input.bool(false, "Disable Monday Morning (Before 12:00 UTC Gap Rebalance)", group=grp_session)
-webhook_secret         = input.string("test-secret-key-12345", "Webhook Secret Key", group=grp_session)
-env_label              = input.string("LIVE", "Environment (LIVE or TEST)", options=["LIVE", "TEST"], group=grp_session)
-
-// 5. XAUUSD (Gold) Adaptive Performance Parameters (Zero-Impact Isolation)
-grp_gold = "XAUUSD (Gold) Adaptive Performance Settings"
-gold_donchian_len       = input.int(8, "Gold Breakout Lookback (Bars)", minval=4, maxval=30, group=grp_gold, tooltip="8-bar lookback aligns to Gold's London/NY active session momentum expansion")
-gold_retrace_fib        = input.float(0.382, "Gold Retracement Fibonacci Level", minval=0.20, maxval=0.618, step=0.018, group=grp_gold, tooltip="38.2% shallow pullback prevents missing strong Gold impulse runs")
-gold_cooldown           = input.int(1, "Gold Post-Trade Cooldown (Bars)", minval=1, maxval=10, group=grp_gold, tooltip="Allows sequential momentum continuation on Gold")
-gold_sl_atr_mult        = input.float(0.35, "Gold SL ATR Buffer Multiple", minval=0.10, maxval=1.0, step=0.05, group=grp_gold, tooltip="Tight 0.35 ATR buffer keeps Gold stop loss within safety bounds")
-filter_gold_toxic_hours = input.bool(true, "Filter Gold Manipulation Hours (0, 4, 15, 16, 19 UTC)", group=grp_gold, tooltip="Empirically proven on 2-year tick data: removes Hour 4 Asian trap (0% WR) and Hours 15-16 NY fix")
-
-// Symbol Identity Detection
-clean_ticker = str.upper(syminfo.ticker)
-is_gold = str.contains(syminfo.ticker, "XAU") or str.contains(clean_ticker, "GOLD")
-is_whitelisted = str.contains(clean_ticker, "USDCAD") or 
-                 str.contains(clean_ticker, "USDCHF") or 
-                 str.contains(clean_ticker, "USDJPY") or 
-                 str.contains(clean_ticker, "AUDUSD") or 
-                 str.contains(clean_ticker, "XAUUSD") or 
-                 str.contains(clean_ticker, "GOLD")
-
-// Execution Chart Resolution Check:
-is_sub_1h = timeframe.isintraday and timeframe.multiplier < 60
-
-// Dynamic Parameter Selection (Zero impact on Forex pairs: Forex always retains 20-bar Donchian, 0.50 Fib, 3-bar CD):
-active_breakout_len = is_gold ? gold_donchian_len : (is_sub_1h ? m15_donchian_len : donchian_len)
-active_fib_ratio    = is_gold ? gold_retrace_fib  : 0.500
-active_sl_buffer    = is_gold ? gold_sl_atr_mult  : sl_atr_buffer
-
-// Asymmetric Post-Loss Pullback Protection & Sub-1H Resolution Scaling
-gold_loss_cd_bars   = 4
-forex_loss_cd_bars  = 6
-tf_cd_mult          = is_sub_1h ? 4 : 1
-base_win_cd         = is_gold ? gold_cooldown : cooldown_bars
-base_loss_cd        = is_gold ? gold_loss_cd_bars : forex_loss_cd_bars
+grp_visuals = "Visual Display & Aesthetics"
+show_emas        = input.bool(true, "Show EMA 20 & EMA 50 Trend Lines", group=grp_visuals)
+show_donchian    = input.bool(true, "Show Donchian 20 Channel Lines", group=grp_visuals)
+show_ob_boxes    = input.bool(true, "Show Origin Order Block Zones", group=grp_visuals)
 
 // =============================================================================
-// DAILY (D1) & 4-HOUR (4H) MACRO TREND ENGINE
+// ASSET INSTRUMENT SPECIFICATIONS
 // =============================================================================
-d1_c_raw   = request.security(syminfo.tickerid, "D", close[1], barmerge.gaps_off, barmerge.lookahead_off)
-d1_ema_raw = request.security(syminfo.tickerid, "D", ta.ema(close, d1_ema_len)[1], barmerge.gaps_off, barmerge.lookahead_off)
-
-d1_c_val   = na(d1_c_raw) ? close : d1_c_raw
-d1_ema_val = na(d1_ema_raw) ? close : d1_ema_raw
-d1_bullish = not use_d1_filter or (d1_c_val > d1_ema_val)
-d1_bearish = not use_d1_filter or (d1_c_val < d1_ema_val)
-
-// 4H Trend Alignment (Anti-Consolidation Guard)
-h4_e20_raw = request.security(syminfo.tickerid, "240", ta.ema(close, 20)[1], barmerge.gaps_off, barmerge.lookahead_off)
-h4_e50_raw = request.security(syminfo.tickerid, "240", ta.ema(close, 50)[1], barmerge.gaps_off, barmerge.lookahead_off)
-h4_e20     = na(h4_e20_raw) ? close : h4_e20_raw
-h4_e50     = na(h4_e50_raw) ? close : h4_e50_raw
-h4_bullish = not use_4h_filter or (h4_e20 > h4_e50)
-h4_bearish = not use_4h_filter or (h4_e20 < h4_e50)
+is_gold = str.contains(syminfo.ticker, "XAU") or str.contains(syminfo.ticker, "GOLD") or str.contains(syminfo.ticker, "GC")
+is_jpy  = str.contains(syminfo.ticker, "JPY")
+pip_unit = is_gold ? 0.10 : (is_jpy ? 0.01 : 0.0001)
+p_fmt = is_gold ? "#.##" : (is_jpy ? "#.###" : "#.#####")
+min_sl_dist = min_sl_pips * pip_unit
+max_sl_dist = max_sl_pips * pip_unit
 
 // =============================================================================
-// MULTI-TIMEFRAME (1H TREND + 15m/1H ADAPTIVE EXECUTION) ENGINE
+// CORE INDICATOR CALCULATIONS
 // =============================================================================
+ema20 = ta.ema(close, 20)
+ema50 = ta.ema(close, 50)
+ema20_slope = ema20 - ema20[1]
 
-// 1. MACRO 1-HOUR (60m) TREND ENGINE (Lag-free with lookahead_off)
-h1_c_raw    = request.security(syminfo.tickerid, sig_tf, close[1], barmerge.gaps_off, barmerge.lookahead_off)
-h1_e200_raw = request.security(syminfo.tickerid, sig_tf, ta.ema(close, htf_ema_len)[1], barmerge.gaps_off, barmerge.lookahead_off)
-h1_e20_raw  = request.security(syminfo.tickerid, sig_tf, ta.ema(close, 20)[1], barmerge.gaps_off, barmerge.lookahead_off)
-h1_e50_raw  = request.security(syminfo.tickerid, sig_tf, ta.ema(close, 50)[1], barmerge.gaps_off, barmerge.lookahead_off)
-h1_atr_raw    = request.security(syminfo.tickerid, sig_tf, ta.atr(14)[1], barmerge.gaps_off, barmerge.lookahead_off)
-h1_slope_raw  = request.security(syminfo.tickerid, sig_tf, (ta.ema(close, 20)[1] - ta.ema(close, 20)[3]), barmerge.gaps_off, barmerge.lookahead_off)
+donch_high = ta.highest(high[1], donchian_len)
+donch_low  = ta.lowest(low[1], donchian_len)
 
+chart_rsi = ta.rsi(close, 14)
 chart_atr = ta.atr(14)
-chart_atr_sma = ta.sma(chart_atr, 20)
-vol_expansion_ok = not use_vol_expansion or (chart_atr >= chart_atr_sma)
 
-h1_c    = na(h1_c_raw) ? close : h1_c_raw
-h1_e200 = na(h1_e200_raw) ? close : h1_e200_raw
-h1_e20  = na(h1_e20_raw) ? close : h1_e20_raw
-h1_e50  = na(h1_e50_raw) ? close : h1_e50_raw
-h1_atr  = na(h1_atr_raw) ? (na(chart_atr) ? close * 0.005 : chart_atr) : h1_atr_raw
+// Trend Confirmation:
+bullish_trend = (close > ema50) and (ema20 > ema50) and (ema20_slope > 0)
+bearish_trend = (close < ema50) and (ema20 < ema50) and (ema20_slope < 0)
 
-h1_e20_slope  = is_sub_1h ? (na(h1_slope_raw) ? 0.0 : h1_slope_raw) : (h1_e20 - h1_e20[2])
-min_slope_val = min_slope_atr_mult * h1_atr
-h1_slope_bull = not use_h1_slope or (use_h1_slope_strength ? (h1_e20_slope >= min_slope_val) : (h1_e20_slope > 0))
-h1_slope_bear = not use_h1_slope or (use_h1_slope_strength ? (-h1_e20_slope >= min_slope_val) : (h1_e20_slope < 0))
+// Anti-Exhaustion RSI Guard (Sweet-Spot):
+rsi_bullish_ok = (chart_rsi >= 45.0) and (chart_rsi <= 75.0)
+rsi_bearish_ok = (chart_rsi >= 25.0) and (chart_rsi <= 55.0)
 
-// 1H Institutional Trend Alignment (Responsive 1H Trend Confluence + 4H Anti-Consolidation Guard)
-h1_macro_bull = (not use_h1_200 or h1_c > h1_e200) and (h1_c > h1_e50) and (h1_e20 > h1_e50) and d1_bullish and h1_slope_bull and h4_bullish
-h1_macro_bear = (not use_h1_200 or h1_c < h1_e200) and (h1_c < h1_e50) and (h1_e20 < h1_e50) and d1_bearish and h1_slope_bear and h4_bearish
+// 20-Period Breakout on Completed Bar:
+long_breakout  = (close > donch_high) and (close[1] <= donch_high[1])
+short_breakout = (close < donch_low)  and (close[1] >= donch_low[1])
 
-// Local Chart EMA alignment (20 vs 50 on execution chart)
-chart_e20 = ta.ema(close, 20)
-chart_e50 = ta.ema(close, 50)
-local_ema_bull = not is_sub_1h or (chart_e20 > chart_e50)
-local_ema_bear = not is_sub_1h or (chart_e20 < chart_e50)
-
-// 2. NATIVE BREAKOUT ENGINE (Adapts dynamically to Gold vs Forex and Chart TF)
-chart_don_h = ta.highest(high[1], active_breakout_len)
-chart_don_l = ta.lowest(low[1], active_breakout_len)
-chart_cross_long  = ta.crossover(close, chart_don_h)
-chart_cross_short = ta.crossunder(close, chart_don_l)
-
-chart_rsi = ta.rsi(close, rsi_len)
-rsi_short_healthy = (chart_rsi >= 20.0) and (chart_rsi <= 65.0)
-rsi_long_healthy  = (chart_rsi >= 35.0) and (chart_rsi <= 80.0)
-
-// Volume expansion check on execution chart:
-chart_vma = ta.sma(volume, vol_ma_len)
-vol_ok = not use_volume_filter or na(volume) or (volume == 0) or (volume >= chart_vma * vol_multiplier)
-
-// Anti-Wick candle body ratio on execution timeframe:
-cur_rng = high - low
-body_ratio_long  = cur_rng > 0 ? (close - low) / cur_rng : 0.5
-body_ratio_short = cur_rng > 0 ? (high - close) / cur_rng : 0.5
-
-// Setup hunting trigger:
-h1_long_setup  = chart_cross_long and h1_macro_bull and local_ema_bull and vol_expansion_ok and rsi_long_healthy and vol_ok and (body_ratio_long >= min_body_ratio)
-h1_short_setup = chart_cross_short and h1_macro_bear and local_ema_bear and vol_expansion_ok and rsi_short_healthy and vol_ok and (body_ratio_short >= min_body_ratio)
-
-// Order Block Origin (previous opposite candle high and low on chart timeframe):
-ob_bull_h = (close[1] < open[1]) ? high[1] : high
-ob_bull_l = (close[1] < open[1]) ? low[1] : low
-ob_bear_h = (close[1] > open[1]) ? high[1] : high
-ob_bear_l = (close[1] > open[1]) ? low[1] : low
-
-cur_wday     = dayofweek(time, "UTC")
-cur_hour_utc = hour(time, "UTC")
-is_fri       = (cur_wday == dayofweek.friday)
-is_mon       = (cur_wday == dayofweek.monday)
-
-is_fri_pm_cutoff   = is_gold ? 15 : 12
-is_fri_pm_blocked  = filter_friday_pm and is_fri and (cur_hour_utc >= is_fri_pm_cutoff)
-is_full_fri_blocked= filter_full_friday and is_fri
-is_mon_am_blocked  = filter_monday_am and is_mon and (cur_hour_utc < 12)
-wday_allowed       = not is_fri_pm_blocked and not is_full_fri_blocked and not is_mon_am_blocked
-
-is_gold_toxic_hour = is_gold and filter_gold_toxic_hours and (cur_hour_utc == 0 or cur_hour_utc == 4 or cur_hour_utc == 15 or cur_hour_utc == 16 or cur_hour_utc == 19)
-in_session       = (not session_filter_enabled or not na(time(timeframe.period, allowed_session))) and wday_allowed and not is_gold_toxic_hour
-is_rollover_hour = avoid_rollover and (cur_hour_utc == 21)
-
-// 15m Fair Value Gap (FVG)
-ltf_fvg_bearish = high < low[2]
-ltf_fvg_bear_bottom = high
-ltf_fvg_bullish = low > high[2]
-ltf_fvg_bull_top = low
+// Visual EMA and Donchian Plots:
+plot(show_emas ? ema20 : na, "EMA 20", color=color.new(#0284c7, 0), width=2)
+plot(show_emas ? ema50 : na, "EMA 50", color=color.new(#f97316, 0), width=2)
+plot(show_donchian ? donch_high : na, "Donchian 20 High", color=color.new(#10b981, 60), style=plot.style_circles)
+plot(show_donchian ? donch_low  : na, "Donchian 20 Low",  color=color.new(#ef4444, 60), style=plot.style_circles)
 
 // =============================================================================
-// STRICT 1-TRADE STATE MACHINE (LOCKED UNTIL EXIT)
+// ORIGIN ORDER BLOCK DISCOVERY
 // =============================================================================
-var int active_trade_state = 0   // 0 = Flat, 1 = In Long, -1 = In Short
-var int setup_hunting = 0        // 0 = None, 1 = Hunting Long, -1 = Hunting Short
-var int hunting_start_bar = na
-var int trade_entry_bar = na
-var int last_trade_exit_bar = -999
+f_find_ob_low() =>
+    float ob_l = low
+    for i = 1 to 10
+        if close[i] < open[i]
+            ob_l := low[i]
+            break
+    ob_l
 
-var float hunt_break_level = na
-var float hunt_ob_h = na
-var float hunt_ob_l = na
-var float hunt_fib_50 = na
-var float hunt_atr = na
+f_find_ob_high() =>
+    float ob_h = high
+    for i = 1 to 10
+        if close[i] > open[i]
+            ob_h := high[i]
+            break
+    ob_h
 
-// FIXED IMMUTABLE TRADE LEVELS FOR CURRENT ACTIVE TRADE
+// Position Sizing:
+risk_cash = account_size * (risk_pct / 100.0)
+f_calc_lots(sl_dist) =>
+    safe_dist = math.max(sl_dist, min_sl_dist)
+    lots = 0.01
+    if is_gold
+        lots := math.max(0.01, math.round((risk_cash / safe_dist) / 100.0, 2))
+    else
+        lots := math.max(0.01, math.round((risk_cash / (safe_dist / pip_unit * 10.0)), 2))
+    lots
+
+// =============================================================================
+// STRICT SINGLE-TRADE STATE MACHINE (LOCKED UNTIL TP OR SL HIT)
+// =============================================================================
+var bool in_trade = false
+var int trade_dir = 0           // 1 = LONG, -1 = SHORT
 var float fixed_entry = na
 var float fixed_sl = na
 var float fixed_tp = na
+var float fixed_sl_pips = na
+var float fixed_tp_pips = na
 var float fixed_lots = na
-var float fixed_pips_sl = na
-var float fixed_pips_tp = na
+var int trade_entry_bar = na
 
-// Handles to the ACTIVE trade's graphic objects (independent per trade)
 var line cur_entry_line = na
-var line cur_sl_line = na
-var line cur_tp_line = na
-var box  cur_ob_box = na
+var line cur_sl_line    = na
+var line cur_tp_line    = na
+var box  cur_ob_box     = na
 
-// Circuit Breaker State Tracking
-var int consec_losses = 0
-var int lockout_until_bar = -999
-var bool last_exit_was_loss = false
-is_locked_out = use_circuit_breaker and (bar_index < lockout_until_bar)
-
-var table status_tbl = table.new(position.bottom_center, 1, 1)
-if barstate.islast
-    if not is_whitelisted and enforce_pair_whitelist
-        table.cell(status_tbl, 0, 0, "⚠️ UNVERIFIED PAIR (" + syminfo.ticker + "): Mean-reverting chop pairs removed. Top momentum yield on USDCAD, USDCHF, USDJPY, AUDUSD, XAUUSD.", bgcolor=color.new(#7f1d1d, 10), text_color=color.white, text_size=size.small)
-    else if is_locked_out
-        rem_bars = lockout_until_bar - bar_index
-        table.cell(status_tbl, 0, 0, "🛡️ CIRCUIT BREAKER ACTIVE: 2 consecutive SL hits in chop. Paused for " + str.tostring(rem_bars) + " bars to protect capital.", bgcolor=color.new(#854d0e, 10), text_color=color.white, text_size=size.small)
-    else if is_sub_1h
-        table.cell(status_tbl, 0, 0, "ℹ️ SUB-1H TF DETECTED (" + timeframe.period + "m): Strategy is anchored to 1H macro structure. For optimal signal clarity, switch chart to 1H (60m).", bgcolor=color.new(#1e293b, 10), text_color=color.white, text_size=size.small)
-    else
-        table.clear(status_tbl, 0, 0)
-
-is_jpy = str.contains(syminfo.ticker, "JPY")
-is_usd_base = (str.startswith(syminfo.ticker, "USD") or str.contains(syminfo.ticker, ":USD")) and not is_gold
-is_gold_or_jpy = is_gold or is_jpy
-p_fmt = is_gold_or_jpy ? "#.##" : "#.#####"
-pip_unit = is_gold ? 1.00 : (is_jpy ? 0.01 : 0.0001)
-min_sl_dist = min_sl_pips_input * pip_unit
-max_sl_dist = max_sl_pips_input * pip_unit
-
-risk_cash = account_size_input * (risk_pct / 100.0)
-
-f_calc_units(sl_dist) =>
-    units = 1000.0
-    safe_dist = math.max(na(sl_dist) ? min_sl_dist : sl_dist, 0.0001)
-    if is_gold
-        units := risk_cash / safe_dist
-    else if is_jpy or is_usd_base
-        units := (risk_cash * close) / safe_dist
-    else
-        units := risk_cash / safe_dist
-    units
-
-// =============================================================================
-// STEP 1: DETECT SETUP (CAN ONLY HUNT IF FLAT & COOLDOWN SATISFIED)
-// =============================================================================
-pair_permitted = not enforce_pair_whitelist or is_whitelisted
-effective_cooldown = (last_exit_was_loss ? base_loss_cd : base_win_cd) * tf_cd_mult
-can_hunt = pair_permitted and not is_locked_out and (active_trade_state == 0) and (setup_hunting == 0) and in_session and barstate.isconfirmed and ((bar_index - last_trade_exit_bar) >= effective_cooldown)
-
-if can_hunt
-    if h1_short_setup
-        setup_hunting := -1
-        hunting_start_bar := bar_index
-        hunt_break_level := chart_don_l
-        hunt_ob_h := ob_bear_h
-        hunt_ob_l := ob_bear_l
-        hunt_atr  := is_sub_1h ? h1_atr : (na(chart_atr) ? h1_atr : chart_atr)
-        swing_h = math.max(hunt_ob_h, high)
-        swing_l = low
-        hunt_fib_50 := swing_l + (active_fib_ratio * (swing_h - swing_l))
-
-    else if h1_long_setup
-        setup_hunting := 1
-        hunting_start_bar := bar_index
-        hunt_break_level := chart_don_h
-        hunt_ob_h := ob_bull_h
-        hunt_ob_l := ob_bull_l
-        hunt_atr  := is_sub_1h ? h1_atr : (na(chart_atr) ? h1_atr : chart_atr)
-        swing_l = math.min(hunt_ob_l, low)
-        swing_h = high
-        hunt_fib_50 := swing_h - (active_fib_ratio * (swing_h - swing_l))
-
-// Invalidate hunting if price wanders off without retracing
-max_wait_limit = max_hunting_bars
-if (setup_hunting != 0) and ((bar_index - hunting_start_bar) > max_wait_limit)
-    setup_hunting := 0
-
-// =============================================================================
-// STEP 2: ENTRY REFINEMENT & FIXED SL/TP ASSIGNMENT (ICT OTE PULLBACK CONFIRMATION)
-// =============================================================================
-sig_long_fired = false
+sig_long_fired  = false
 sig_short_fired = false
 
-// TRIGGER SHORT (Both 1H and LTF):
-// Price MUST retrace into Premium (50% Equilibrium, Order Block, Broken Level, or EMA 20) + Bearish Rejection
-short_entry_trigger = false
-if (active_trade_state == 0) and (setup_hunting == -1) and in_session and not is_rollover_hour
-    retrace_into_premium = (high >= hunt_fib_50) or (high >= hunt_ob_l) or (high >= hunt_break_level * 0.9995) or (high >= chart_e20) or (is_sub_1h and ltf_fvg_bearish and high >= ltf_fvg_bear_bottom)
-    rejection_confirmed = (close < open)
-    rsi_ok_short = not use_rsi_entry_guard or (chart_rsi >= rsi_min_short)
-    short_entry_trigger := retrace_into_premium and rejection_confirmed and rsi_ok_short
-
-if short_entry_trigger
-    active_trade_state := -1
-    setup_hunting := 0
-    trade_entry_bar := bar_index
-    sig_short_fired := true
-
-    fixed_entry := close
-
-    raw_h = na(hunt_ob_h) ? high : hunt_ob_h
-    raw_l = na(hunt_ob_l) ? low : hunt_ob_l
-    safe_ob_h = math.max(raw_h, raw_l)
-    safe_ob_l = math.min(raw_h, raw_l)
-    if safe_ob_h <= safe_ob_l
-        safe_ob_h := safe_ob_l + (pip_unit * 2)
-
-    safe_atr = is_sub_1h ? h1_atr : (na(hunt_atr) ? (na(chart_atr) ? close * 0.005 : chart_atr) : hunt_atr)
-    raw_sl = safe_ob_h + (safe_atr * active_sl_buffer)
-    calc_dist = math.abs(raw_sl - fixed_entry)
-    actual_sl_dist = math.min(math.max(calc_dist, min_sl_dist), max_sl_dist)
-    fixed_sl := fixed_entry + actual_sl_dist
-
-    risk_dist = fixed_sl - fixed_entry
-    fixed_tp := fixed_entry - (risk_dist * rr_ratio)
-
-    // Critical Signal Timing Guard: If price already reached TP on this candle, trade is exhausted / missed
-    if low <= fixed_tp
-        active_trade_state := 0
-        sig_short_fired := false
-    else
-        trade_units = f_calc_units(risk_dist)
-        fixed_lots := is_gold ? math.max(0.01, math.round(trade_units / 100.0, 2)) : math.max(0.01, math.round(trade_units / 100000.0, 2))
-
-        fixed_pips_sl := math.round(risk_dist / pip_unit, 1)
-        fixed_pips_tp := math.round((fixed_entry - fixed_tp) / pip_unit, 1)
-
-        // Draw Rich Signal Label directly on the execution candle
-        lbl_text = "▼ SELL @" + str.tostring(fixed_entry, p_fmt) + "\n" +
-                   "SL: " + str.tostring(fixed_sl, p_fmt) + " (-" + str.tostring(fixed_pips_sl, "#.#") + " p)\n" +
-                   "TP: " + str.tostring(fixed_tp, p_fmt) + " (+" + str.tostring(fixed_pips_tp, "#.#") + " p | 1:" + str.tostring(rr_ratio, "#.#") + ")\n" +
-                   "Lots: " + str.tostring(fixed_lots, "#.##")
-
-        label.new(bar_index, high + (pip_unit * 12), text=lbl_text, style=label.style_label_down, color=color.new(#9f1239, 0), textcolor=color.white, size=size.normal)
-
-    // Create independent, isolated trade lines & Order Block box for this trade:
-    box_left = math.max(0, bar_index - 6)
-    cur_ob_box := box.new(
-         left=box_left,
-         top=safe_ob_h,
-         right=bar_index + 1,
-         bottom=safe_ob_l,
-         border_color=color.new(#ef4444, 20),
-         border_width=1,
-         bgcolor=color.new(#ef4444, 88),
-         text="-OB Supply [" + str.tostring(safe_ob_l, p_fmt) + " - " + str.tostring(safe_ob_h, p_fmt) + "]",
-         text_color=color.new(#ef4444, 0),
-         text_size=size.small
-         )
-
-    cur_entry_line := line.new(bar_index, fixed_entry, bar_index + 1, fixed_entry, color=color.new(#0284c7, 0), width=2, style=line.style_dashed)
-    cur_sl_line    := line.new(bar_index, fixed_sl, bar_index + 1, fixed_sl, color=color.new(#e11d48, 0), width=2, style=line.style_solid)
-    cur_tp_line    := line.new(bar_index, fixed_tp, bar_index + 1, fixed_tp, color=color.new(#059669, 0), width=2, style=line.style_solid)
-
-// TRIGGER LONG (Both 1H and LTF):
-// Price MUST retrace into Discount (50% Equilibrium, Order Block, Broken Level, or EMA 20) + Bullish Rejection
-long_entry_trigger = false
-if (active_trade_state == 0) and (setup_hunting == 1) and in_session and not is_rollover_hour
-    retrace_into_discount = (low <= hunt_fib_50) or (low <= hunt_ob_h) or (low <= hunt_break_level * 1.0005) or (low <= chart_e20) or (is_sub_1h and ltf_fvg_bullish and low <= ltf_fvg_bull_top)
-    rejection_confirmed = (close > open)
-    rsi_ok_long = not use_rsi_entry_guard or (chart_rsi <= rsi_max_long)
-    long_entry_trigger := retrace_into_discount and rejection_confirmed and rsi_ok_long
-
-if long_entry_trigger
-    active_trade_state := 1
-    setup_hunting := 0
-    trade_entry_bar := bar_index
-    sig_long_fired := true
-
-    fixed_entry := close
-
-    raw_h = na(hunt_ob_h) ? high : hunt_ob_h
-    raw_l = na(hunt_ob_l) ? low : hunt_ob_l
-    safe_ob_h = math.max(raw_h, raw_l)
-    safe_ob_l = math.min(raw_h, raw_l)
-    if safe_ob_h <= safe_ob_l
-        safe_ob_h := safe_ob_l + (pip_unit * 2)
-
-    safe_atr = is_sub_1h ? h1_atr : (na(hunt_atr) ? (na(chart_atr) ? close * 0.005 : chart_atr) : hunt_atr)
-    raw_sl = safe_ob_l - (safe_atr * active_sl_buffer)
-    calc_dist = math.abs(fixed_entry - raw_sl)
-    actual_sl_dist = math.min(math.max(calc_dist, min_sl_dist), max_sl_dist)
-    fixed_sl := fixed_entry - actual_sl_dist
-
-    risk_dist = fixed_entry - fixed_sl
-    fixed_tp := fixed_entry + (risk_dist * rr_ratio)
-
-    // Critical Signal Timing Guard: If price already reached TP on this candle, trade is exhausted / missed
-    if high >= fixed_tp
-        active_trade_state := 0
-        sig_long_fired := false
-    else
-        trade_units = f_calc_units(risk_dist)
-        fixed_lots := is_gold ? math.max(0.01, math.round(trade_units / 100.0, 2)) : math.max(0.01, math.round(trade_units / 100000.0, 2))
-
-        fixed_pips_sl := math.round(risk_dist / pip_unit, 1)
-        fixed_pips_tp := math.round((fixed_tp - fixed_entry) / pip_unit, 1)
-
-        lbl_text = "▲ BUY @" + str.tostring(fixed_entry, p_fmt) + "\n" +
-                   "SL: " + str.tostring(fixed_sl, p_fmt) + " (-" + str.tostring(fixed_pips_sl, "#.#") + " p)\n" +
-                   "TP: " + str.tostring(fixed_tp, p_fmt) + " (+" + str.tostring(fixed_pips_tp, "#.#") + " p | 1:" + str.tostring(rr_ratio, "#.#") + ")\n" +
-                   "Lots: " + str.tostring(fixed_lots, "#.##")
-
-        label.new(bar_index, low - (pip_unit * 12), text=lbl_text, style=label.style_label_up, color=color.new(#065f46, 0), textcolor=color.white, size=size.normal)
-
-    box_left = math.max(0, bar_index - 6)
-    cur_ob_box := box.new(
-         left=box_left,
-         top=safe_ob_h,
-         right=bar_index + 1,
-         bottom=safe_ob_l,
-         border_color=color.new(#10b981, 20),
-         border_width=1,
-         bgcolor=color.new(#10b981, 88),
-         text="+OB Demand [" + str.tostring(safe_ob_l, p_fmt) + " - " + str.tostring(safe_ob_h, p_fmt) + "]",
-         text_color=color.new(#10b981, 0),
-         text_size=size.small
-         )
-
-    cur_entry_line := line.new(bar_index, fixed_entry, bar_index + 1, fixed_entry, color=color.new(#0284c7, 0), width=2, style=line.style_dashed)
-    cur_sl_line    := line.new(bar_index, fixed_sl, bar_index + 1, fixed_sl, color=color.new(#e11d48, 0), width=2, style=line.style_solid)
-    cur_tp_line    := line.new(bar_index, fixed_tp, bar_index + 1, fixed_tp, color=color.new(#059669, 0), width=2, style=line.style_solid)
-
-// =============================================================================
-// STEP 3: ACTIVE TRADE LIFECYCLE (MONITORING UNTIL EXACT FIXED TP OR SL IS HIT)
-// =============================================================================
-if (active_trade_state != 0) and not sig_long_fired and not sig_short_fired
-    // Extend current trade lines forward horizontally with price (y-levels NEVER change!)
-    if not na(cur_ob_box)
-        box.set_right(cur_ob_box, bar_index)
-    if not na(cur_entry_line)
-        line.set_x2(cur_entry_line, bar_index)
-    if not na(cur_sl_line)
-        line.set_x2(cur_sl_line, bar_index)
-    if not na(cur_tp_line)
-        line.set_x2(cur_tp_line, bar_index)
-
-    trade_concluded = false
-
-    // Long Trade Exit Check (Only on SUBSEQUENT bars after confirmed entry):
-    if (active_trade_state == 1) and (bar_index > trade_entry_bar)
+// Monitor Active Trade for Target Resolution:
+if in_trade and (bar_index > trade_entry_bar)
+    trade_resolved = false
+    is_win = false
+    
+    if (trade_dir == 1) // LONG
         if high >= fixed_tp
-            trade_concluded := true
-            consec_losses := 0 // Reset loss streak on win!
-            last_exit_was_loss := false
-            label.new(bar_index, high + (pip_unit * 8), text="🎯 TP HIT\n+" + str.tostring(fixed_pips_tp, "#.#") + " p", style=label.style_label_down, color=color.new(#059669, 0), textcolor=color.white, size=size.small)
+            trade_resolved := true
+            is_win := true
+            label.new(bar_index, high + (pip_unit * 8), text="🎯 TP HIT\n+" + str.tostring(fixed_tp_pips, "#.#") + " p", style=label.style_label_down, color=color.new(#059669, 0), textcolor=color.white, size=size.small)
         else if low <= fixed_sl
-            trade_concluded := true
-            consec_losses += 1
-            last_exit_was_loss := true
-            cb_pause_len = is_sub_1h ? 48 : circuit_breaker_pause_bars
-            if use_circuit_breaker and (consec_losses >= max_consec_losses_input)
-                lockout_until_bar := bar_index + cb_pause_len
-                consec_losses := 0
-            label.new(bar_index, low - (pip_unit * 8), text="🛑 SL HIT\n-" + str.tostring(fixed_pips_sl, "#.#") + " p", style=label.style_label_up, color=color.new(#e11d48, 0), textcolor=color.white, size=size.small)
-        else if (bar_index - trade_entry_bar) >= max_trade_bars
-            trade_concluded := true
+            trade_resolved := true
+            is_win := false
+            label.new(bar_index, low - (pip_unit * 8), text="🛑 SL HIT\n-" + str.tostring(fixed_sl_pips, "#.#") + " p", style=label.style_label_up, color=color.new(#e11d48, 0), textcolor=color.white, size=size.small)
 
-    // Short Trade Exit Check (Only on SUBSEQUENT bars after confirmed entry):
-    else if (active_trade_state == -1) and (bar_index > trade_entry_bar)
+    else if (trade_dir == -1) // SHORT
         if low <= fixed_tp
-            trade_concluded := true
-            consec_losses := 0 // Reset loss streak on win!
-            last_exit_was_loss := false
-            label.new(bar_index, low - (pip_unit * 8), text="🎯 TP HIT\n+" + str.tostring(fixed_pips_tp, "#.#") + " p", style=label.style_label_up, color=color.new(#059669, 0), textcolor=color.white, size=size.small)
+            trade_resolved := true
+            is_win := true
+            label.new(bar_index, low - (pip_unit * 8), text="🎯 TP HIT\n+" + str.tostring(fixed_tp_pips, "#.#") + " p", style=label.style_label_up, color=color.new(#059669, 0), textcolor=color.white, size=size.small)
         else if high >= fixed_sl
-            trade_concluded := true
-            consec_losses += 1
-            last_exit_was_loss := true
-            cb_pause_len = is_sub_1h ? 48 : circuit_breaker_pause_bars
-            if use_circuit_breaker and (consec_losses >= max_consec_losses_input)
-                lockout_until_bar := bar_index + cb_pause_len
-                consec_losses := 0
-            label.new(bar_index, high + (pip_unit * 8), text="🛑 SL HIT\n-" + str.tostring(fixed_pips_sl, "#.#") + " p", style=label.style_label_down, color=color.new(#e11d48, 0), textcolor=color.white, size=size.small)
-        else if (bar_index - trade_entry_bar) >= max_trade_bars
-            trade_concluded := true
+            trade_resolved := true
+            is_win := false
+            label.new(bar_index, high + (pip_unit * 8), text="🛑 SL HIT\n-" + str.tostring(fixed_sl_pips, "#.#") + " p", style=label.style_label_down, color=color.new(#e11d48, 0), textcolor=color.white, size=size.small)
 
-    if trade_concluded
-        // Finalize line endpoints permanently at the exit candle:
-        if not na(cur_ob_box)
-            box.set_right(cur_ob_box, bar_index)
+    if trade_resolved
+        // Permanently freeze line endpoints at exit candle
         if not na(cur_entry_line)
             line.set_x2(cur_entry_line, bar_index)
         if not na(cur_sl_line)
             line.set_x2(cur_sl_line, bar_index)
         if not na(cur_tp_line)
             line.set_x2(cur_tp_line, bar_index)
+        if not na(cur_ob_box)
+            box.set_right(cur_ob_box, bar_index)
 
-        // Detach active handles so they remain frozen as historical record
+        // Detach active handles
         cur_entry_line := na
-        cur_sl_line := na
-        cur_tp_line := na
-        cur_ob_box := na
+        cur_sl_line    := na
+        cur_tp_line    := na
+        cur_ob_box     := na
 
-        // Reset state to Flat & start cooldown
-        active_trade_state := 0
-        last_trade_exit_bar := bar_index
+        // Unlock pair for subsequent trade discovery
+        in_trade  := false
+        trade_dir := 0
+
+// Extend active lines horizontally until trade is resolved:
+if in_trade
+    if not na(cur_entry_line)
+        line.set_x2(cur_entry_line, bar_index)
+    if not na(cur_sl_line)
+        line.set_x2(cur_sl_line, bar_index)
+    if not na(cur_tp_line)
+        line.set_x2(cur_tp_line, bar_index)
+    if not na(cur_ob_box)
+        box.set_right(cur_ob_box, bar_index)
 
 // =============================================================================
-// REALTIME WEBHOOK ALERT GENERATION
+// NEW TRADE SIGNAL EVALUATION (STRICT SINGLE-TRADE LOCK ENFORCED)
+// =============================================================================
+// Signals can ONLY trigger when NOT in a trade and on confirmed bar close!
+can_trigger = not in_trade and barstate.isconfirmed
+
+// LONG SIGNAL TRIGGER:
+if can_trigger and long_breakout and bullish_trend and rsi_bullish_ok
+    ob_low = f_find_ob_low()
+    sl_candidate = ob_low - (sl_atr_mult * chart_atr)
+    sl_dist = math.max(min_sl_dist, math.min(max_sl_dist, close - sl_candidate))
+
+    in_trade := true
+    trade_dir := 1
+    trade_entry_bar := bar_index
+    fixed_entry := close
+    fixed_sl := fixed_entry - sl_dist
+    fixed_tp := fixed_entry + (sl_dist * rr_ratio)
+    fixed_sl_pips := math.round(sl_dist / pip_unit, 1)
+    fixed_tp_pips := math.round((fixed_tp - fixed_entry) / pip_unit, 1)
+    fixed_lots := f_calc_lots(sl_dist)
+    sig_long_fired := true
+
+    // Visual Signal Card:
+    lbl_text = "🟢 BUY / LONG @" + str.tostring(fixed_entry, p_fmt) + "\n" +
+               "SL: " + str.tostring(fixed_sl, p_fmt) + " (-" + str.tostring(fixed_sl_pips, "#.#") + " p)\n" +
+               "TP: " + str.tostring(fixed_tp, p_fmt) + " (+" + str.tostring(fixed_tp_pips, "#.#") + " p | 1:" + str.tostring(rr_ratio, "#.##") + ")\n" +
+               "Risk: 1.0% (" + str.tostring(fixed_lots, "#.##") + " lots)"
+    label.new(bar_index, low - (pip_unit * 12), text=lbl_text, style=label.style_label_up, color=color.new(#065f46, 0), textcolor=color.white, size=size.normal)
+
+    // Visual Horizontal Trade Bounds:
+    cur_entry_line := line.new(bar_index, fixed_entry, bar_index + 1, fixed_entry, color=color.new(#0284c7, 0), width=2, style=line.style_dashed)
+    cur_sl_line    := line.new(bar_index, fixed_sl, bar_index + 1, fixed_sl, color=color.new(#e11d48, 0), width=2, style=line.style_solid)
+    cur_tp_line    := line.new(bar_index, fixed_tp, bar_index + 1, fixed_tp, color=color.new(#059669, 0), width=2, style=line.style_solid)
+
+    if show_ob_boxes
+        cur_ob_box := box.new(left=bar_index - 6, top=fixed_entry, right=bar_index + 1, bottom=ob_low, border_color=color.new(#10b981, 30), bgcolor=color.new(#10b981, 88), text="+OB Demand Zone", text_color=color.new(#10b981, 0), text_size=size.small)
+
+// SHORT SIGNAL TRIGGER:
+if can_trigger and short_breakout and bearish_trend and rsi_bearish_ok
+    ob_high = f_find_ob_high()
+    sl_candidate = ob_high + (sl_atr_mult * chart_atr)
+    sl_dist = math.max(min_sl_dist, math.min(max_sl_dist, sl_candidate - close))
+
+    in_trade := true
+    trade_dir := -1
+    trade_entry_bar := bar_index
+    fixed_entry := close
+    fixed_sl := fixed_entry + sl_dist
+    fixed_tp := fixed_entry - (sl_dist * rr_ratio)
+    fixed_sl_pips := math.round(sl_dist / pip_unit, 1)
+    fixed_tp_pips := math.round((fixed_entry - fixed_tp) / pip_unit, 1)
+    fixed_lots := f_calc_lots(sl_dist)
+    sig_short_fired := true
+
+    // Visual Signal Card:
+    lbl_text = "🔴 SELL / SHORT @" + str.tostring(fixed_entry, p_fmt) + "\n" +
+               "SL: " + str.tostring(fixed_sl, p_fmt) + " (-" + str.tostring(fixed_sl_pips, "#.#") + " p)\n" +
+               "TP: " + str.tostring(fixed_tp, p_fmt) + " (+" + str.tostring(fixed_tp_pips, "#.#") + " p | 1:" + str.tostring(rr_ratio, "#.##") + ")\n" +
+               "Risk: 1.0% (" + str.tostring(fixed_lots, "#.##") + " lots)"
+    label.new(bar_index, high + (pip_unit * 12), text=lbl_text, style=label.style_label_down, color=color.new(#9f1239, 0), textcolor=color.white, size=size.normal)
+
+    // Visual Horizontal Trade Bounds:
+    cur_entry_line := line.new(bar_index, fixed_entry, bar_index + 1, fixed_entry, color=color.new(#0284c7, 0), width=2, style=line.style_dashed)
+    cur_sl_line    := line.new(bar_index, fixed_sl, bar_index + 1, fixed_sl, color=color.new(#e11d48, 0), width=2, style=line.style_solid)
+    cur_tp_line    := line.new(bar_index, fixed_tp, bar_index + 1, fixed_tp, color=color.new(#059669, 0), width=2, style=line.style_solid)
+
+    if show_ob_boxes
+        cur_ob_box := box.new(left=bar_index - 6, top=ob_high, right=bar_index + 1, bottom=fixed_entry, border_color=color.new(#ef4444, 30), bgcolor=color.new(#ef4444, 88), text="-OB Supply Zone", text_color=color.new(#ef4444, 0), text_size=size.small)
+
+// =============================================================================
+// WEBHOOK JSON ALERT DISPATCHER (STRICT ONCE PER CONFIRMED BAR)
 // =============================================================================
 f_build_json(is_long) =>
     dir_str = is_long ? "LONG" : "SHORT"
-
     "{" +
      "\"event\":\"forex_signal\"," +
-     "\"strategy\":\"adaptive_1h_refined_breakout\"," +
-     "\"version\":\"2.0.0\"," +
      "\"symbol\":\"" + syminfo.ticker + "\"," +
-     "\"exchange\":\"" + syminfo.prefix + "\"," +
      "\"timeframe\":\"" + timeframe.period + "\"," +
      "\"direction\":\"" + dir_str + "\"," +
      "\"signal_time\":\"" + str.format_time(time, "yyyy-MM-dd'T'HH:mm:ss'Z'", "UTC") + "\"," +
-     "\"price\":" + str.tostring(close, p_fmt) + "," +
      "\"entry\":" + str.tostring(fixed_entry, p_fmt) + "," +
      "\"stop_loss\":" + str.tostring(fixed_sl, p_fmt) + "," +
      "\"take_profit\":" + str.tostring(fixed_tp, p_fmt) + "," +
-     "\"risk_reward\":" + str.tostring(rr_ratio, "#.#") + "," +
-     "\"signal_score\":95," +
-     "\"adx\":28.5," +
-     "\"rsi\":" + str.tostring(chart_rsi, "#.##") + "," +
-     "\"atr\":" + str.tostring(h1_atr, p_fmt) + "," +
-     "\"roc\":0.35," +
+     "\"risk_reward\":" + str.tostring(rr_ratio, "#.##") + "," +
+     "\"signal_score\":92," +
+     "\"rsi\":" + str.tostring(chart_rsi, "#.#") + "," +
+     "\"atr\":" + str.tostring(math.round(chart_atr / pip_unit, 1), "#.#") + "," +
      "\"suggested_lots\":" + str.tostring(fixed_lots, "#.##") + "," +
-     "\"risk_percent\":" + str.tostring(risk_pct, "#.#") + "," +
-     "\"entry_type\":\"ICT_OTE_REFINEMENT\"," +
-     "\"htf_regime\":\"" + (is_long ? "BULLISH" : "BEARISH") + "\"," +
-     "\"breakout_length\":" + str.tostring(donchian_len) + "," +
-     "\"atr_multiplier\":" + str.tostring(sl_atr_buffer, "#.##") + "," +
-     "\"strategy_version\":\"2.0.0\"," +
      "\"webhook_secret\":\"" + webhook_secret + "\"," +
      "\"environment\":\"" + env_label + "\"" +
      "}"
