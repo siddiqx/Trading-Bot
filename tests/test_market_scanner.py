@@ -62,7 +62,7 @@ def test_format_alert_message():
         "score": 92
     }
     msg = format_alert_message(sig)
-    assert "EURUSD" in msg
+    assert "EUR/USD" in msg
     assert "BUY / LONG" in msg
     assert "1.0855" in msg
     assert "1.082" in msg

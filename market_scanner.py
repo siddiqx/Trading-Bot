@@ -286,22 +286,47 @@ def scan_pair_timeframe(pair_name: str, config: dict, tf: str, state: dict) -> l
 
 
 def format_alert_message(sig: dict) -> str:
-    direction_emoji = "🟢 <b>BUY / LONG</b>" if sig["direction"] == "LONG" else "🔴 <b>SELL / SHORT</b>"
+    # Format asset display name
+    pair = sig["pair"]
+    if pair == "XAUUSD":
+        display_pair = "GOLD (XAU/USD)"
+    elif len(pair) == 6:
+        display_pair = f"{pair[:3]}/{pair[3:]}"
+    else:
+        display_pair = pair
+
+    is_long = sig["direction"] == "LONG"
+    icon = "🟢" if is_long else "🔴"
+    action_text = "BUY / LONG" if is_long else "SELL / SHORT"
+    structure_text = "Origin Order Block Support" if is_long else "Origin Order Block Resistance"
+    trend_text = "Bullish (EMA 20 > EMA 50)" if is_long else "Bearish (EMA 20 < EMA 50)"
+    sl_sign = "-"
+    tp_sign = "+"
+
+    tf_label = "1-HOUR (1H)" if sig["timeframe"] == "1H" else "15-MINUTE (15M)"
+
     return (
-        f"⚡ <b>CONFIRMED INSTITUTIONAL SIGNAL</b> ⚡\n"
-        f"━━━━━━━━━━━━━━━━━━━━━━━━\n"
-        f"📊 <b>Asset:</b> <code>{sig['pair']}</code> ({sig['timeframe']})\n"
-        f"🎯 <b>Action:</b> {direction_emoji}\n"
-        f"━━━━━━━━━━━━━━━━━━━━━━━━\n"
-        f"📍 <b>Entry:</b> <code>{sig['entry']}</code>\n"
-        f"🛑 <b>Stop Loss:</b> <code>{sig['stop_loss']}</code> (-{sig['sl_pips']} pips)\n"
-        f"🎯 <b>Take Profit:</b> <code>{sig['take_profit']}</code> (+{sig['tp_pips']} pips)\n"
-        f"⚖️ <b>Risk/Reward:</b> 1:{sig['rr']}\n"
-        f"━━━━━━━━━━━━━━━━━━━━━━━━\n"
-        f"📈 <b>RSI:</b> {sig['rsi']} | <b>ATR:</b> {sig['atr']} pips\n"
-        f"⭐ <b>Quality Score:</b> {sig['score']}/100\n"
-        f"🕒 <b>Confirmed Bar:</b> {sig['time']}\n"
-        f"🤖 <i>Automated 24/7 Cloud Engine</i>"
+        f"{icon} <b>NEW TRADE SIGNAL: {display_pair}</b>\n"
+        f"<b>──────────────────────────</b>\n"
+        f"🧭 <b>Direction:</b> <b>{action_text}</b>\n"
+        f"⏱ <b>Timeframe:</b> <b>{tf_label}</b>\n"
+        f"<b>──────────────────────────</b>\n\n"
+        f"<b>📋 TRADE PARAMETERS</b>\n"
+        f"• <b>Entry Price:</b> <code>{sig['entry']}</code>\n"
+        f"• <b>Stop Loss:</b> <code>{sig['stop_loss']}</code> <i>({sl_sign}{sig['sl_pips']} pips)</i>\n"
+        f"• <b>Take Profit:</b> <code>{sig['take_profit']}</code> <i>({tp_sign}{sig['tp_pips']} pips)</i>\n"
+        f"• <b>Risk / Reward:</b> <b>1 : {sig['rr']}</b>\n"
+        f"• <b>Recommended Risk:</b> <b>1.0% Equity</b>\n\n"
+        f"<b>🔬 STRATEGY CONFLUENCE</b>\n"
+        f"• <b>Setup:</b> 20-Bar Structural Breakout\n"
+        f"• <b>Structure:</b> {structure_text}\n"
+        f"• <b>Trend Alignment:</b> {trend_text}\n"
+        f"• <b>Momentum RSI:</b> <code>{sig['rsi']}</code> (Optimal Sweet-Spot)\n"
+        f"• <b>Volatility ATR:</b> <code>{sig['atr']}</code> pips\n"
+        f"• <b>Signal Score:</b> <b>{sig['score']} / 100</b>\n\n"
+        f"<b>──────────────────────────</b>\n"
+        f"🕒 <b>Confirmed Bar:</b> <code>{sig['time']}</code>\n"
+        f"⚠️ <i>Bar strictly closed. Execute with strict risk discipline.</i>"
     )
 
 
