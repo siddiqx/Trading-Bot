@@ -21,9 +21,9 @@ logging.basicConfig(
 )
 logger = logging.getLogger("MarketScanner")
 
-# Telegram Bot Credentials
-TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "8932628751:AAFS_Z7SZMbfNAgNE9KmU6Sly32IGxDm2p0")
-TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "8142877259")
+# Telegram Bot Credentials (with fallback if env vars are unset or empty strings)
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN") or "8932628751:AAFS_Z7SZMbfNAgNE9KmU6Sly32IGxDm2p0"
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID") or "8142877259"
 
 # Monitored Pairs and Yahoo Finance Ticker Mapping
 SYMBOLS = {
