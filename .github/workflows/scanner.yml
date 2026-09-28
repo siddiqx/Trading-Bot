@@ -1,0 +1,46 @@
+name: 24/7 Cloud Market Scanner
+
+on:
+  schedule:
+    # Run every 15 minutes during Forex market hours (Mon-Fri)
+    - cron: '*/15 * * * 1-5'
+  workflow_dispatch: # Allows manual trigger from GitHub web UI at any time
+
+jobs:
+  scan-markets:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install Dependencies
+        run: |
+          pip install httpx pandas numpy
+
+      - name: Restore Signal State Cache
+        uses: actions/cache@v4
+        with:
+          path: market_scanner_state.json
+          key: market-scanner-state-${{ github.run_id }}
+          restore-keys: |
+            market-scanner-state-
+
+      - name: Execute Market Scan
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          python market_scanner.py
+
+      - name: Save Signal State Cache
+        uses: actions/cache@v4
+        if: always()
+        with:
+          path: market_scanner_state.json
+          key: market-scanner-state-${{ github.run_id }}

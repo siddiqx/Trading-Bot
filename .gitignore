@@ -46,8 +46,8 @@ htmlcov/
 *.swp
 *.swo
 
-# OS files
-.DS_Store
+# State files
+market_scanner_state.json
 Thumbs.db
 
 # Executables & Binaries

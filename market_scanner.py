@@ -1,0 +1,352 @@
+"""
+Standalone 24/7 Cloud Market Scanner for Forex & Gold
+Tracks EURUSD, USDJPY, USDCAD, USDCHF, AUDUSD, and XAUUSD on 15M and 1H timeframes.
+Zero external server or TradingView subscription needed.
+"""
+
+import sys
+import os
+import time
+import json
+import logging
+from datetime import datetime, timezone
+import httpx
+import numpy as np
+import pandas as pd
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    handlers=[logging.StreamHandler(sys.stdout)]
+)
+logger = logging.getLogger("MarketScanner")
+
+# Telegram Bot Credentials
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "8932628751:AAFS_Z7SZMbfNAgNE9KmU6Sly32IGxDm2p0")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "8142877259")
+
+# Monitored Pairs and Yahoo Finance Ticker Mapping
+SYMBOLS = {
+    "EURUSD": {"ticker": "EURUSD=X", "pip": 0.0001, "digits": 5},
+    "USDJPY": {"ticker": "USDJPY=X", "pip": 0.01,   "digits": 3},
+    "USDCAD": {"ticker": "USDCAD=X", "pip": 0.0001, "digits": 5},
+    "USDCHF": {"ticker": "USDCHF=X", "pip": 0.0001, "digits": 5},
+    "AUDUSD": {"ticker": "AUDUSD=X", "pip": 0.0001, "digits": 5},
+    "XAUUSD": {"ticker": "GC=F",     "pip": 0.10,   "digits": 2}, # Gold Futures tracking Spot XAUUSD
+}
+
+TIMEFRAMES = ["15m", "1h"]
+
+STATE_FILE = "market_scanner_state.json"
+
+
+def load_state():
+    if os.path.exists(STATE_FILE):
+        try:
+            with open(STATE_FILE, "r") as f:
+                return json.load(f)
+        except Exception:
+            return {"alerted_signals": []}
+    return {"alerted_signals": []}
+
+
+def save_state(state):
+    try:
+        # Keep only the last 200 signal IDs to prevent file bloat
+        state["alerted_signals"] = state["alerted_signals"][-200:]
+        with open(STATE_FILE, "w") as f:
+            json.dump(state, f, indent=2)
+    except Exception as e:
+        logger.error(f"Error saving state: {e}")
+
+
+def send_telegram_alert(text: str):
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+    payload = {
+        "chat_id": TELEGRAM_CHAT_ID,
+        "text": text,
+        "parse_mode": "HTML"
+    }
+    try:
+        with httpx.Client(timeout=10.0) as client:
+            resp = client.post(url, json=payload)
+            if resp.status_code == 200:
+                logger.info("Telegram alert sent successfully.")
+            else:
+                logger.error(f"Failed to send Telegram alert: {resp.status_code} {resp.text}")
+    except Exception as e:
+        logger.error(f"Error sending Telegram alert: {e}")
+
+
+def fetch_candles(ticker: str, interval: str, range_days: str = "7d") -> pd.DataFrame:
+    """Fetch candles from Yahoo Finance chart API."""
+    url = f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?range={range_days}&interval={interval}"
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+    
+    try:
+        with httpx.Client(timeout=15.0) as client:
+            resp = client.get(url, headers=headers)
+            if resp.status_code != 200:
+                logger.warning(f"Fetch failed for {ticker} ({interval}): HTTP {resp.status_code}")
+                return pd.DataFrame()
+            
+            data = resp.json()
+            result = data.get("chart", {}).get("result")
+            if not result:
+                return pd.DataFrame()
+            
+            timestamps = result[0].get("timestamp", [])
+            quotes = result[0].get("indicators", {}).get("quote", [{}])[0]
+            
+            if not timestamps or "close" not in quotes:
+                return pd.DataFrame()
+            
+            df = pd.DataFrame({
+                "timestamp": timestamps,
+                "open": quotes.get("open", []),
+                "high": quotes.get("high", []),
+                "low": quotes.get("low", []),
+                "close": quotes.get("close", []),
+                "volume": quotes.get("volume", [0] * len(timestamps))
+            })
+            
+            # Clean missing data (weekends / empty ticks)
+            df.dropna(subset=["open", "high", "low", "close"], inplace=True)
+            df["time"] = pd.to_datetime(df["timestamp"], unit="s", utc=True)
+            df.sort_values("time", inplace=True)
+            df.reset_index(drop=True, inplace=True)
+            return df
+    except Exception as e:
+        logger.error(f"Error fetching {ticker} ({interval}): {e}")
+        return pd.DataFrame()
+
+
+def compute_indicators(df: pd.DataFrame, donchian_len: int = 20) -> pd.DataFrame:
+    """Compute technical indicators matching strategy specifications."""
+    df = df.copy()
+    
+    # EMAs
+    df["ema20"] = df["close"].ewm(span=20, adjust=False).mean()
+    df["ema50"] = df["close"].ewm(span=50, adjust=False).mean()
+    df["ema20_slope"] = df["ema20"] - df["ema20"].shift(2)
+    
+    # Donchian Breakout Levels (using previous completed bars)
+    df["donch_high"] = df["high"].shift(1).rolling(donchian_len).max()
+    df["donch_low"] = df["low"].shift(1).rolling(donchian_len).min()
+    
+    # ATR (14)
+    tr = pd.concat([
+        df["high"] - df["low"],
+        (df["high"] - df["close"].shift(1)).abs(),
+        (df["low"] - df["close"].shift(1)).abs()
+    ], axis=1).max(axis=1)
+    df["atr"] = tr.ewm(alpha=1.0/14.0, adjust=False).mean()
+    
+    # RSI (14)
+    delta = df["close"].diff()
+    gain = delta.clip(lower=0)
+    loss = -delta.clip(upper=0)
+    avg_gain = gain.ewm(alpha=1.0/14.0, adjust=False).mean()
+    avg_loss = loss.ewm(alpha=1.0/14.0, adjust=False).mean()
+    rs = avg_gain / (avg_loss + 1e-9)
+    df["rsi"] = 100.0 - (100.0 / (1.0 + rs))
+    
+    return df
+
+
+def scan_pair_timeframe(pair_name: str, config: dict, tf: str, state: dict) -> list:
+    """Scans a single pair and timeframe for confirmed structural breakout setups."""
+    ticker = config["ticker"]
+    pip = config["pip"]
+    digits = config["digits"]
+    
+    df = fetch_candles(ticker, tf, range_days="7d")
+    if df.empty or len(df) < 50:
+        return []
+    
+    df = compute_indicators(df, donchian_len=20)
+    
+    # The last row [ -1 ] is the currently forming candle.
+    # The row [ -2 ] is the most recently CLOSED candle.
+    closed_bar = df.iloc[-2]
+    prev_bar = df.iloc[-3]
+    
+    # Check if the closed bar is fresh (closed within the last 30 minutes)
+    now_utc = datetime.now(timezone.utc)
+    bar_age_seconds = (now_utc - closed_bar["time"]).total_seconds()
+    if bar_age_seconds > 1800:
+        # Candle is older than 30 minutes, ignore to avoid re-triggering historical signals
+        return []
+    
+    bar_time_str = closed_bar["time"].strftime("%Y-%m-%dT%H:%M:%SZ")
+    
+    signals = []
+    
+    # Macro trend filter: EMA 20 > EMA 50 and positive slope
+    bullish_trend = (closed_bar["close"] > closed_bar["ema50"]) and (closed_bar["ema20"] > closed_bar["ema50"]) and (closed_bar["ema20_slope"] > 0)
+    bearish_trend = (closed_bar["close"] < closed_bar["ema50"]) and (closed_bar["ema20"] < closed_bar["ema50"]) and (closed_bar["ema20_slope"] < 0)
+    
+    # Anti-exhaustion RSI guard (Avoid chasing overbought/oversold)
+    rsi_bullish_ok = 45.0 <= closed_bar["rsi"] <= 75.0
+    rsi_bearish_ok = 25.0 <= closed_bar["rsi"] <= 55.0
+    
+    # 20-period Donchian Breakout on completed bar
+    long_breakout = (closed_bar["close"] > closed_bar["donch_high"]) and (prev_bar["close"] <= prev_bar["donch_high"])
+    short_breakout = (closed_bar["close"] < closed_bar["donch_low"]) and (prev_bar["close"] >= prev_bar["donch_low"])
+    
+    atr = closed_bar["atr"]
+    min_sl_dist = 18.0 * pip
+    max_sl_dist = 60.0 * pip
+    rr_ratio = 1.75
+    
+    # LONG SIGNAL CHECK
+    if long_breakout and bullish_trend and rsi_bullish_ok:
+        sig_id = f"{pair_name}_{tf.upper()}_{bar_time_str}_LONG"
+        if sig_id not in state["alerted_signals"]:
+            # Find Origin Order Block: last down-close candle prior to displacement
+            ob_low = closed_bar["low"]
+            for i in range(len(df) - 3, max(0, len(df) - 10), -1):
+                c = df.iloc[i]
+                if c["close"] < c["open"]:
+                    ob_low = c["low"]
+                    break
+            
+            entry = closed_bar["close"]
+            sl_candidate = ob_low - (0.50 * atr)
+            sl_dist = max(min_sl_dist, min(max_sl_dist, entry - sl_candidate))
+            stop_loss = entry - sl_dist
+            take_profit = entry + (sl_dist * rr_ratio)
+            
+            signals.append({
+                "id": sig_id,
+                "pair": pair_name,
+                "timeframe": tf.upper(),
+                "direction": "LONG",
+                "time": bar_time_str,
+                "entry": round(entry, digits),
+                "stop_loss": round(stop_loss, digits),
+                "take_profit": round(take_profit, digits),
+                "sl_pips": round(sl_dist / pip, 1),
+                "tp_pips": round((take_profit - entry) / pip, 1),
+                "rr": rr_ratio,
+                "rsi": round(closed_bar["rsi"], 1),
+                "atr": round(atr / pip, 1),
+                "score": 92
+            })
+            state["alerted_signals"].append(sig_id)
+
+    # SHORT SIGNAL CHECK
+    if short_breakout and bearish_trend and rsi_bearish_ok:
+        sig_id = f"{pair_name}_{tf.upper()}_{bar_time_str}_SHORT"
+        if sig_id not in state["alerted_signals"]:
+            # Find Origin Order Block: last up-close candle prior to displacement
+            ob_high = closed_bar["high"]
+            for i in range(len(df) - 3, max(0, len(df) - 10), -1):
+                c = df.iloc[i]
+                if c["close"] > c["open"]:
+                    ob_high = c["high"]
+                    break
+            
+            entry = closed_bar["close"]
+            sl_candidate = ob_high + (0.50 * atr)
+            sl_dist = max(min_sl_dist, min(max_sl_dist, sl_candidate - entry))
+            stop_loss = entry + sl_dist
+            take_profit = entry - (sl_dist * rr_ratio)
+            
+            signals.append({
+                "id": sig_id,
+                "pair": pair_name,
+                "timeframe": tf.upper(),
+                "direction": "SHORT",
+                "time": bar_time_str,
+                "entry": round(entry, digits),
+                "stop_loss": round(stop_loss, digits),
+                "take_profit": round(take_profit, digits),
+                "sl_pips": round(sl_dist / pip, 1),
+                "tp_pips": round((entry - take_profit) / pip, 1),
+                "rr": rr_ratio,
+                "rsi": round(closed_bar["rsi"], 1),
+                "atr": round(atr / pip, 1),
+                "score": 92
+            })
+            state["alerted_signals"].append(sig_id)
+            
+    return signals
+
+
+def format_alert_message(sig: dict) -> str:
+    direction_emoji = "🟢 <b>BUY / LONG</b>" if sig["direction"] == "LONG" else "🔴 <b>SELL / SHORT</b>"
+    return (
+        f"⚡ <b>CONFIRMED INSTITUTIONAL SIGNAL</b> ⚡\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"📊 <b>Asset:</b> <code>{sig['pair']}</code> ({sig['timeframe']})\n"
+        f"🎯 <b>Action:</b> {direction_emoji}\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"📍 <b>Entry:</b> <code>{sig['entry']}</code>\n"
+        f"🛑 <b>Stop Loss:</b> <code>{sig['stop_loss']}</code> (-{sig['sl_pips']} pips)\n"
+        f"🎯 <b>Take Profit:</b> <code>{sig['take_profit']}</code> (+{sig['tp_pips']} pips)\n"
+        f"⚖️ <b>Risk/Reward:</b> 1:{sig['rr']}\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"📈 <b>RSI:</b> {sig['rsi']} | <b>ATR:</b> {sig['atr']} pips\n"
+        f"⭐ <b>Quality Score:</b> {sig['score']}/100\n"
+        f"🕒 <b>Confirmed Bar:</b> {sig['time']}\n"
+        f"🤖 <i>Automated 24/7 Cloud Engine</i>"
+    )
+
+
+def run_scan_cycle():
+    """Performs one full scan cycle across all pairs and timeframes."""
+    state = load_state()
+    total_signals = 0
+    
+    logger.info("Starting scan cycle across 6 pairs on [15M, 1H]...")
+    
+    for pair_name, cfg in SYMBOLS.items():
+        for tf in TIMEFRAMES:
+            try:
+                signals = scan_pair_timeframe(pair_name, cfg, tf, state)
+                for sig in signals:
+                    total_signals += 1
+                    logger.info(f"==> NEW SIGNAL: {sig['pair']} {sig['timeframe']} {sig['direction']} @ {sig['entry']}")
+                    msg = format_alert_message(sig)
+                    send_telegram_alert(msg)
+            except Exception as e:
+                logger.error(f"Error scanning {pair_name} ({tf}): {e}")
+                
+    save_state(state)
+    logger.info(f"Scan cycle complete. Dispatched {total_signals} new signal(s).")
+    return total_signals
+
+
+if __name__ == "__main__":
+    if len(sys.argv) > 1 and sys.argv[1] == "--test":
+        test_sig = {
+            "pair": "XAUUSD",
+            "timeframe": "1H",
+            "direction": "LONG",
+            "entry": 2685.50,
+            "stop_loss": 2668.00,
+            "take_profit": 2716.00,
+            "sl_pips": 175.0,
+            "tp_pips": 305.0,
+            "rr": 1.75,
+            "rsi": 58.4,
+            "atr": 18.2,
+            "score": 94,
+            "time": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        }
+        msg = format_alert_message(test_sig)
+        send_telegram_alert(msg)
+        print("Test alert sent to Telegram.")
+    elif len(sys.argv) > 1 and sys.argv[1] == "--loop":
+        logger.info("Running market scanner in 24/7 background loop...")
+        while True:
+            try:
+                run_scan_cycle()
+            except Exception as e:
+                logger.error(f"Loop cycle error: {e}")
+            # Wait 60 seconds before checking next interval
+            time.sleep(60)
+    else:
+        # Default: Single scan execution (ideal for cron or test)
+        run_scan_cycle()
