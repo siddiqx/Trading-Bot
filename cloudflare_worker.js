@@ -22,53 +22,9 @@ const ASSETS = [
   { name: "GOLD",    symbol: "XAUUSD", ticker: "GC=F",     pip: 0.10,   digits: 2 }
 ];
 
-// Baseline trade ledger state (synchronized with trade_records.json)
-let STORED_ACTIVE_TRADES = {
-  "USDCHF": {
-    "trade_id": "USDCHF_1H_2026-09-28T06:00:00Z_LONG",
-    "pair": "USD/CHF",
-    "symbol": "USDCHF",
-    "ticker": "USDCHF=X",
-    "direction": "LONG",
-    "timeframe": "1H",
-    "entry": 0.83031,
-    "stop_loss": 0.82851,
-    "take_profit": 0.83346,
-    "sl_pips": 18.0,
-    "tp_pips": 31.5,
-    "rr": 1.75,
-    "pip": 0.0001,
-    "digits": 5,
-    "opened_at": "2026-09-28T06:00:00Z",
-    "status": "OPEN"
-  }
-};
-
-let STORED_COMPLETED_TRADES = [
-  {
-    "trade_id": "EURUSD_1H_2026-09-28T14:00:00Z_SHORT",
-    "pair": "EUR/USD",
-    "symbol": "EURUSD",
-    "ticker": "EURUSD=X",
-    "direction": "SHORT",
-    "timeframe": "1H",
-    "entry": 1.13662,
-    "stop_loss": 1.13849,
-    "take_profit": 1.13335,
-    "exit_price": 1.13849,
-    "outcome": "LOSS",
-    "realized_pips": -18.7,
-    "realized_r": -1.0,
-    "sl_pips": 18.7,
-    "tp_pips": 32.8,
-    "rr": 1.75,
-    "pip": 0.0001,
-    "digits": 5,
-    "opened_at": "2026-09-28T14:26:26Z",
-    "closed_at": "2026-09-28T16:54:22Z",
-    "status": "CLOSED"
-  }
-];
+// Dynamic trade ledger state (zero hardcoded trades; populated 100% dynamically via signals & cloud sync)
+let STORED_ACTIVE_TRADES = {};
+let STORED_COMPLETED_TRADES = [];
 
 /**
  * Universal Ledger Resolver
