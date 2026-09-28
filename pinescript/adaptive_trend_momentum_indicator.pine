@@ -88,10 +88,10 @@ long_breakout  = (close > donch_high) and (close[1] <= donch_high[1])
 short_breakout = (close < donch_low)  and (close[1] >= donch_low[1])
 
 // Visual EMA and Donchian Plots:
-plot(show_emas ? ema20 : na, "EMA 20", color=color.new(#0284c7, 0), width=2)
-plot(show_emas ? ema50 : na, "EMA 50", color=color.new(#f97316, 0), width=2)
-plot(show_donchian ? donch_high : na, "Donchian 20 High", color=color.new(#10b981, 60), style=plot.style_circles)
-plot(show_donchian ? donch_low  : na, "Donchian 20 Low",  color=color.new(#ef4444, 60), style=plot.style_circles)
+plot(show_emas ? ema20 : na, title="EMA 20", color=color.new(#0284c7, 0), linewidth=2)
+plot(show_emas ? ema50 : na, title="EMA 50", color=color.new(#f97316, 0), linewidth=2)
+plot(show_donchian ? donch_high : na, title="Donchian 20 High", color=color.new(#10b981, 60), style=plot.style_circles)
+plot(show_donchian ? donch_low  : na, title="Donchian 20 Low",  color=color.new(#ef4444, 60), style=plot.style_circles)
 
 // =============================================================================
 // ORIGIN ORDER BLOCK DISCOVERY
