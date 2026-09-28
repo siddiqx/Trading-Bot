@@ -18,8 +18,10 @@
       "digits": 5,
       "opened_at": "2026-09-28T06:00:00Z",
       "status": "OPEN"
-    },
-    "EURUSD": {
+    }
+  },
+  "completed_trades": [
+    {
       "trade_id": "EURUSD_1H_2026-09-28T14:00:00Z_SHORT",
       "pair": "EURUSD",
       "symbol": "EURUSD",
@@ -35,8 +37,12 @@
       "pip": 0.0001,
       "digits": 5,
       "opened_at": "2026-09-28T14:26:26Z",
-      "status": "OPEN"
+      "status": "CLOSED",
+      "exit_price": 1.13849,
+      "outcome": "LOSS",
+      "realized_pips": -18.7,
+      "realized_r": -1.0,
+      "closed_at": "2026-09-28T16:54:22Z"
     }
-  },
-  "completed_trades": []
+  ]
 }
