@@ -301,6 +301,22 @@ def record_trade_post_mortem(
     ensure_directories()
     vol_index = load_volume_index()
 
+    # Deduplication check: return existing record if trade was already processed
+    trade_id = trade.get("trade_id")
+    if trade_id:
+        master_wins_file = DATA_DIR / "master_winning_trades.json"
+        master_loss_file = DATA_DIR / "master_losing_trades.json"
+        for m_file in [master_wins_file, master_loss_file]:
+            if m_file.exists():
+                try:
+                    with open(m_file, "r", encoding="utf-8") as f:
+                        for existing_rec in json.load(f):
+                            if existing_rec.get("trade_id") == trade_id:
+                                logger.info(f"Trade {trade_id} already recorded in post-mortem. Returning existing record.")
+                                return existing_rec
+                except Exception:
+                    pass
+
     # Determine global trade number
     existing_global = vol_index.get("total_global_trades", 0)
     global_trade_no = existing_global + 1

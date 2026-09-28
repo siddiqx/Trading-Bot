@@ -10,6 +10,7 @@ import time
 import json
 import logging
 from datetime import datetime, timezone
+from pathlib import Path
 import httpx
 import numpy as np
 import pandas as pd
@@ -87,10 +88,20 @@ def save_trade_records(records):
 
 def sync_worker(records):
     try:
+        volume_summary = None
+        try:
+            summary_path = Path(__file__).resolve().parent / "data" / "patterns" / "volumes" / "vol_01" / "volume_summary.json"
+            if summary_path.exists():
+                with open(summary_path, "r", encoding="utf-8") as f:
+                    volume_summary = json.load(f)
+        except Exception:
+            pass
+
         payload = {
             "event": "sync_trades",
             "active_trades": records.get("active_trades", {}),
-            "completed_trades": records.get("completed_trades", [])
+            "completed_trades": records.get("completed_trades", []),
+            "volume_summary": volume_summary
         }
         with httpx.Client(timeout=10.0) as client:
             client.post(WORKER_SYNC_URL, json=payload, headers={"User-Agent": "MarketScanner/2.0"})
@@ -167,7 +178,7 @@ def check_active_trades(records: dict):
         if not ticker:
             continue
 
-        df = fetch_candles(ticker, "15m", range_days="3d")
+        df = fetch_candles(ticker, "15m", range_days="7d")
         if df.empty or len(df) < 5:
             continue
 

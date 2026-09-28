@@ -135,6 +135,9 @@ export default {
           try {
             await kv.put("active_trades", JSON.stringify(STORED_ACTIVE_TRADES));
             await kv.put("completed_trades", JSON.stringify(STORED_COMPLETED_TRADES));
+            if (payload.volume_summary) {
+              await kv.put("volume_summary", JSON.stringify(payload.volume_summary));
+            }
           } catch (e) {
             console.error("KV save error:", e);
           }
@@ -675,6 +678,14 @@ async function sendPatternsMessage(chatId, env) {
   const utcNow = new Date().toISOString().replace("T", " ").substring(0, 16) + " UTC";
   const { completed } = await getLedger(env);
 
+  const kv = env && (env.TRADE_LEDGER || env.TRADES_KV || env.KV);
+  let kvSummary = null;
+  if (kv) {
+    try {
+      kvSummary = await kv.get("volume_summary", "json");
+    } catch(e) {}
+  }
+
   const totalTrades = completed.length;
   const volNo = totalTrades > 0 ? Math.floor((totalTrades - 1) / 100) + 1 : 1;
   const volTradeNo = totalTrades > 0 ? ((totalTrades - 1) % 100) + 1 : 0;
@@ -710,23 +721,30 @@ async function sendPatternsMessage(chatId, env) {
   const pipsSign = netPips >= 0 ? "+" : "";
   const rSign = netR >= 0 ? "+" : "";
 
-  // Diagnostic factor aggregation
-  let lossReasons = {};
-  for (const t of losses) {
-    const factor = t.diagnostic?.primary_factor || "STRUCTURAL_INVALIDATION";
-    lossReasons[factor] = (lossReasons[factor] || 0) + 1;
+  // Diagnostic factor aggregation (from KV summary or trade records)
+  let lossReasons = kvSummary?.top_loss_factors || {};
+  if (Object.keys(lossReasons).length === 0) {
+    for (const t of losses) {
+      const factor = t.diagnostic?.primary_factor || "STRUCTURAL_INVALIDATION";
+      lossReasons[factor] = (lossReasons[factor] || 0) + 1;
+    }
   }
 
   let lossBreakdown = "<i>No closed losses in current volume.</i>";
-  if (losses.length > 0) {
+  if (Object.keys(lossReasons).length > 0) {
+    const totalLossReported = Object.values(lossReasons).reduce((a, b) => a + b, 0) || 1;
     lossBreakdown = Object.entries(lossReasons)
       .map(([f, cnt]) => {
-        const pct = ((cnt / losses.length) * 100).toFixed(0);
+        const pct = ((cnt / totalLossReported) * 100).toFixed(0);
         const readable = f.replace(/_/g, " ").toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
         return `• <b>${readable}:</b> <code>${cnt} trade(s) (${pct}%)</code>`;
       })
       .join("\n");
   }
+
+  const avgMfeText = kvSummary?.average_loss_mfe_pips
+    ? `• <b>Avg Loss Excursion (MFE):</b> <code>+${kvSummary.average_loss_mfe_pips} pips</code>\n`
+    : "";
 
   const text =
     `📚 <b>TRADE PATTERN & VOLUME ANALYTICS</b>\n` +
@@ -738,9 +756,10 @@ async function sendPatternsMessage(chatId, env) {
     `• <b>Win Rate:</b> <b>${winRate}%</b> (${winCount}W / ${lossCount}L)\n` +
     `• <b>Net Pips:</b> <b>${pipsSign}${netPips.toFixed(1)} pips</b>\n` +
     `• <b>Net R-Return:</b> <b>${rSign}${netR.toFixed(2)} R</b>\n` +
-    `• <b>Profit Factor:</b> <code>${pf}</code>\n\n` +
+    `• <b>Profit Factor:</b> <code>${pf}</code>\n` +
+    avgMfeText + "\n" +
     `<b>🔬 OBSERVED FAILURE MODES</b>\n` +
-    lossBreakdown + "\n\n`" +
+    lossBreakdown + "\n\n" +
     `<b>💡 STRATEGY OPTIMIZATION PROTOCOL</b>\n` +
     `• Post-mortem data tracks MFE/MAE excursions.\n` +
     `• At 100-trade completion, baseline parameters calibrate to reduce repeat failure factors.\n` +

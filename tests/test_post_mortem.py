@@ -160,3 +160,31 @@ def test_format_exit_message_with_post_mortem():
     assert "STRUCTURAL_INVALIDATION" in msg
     assert "+4.7 pips" in msg
     assert "EUR/USD" in msg
+
+
+def test_record_trade_post_mortem_deduplication(tmp_path, monkeypatch):
+    import core.post_mortem as pm
+    monkeypatch.setattr(pm, "DATA_DIR", tmp_path / "data" / "patterns")
+    monkeypatch.setattr(pm, "VOLUMES_DATA_DIR", tmp_path / "data" / "patterns" / "volumes")
+    monkeypatch.setattr(pm, "JOURNALS_DIR", tmp_path / "journals")
+    monkeypatch.setattr(pm, "VOLUMES_JOURNAL_DIR", tmp_path / "journals" / "volumes")
+
+    test_trade = {
+        "trade_id": "TEST_DEDUP_TRADE_001",
+        "pair": "USD/CAD",
+        "symbol": "USDCAD",
+        "direction": "LONG",
+        "entry": 1.3500,
+        "exit_price": 1.3550,
+        "stop_loss": 1.3470,
+        "take_profit": 1.3550,
+        "outcome": "WIN",
+        "realized_pips": 50.0,
+        "realized_r": 1.75
+    }
+    rec1 = pm.record_trade_post_mortem(test_trade)
+    rec2 = pm.record_trade_post_mortem(test_trade)
+
+    # Must be exact same record and not duplicate global trade count
+    assert rec1["tracking"]["global_trade_no"] == rec2["tracking"]["global_trade_no"]
+    assert rec1["trade_id"] == rec2["trade_id"]
