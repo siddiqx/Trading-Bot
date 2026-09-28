@@ -22,7 +22,7 @@ const ASSETS = [
   { name: "GOLD",    symbol: "XAUUSD", ticker: "GC=F",     pip: 0.10,   digits: 2 }
 ];
 
-// In-memory trade ledger state
+// Baseline trade ledger state (synchronized with trade_records.json)
 let STORED_ACTIVE_TRADES = {
   "USDCHF": {
     "trade_id": "USDCHF_1H_2026-09-28T06:00:00Z_LONG",
@@ -41,8 +41,11 @@ let STORED_ACTIVE_TRADES = {
     "digits": 5,
     "opened_at": "2026-09-28T06:00:00Z",
     "status": "OPEN"
-  },
-  "EURUSD": {
+  }
+};
+
+let STORED_COMPLETED_TRADES = [
+  {
     "trade_id": "EURUSD_1H_2026-09-28T14:00:00Z_SHORT",
     "pair": "EUR/USD",
     "symbol": "EURUSD",
@@ -50,19 +53,90 @@ let STORED_ACTIVE_TRADES = {
     "direction": "SHORT",
     "timeframe": "1H",
     "entry": 1.13662,
-    "stop_loss": 1.13842,
-    "take_profit": 1.13347,
-    "sl_pips": 18.0,
-    "tp_pips": 31.5,
+    "stop_loss": 1.13849,
+    "take_profit": 1.13335,
+    "exit_price": 1.13849,
+    "outcome": "LOSS",
+    "realized_pips": -18.7,
+    "realized_r": -1.0,
+    "sl_pips": 18.7,
+    "tp_pips": 32.8,
     "rr": 1.75,
     "pip": 0.0001,
     "digits": 5,
-    "opened_at": "2026-09-28T14:00:00Z",
-    "status": "OPEN"
+    "opened_at": "2026-09-28T14:26:26Z",
+    "closed_at": "2026-09-28T16:54:22Z",
+    "status": "CLOSED"
   }
-};
+];
 
-let STORED_COMPLETED_TRADES = [];
+/**
+ * Universal Ledger Resolver
+ * 1. Checks Cloudflare Workers KV (env.TRADE_LEDGER, env.TRADES_KV, env.KV)
+ * 2. Checks GitHub API if env.GITHUB_TOKEN is provided
+ * 3. Checks raw GitHub repository URL
+ * 4. Falls back to baseline state
+ */
+async function getLedger(env) {
+  // 1. Cloudflare Workers KV
+  const kv = env && (env.TRADE_LEDGER || env.TRADES_KV || env.KV);
+  if (kv) {
+    try {
+      const active = await kv.get("active_trades", "json");
+      const completed = await kv.get("completed_trades", "json");
+      if (active !== null || completed !== null) {
+        return {
+          active: active || {},
+          completed: completed || []
+        };
+      }
+    } catch (e) {
+      console.error("KV read error:", e);
+    }
+  }
+
+  // 2. Private GitHub API via GITHUB_TOKEN secret
+  if (env && env.GITHUB_TOKEN) {
+    try {
+      const ghRes = await fetch("https://api.github.com/repos/siddiqx/Trading-Bot/contents/trade_records.json", {
+        headers: {
+          "Authorization": `Bearer ${env.GITHUB_TOKEN}`,
+          "Accept": "application/vnd.github.raw",
+          "User-Agent": "Cloudflare-Worker-Ledger"
+        }
+      });
+      if (ghRes.ok) {
+        const ghData = await ghRes.json();
+        return {
+          active: ghData.active_trades || {},
+          completed: ghData.completed_trades || []
+        };
+      }
+    } catch (e) {
+      console.error("GitHub API fetch error:", e);
+    }
+  }
+
+  // 3. Raw GitHub URL (public repo fallback)
+  try {
+    const rawRes = await fetch("https://raw.githubusercontent.com/siddiqx/Trading-Bot/main/trade_records.json?t=" + Date.now(), {
+      headers: { "User-Agent": "Cloudflare-Worker-Ledger" }
+    });
+    if (rawRes.ok) {
+      const rawData = await rawRes.json();
+      return {
+        active: rawData.active_trades || {},
+        completed: rawData.completed_trades || []
+      };
+    }
+  } catch (e) {}
+
+  // 4. Default in-memory baseline
+  return {
+    active: STORED_ACTIVE_TRADES,
+    completed: STORED_COMPLETED_TRADES
+  };
+}
 
 export default {
   async fetch(request, env) {
@@ -77,12 +151,22 @@ export default {
       if (payload.event === "sync_trades") {
         if (payload.active_trades) STORED_ACTIVE_TRADES = payload.active_trades;
         if (payload.completed_trades) STORED_COMPLETED_TRADES = payload.completed_trades;
+
+        const kv = env && (env.TRADE_LEDGER || env.TRADES_KV || env.KV);
+        if (kv) {
+          try {
+            await kv.put("active_trades", JSON.stringify(STORED_ACTIVE_TRADES));
+            await kv.put("completed_trades", JSON.stringify(STORED_COMPLETED_TRADES));
+          } catch (e) {
+            console.error("KV save error:", e);
+          }
+        }
         return new Response("Trades Synced", { status: 200 });
       }
 
       // Handle Telegram User Updates
       if (payload.update_id) {
-        return await handleTelegramUpdate(payload);
+        return await handleTelegramUpdate(payload, env);
       }
 
       // Handle Incoming Trade Signals
@@ -93,7 +177,7 @@ export default {
   }
 };
 
-async function handleTelegramUpdate(update) {
+async function handleTelegramUpdate(update, env) {
   if (update.callback_query) {
     const cb = update.callback_query;
     const chatId = cb.message.chat.id;
@@ -105,22 +189,22 @@ async function handleTelegramUpdate(update) {
       body: JSON.stringify({ callback_query_id: cb.id })
     });
 
-    if (action === "cmd_radar") await sendRadarMessage(chatId);
+    if (action === "cmd_radar") await sendRadarMessage(chatId, env);
     else if (action === "cmd_prices") await sendPricesMessage(chatId);
-    else if (action === "cmd_history") await sendHistoryMessage(chatId, "ALL", "ALL");
-    else if (action === "cmd_performance") await sendPerformanceMessage(chatId, "ALL");
-    else if (action === "cmd_status") await sendStatusMessage(chatId);
+    else if (action === "cmd_history") await sendHistoryMessage(chatId, "ALL", "ALL", env);
+    else if (action === "cmd_performance") await sendPerformanceMessage(chatId, "ALL", env);
+    else if (action === "cmd_status") await sendStatusMessage(chatId, env);
     else if (action === "cmd_strategy") await sendStrategyMessage(chatId);
-    else if (action === "cmd_menu") await sendMenuMessage(chatId);
+    else if (action === "cmd_menu") await sendMenuMessage(chatId, env);
     else if (action.startsWith("hist_pair_")) {
       const p = action.replace("hist_pair_", "");
-      await sendHistoryMessage(chatId, p, "ALL");
+      await sendHistoryMessage(chatId, p, "ALL", env);
     } else if (action.startsWith("hist_range_")) {
       const r = action.replace("hist_range_", "");
-      await sendHistoryMessage(chatId, "ALL", r);
+      await sendHistoryMessage(chatId, "ALL", r, env);
     } else if (action.startsWith("perf_pair_")) {
       const p = action.replace("perf_pair_", "");
-      await sendPerformanceMessage(chatId, p);
+      await sendPerformanceMessage(chatId, p, env);
     }
 
     return new Response("OK", { status: 200 });
@@ -140,7 +224,7 @@ async function handleTelegramUpdate(update) {
     const cmd = parts[0].toLowerCase().split("@")[0];
 
     if (cmd === "/radar" || cmd === "/scan" || cmd === "/tracking") {
-      await sendRadarMessage(chatId);
+      await sendRadarMessage(chatId, env);
     } else if (cmd === "/prices" || cmd === "/quotes") {
       await sendPricesMessage(chatId);
     } else if (cmd === "/history") {
@@ -156,16 +240,16 @@ async function handleTelegramUpdate(update) {
           filterPair = parts[i].toUpperCase().replace("/", "");
         }
       }
-      await sendHistoryMessage(chatId, filterPair, filterRange);
+      await sendHistoryMessage(chatId, filterPair, filterRange, env);
     } else if (cmd === "/performance" || cmd === "/stats") {
       const filterPair = parts[1] ? parts[1].toUpperCase().replace("/", "") : "ALL";
-      await sendPerformanceMessage(chatId, filterPair);
+      await sendPerformanceMessage(chatId, filterPair, env);
     } else if (cmd === "/status") {
-      await sendStatusMessage(chatId);
+      await sendStatusMessage(chatId, env);
     } else if (cmd === "/strategy" || cmd === "/rules") {
       await sendStrategyMessage(chatId);
     } else {
-      await sendMenuMessage(chatId);
+      await sendMenuMessage(chatId, env);
     }
     return new Response("OK", { status: 200 });
   }
@@ -176,8 +260,9 @@ async function handleTelegramUpdate(update) {
 /**
  * /radar - Differentiates active live trades from normal surveillance
  */
-async function sendRadarMessage(chatId) {
+async function sendRadarMessage(chatId, env) {
   const utcNow = new Date().toISOString().replace("T", " ").substring(0, 16) + " UTC";
+  const { active } = await getLedger(env);
   let activeCount = 0;
 
   const results = await Promise.all(
@@ -198,7 +283,7 @@ async function sendRadarMessage(chatId) {
         const price = closes[closes.length - 1];
 
         // 1. CHECK IF PAIR HAS AN ACTIVE RUNNING TRADE
-        const activeTrade = STORED_ACTIVE_TRADES[asset.symbol];
+        const activeTrade = active[asset.symbol];
         if (activeTrade) {
           activeCount++;
           const isLong = activeTrade.direction === "LONG";
@@ -296,19 +381,20 @@ async function sendRadarMessage(chatId) {
 /**
  * /history - Historical trade records with pair & date range filters
  */
-async function sendHistoryMessage(chatId, filterPair = "ALL", filterRange = "ALL") {
+async function sendHistoryMessage(chatId, filterPair = "ALL", filterRange = "ALL", env) {
   const utcNow = new Date().toISOString().replace("T", " ").substring(0, 16) + " UTC";
   const nowMs = Date.now();
+  const { active, completed } = await getLedger(env);
 
   // Combine Active and Completed Trades
   let allTrades = [];
 
   // Active trades
-  for (const [sym, t] of Object.entries(STORED_ACTIVE_TRADES)) {
+  for (const [sym, t] of Object.entries(active)) {
     allTrades.push({ ...t, is_active: true });
   }
   // Completed trades
-  for (const t of STORED_COMPLETED_TRADES) {
+  for (const t of completed) {
     allTrades.push({ ...t, is_active: false });
   }
 
@@ -416,11 +502,12 @@ async function sendHistoryMessage(chatId, filterPair = "ALL", filterRange = "ALL
 /**
  * /performance - Evaluates metrics strictly from trades taken from 2026-09-28 onwards
  */
-async function sendPerformanceMessage(chatId, filterPair = "ALL") {
+async function sendPerformanceMessage(chatId, filterPair = "ALL", env) {
   const utcNow = new Date().toISOString().replace("T", " ").substring(0, 16) + " UTC";
+  const { active: activeMap, completed: completedList } = await getLedger(env);
 
-  let closed = STORED_COMPLETED_TRADES.slice();
-  let active = Object.values(STORED_ACTIVE_TRADES);
+  let closed = completedList.slice();
+  let active = Object.values(activeMap);
 
   if (filterPair !== "ALL") {
     closed = closed.filter(t => (t.symbol || "").toUpperCase() === filterPair.toUpperCase());
@@ -546,10 +633,11 @@ async function sendPricesMessage(chatId) {
 /**
  * /status - Engine operational health
  */
-async function sendStatusMessage(chatId) {
+async function sendStatusMessage(chatId, env) {
   const utcNow = new Date().toISOString().replace("T", " ").substring(0, 19) + " UTC";
-  const activeCount = Object.keys(STORED_ACTIVE_TRADES).length;
-  const closedCount = STORED_COMPLETED_TRADES.length;
+  const { active, completed } = await getLedger(env);
+  const activeCount = Object.keys(active).length;
+  const closedCount = completed.length;
 
   const text = 
     `⚡ <b>SYSTEM ARCHITECTURE STATUS</b>\n` +
@@ -617,8 +705,9 @@ async function sendStrategyMessage(chatId) {
 /**
  * Main Navigation Menu
  */
-async function sendMenuMessage(chatId) {
-  const activeCount = Object.keys(STORED_ACTIVE_TRADES).length;
+async function sendMenuMessage(chatId, env) {
+  const { active } = await getLedger(env);
+  const activeCount = Object.keys(active).length;
   const activeLabel = activeCount > 0 ? ` (${activeCount} Active)` : "";
 
   const text = 
