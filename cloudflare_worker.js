@@ -168,6 +168,7 @@ async function handleTelegramUpdate(update, env) {
     });
 
     if (action === "cmd_radar") await sendRadarMessage(chatId, env);
+    else if (action === "cmd_active") await sendActiveMessage(chatId, env);
     else if (action === "cmd_prices") await sendPricesMessage(chatId);
     else if (action === "cmd_history") await sendHistoryMessage(chatId, "ALL", "ALL", env);
     else if (action === "cmd_performance") await sendPerformanceMessage(chatId, "ALL", env);
@@ -201,7 +202,9 @@ async function handleTelegramUpdate(update, env) {
     // Strip bot username if invoked as /command@BotName
     const cmd = parts[0].toLowerCase().split("@")[0];
 
-    if (cmd === "/radar" || cmd === "/scan" || cmd === "/tracking") {
+    if (cmd === "/active" || cmd === "/open" || cmd === "/trades" || cmd === "/positions") {
+      await sendActiveMessage(chatId, env);
+    } else if (cmd === "/radar" || cmd === "/scan" || cmd === "/tracking") {
       await sendRadarMessage(chatId, env);
     } else if (cmd === "/prices" || cmd === "/quotes") {
       await sendPricesMessage(chatId);
@@ -344,10 +347,13 @@ async function sendRadarMessage(chatId, env) {
     inline_keyboard: [
       [
         { text: "🔄 Refresh Radar", callback_data: "cmd_radar" },
-        { text: "📜 Trade History", callback_data: "cmd_history" }
+        { text: "⚡ Active Trades", callback_data: "cmd_active" }
       ],
       [
-        { text: "📈 Performance", callback_data: "cmd_performance" },
+        { text: "📜 Completed History", callback_data: "cmd_history" },
+        { text: "📈 Performance", callback_data: "cmd_performance" }
+      ],
+      [
         { text: "« Main Menu", callback_data: "cmd_menu" }
       ]
     ]
@@ -357,28 +363,135 @@ async function sendRadarMessage(chatId, env) {
 }
 
 /**
- * /history - Historical trade records with pair & date range filters
+ * /active - Dedicated monitor listing ONLY currently running / floating trades
+ */
+async function sendActiveMessage(chatId, env) {
+  const utcNow = new Date().toISOString().replace("T", " ").substring(0, 16) + " UTC";
+  const { active } = await getLedger(env);
+  const activeEntries = Object.entries(active);
+
+  if (activeEntries.length === 0) {
+    const text = 
+      `⚡ <b>ACTIVE LIVE TRADES (0)</b>\n` +
+      `━━━━━━━━━━━━━━━━━━\n` +
+      `<i>No active positions currently running.</i>\n\n` +
+      `All 6 asset pairs are under automated surveillance.\n` +
+      `Signals trigger strictly on confirmed candle closes.\n` +
+      `━━━━━━━━━━━━━━━━━━\n` +
+      `🕒 <code>${utcNow}</code>`;
+
+    const keyboard = {
+      inline_keyboard: [
+        [
+          { text: "📡 Market Radar", callback_data: "cmd_radar" },
+          { text: "📜 Completed History", callback_data: "cmd_history" }
+        ],
+        [
+          { text: "📈 Performance", callback_data: "cmd_performance" },
+          { text: "« Main Menu", callback_data: "cmd_menu" }
+        ]
+      ]
+    };
+
+    await sendTelegramMessage(chatId, text, keyboard);
+    return;
+  }
+
+  const rows = await Promise.all(
+    activeEntries.map(async ([symbol, t], idx) => {
+      const num = idx + 1;
+      const asset = ASSETS.find(a => a.symbol === symbol) || {
+        symbol: symbol,
+        name: t.pair || symbol,
+        digits: 5,
+        pip: 0.0001,
+        ticker: `${symbol}=X`
+      };
+
+      const isLong = (t.direction || "").toUpperCase() === "LONG";
+      const dirIcon = isLong ? "🟢" : "🔴";
+      const openTime = (t.opened_at || "").substring(11, 16) || "00:00";
+      const openDate = (t.opened_at || "").substring(0, 10);
+      const pName = t.pair || asset.name;
+
+      let currentPrice = null;
+      let floatText = "";
+
+      try {
+        const url = `https://query1.finance.yahoo.com/v8/finance/chart/${asset.ticker}?range=1d&interval=15m`;
+        const res = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0" } });
+        const json = await res.json();
+        const quote = json?.chart?.result?.[0]?.indicators?.quote?.[0];
+        const closes = quote?.close?.filter(v => v !== null && v !== undefined) || [];
+        if (closes.length > 0) {
+          currentPrice = closes[closes.length - 1];
+        }
+      } catch (e) {
+        // Fallback to null
+      }
+
+      if (currentPrice !== null) {
+        const pnlPips = ((currentPrice - t.entry) / asset.pip) * (isLong ? 1 : -1);
+        const pnlSign = pnlPips >= 0 ? "+" : "";
+        const riskDist = Math.abs(t.entry - t.stop_loss) / asset.pip;
+        const floatR = riskDist > 0 ? (pnlPips / riskDist).toFixed(2) : "0.00";
+        const rSign = parseFloat(floatR) >= 0 ? "+" : "";
+        const floatEmoji = pnlPips >= 0 ? "🟢" : "🔻";
+        floatText = `• Live Price: <code>${currentPrice.toFixed(asset.digits)}</code> (${floatEmoji} <b>${pnlSign}${pnlPips.toFixed(1)} pips</b> | <b>${rSign}${floatR}R</b>)\n`;
+      }
+
+      return (
+        `<b>${num}. ${pName}</b> · ${t.timeframe || "1H"} · ${dirIcon} <b>${t.direction}</b>\n` +
+        `• Entry: <code>${t.entry}</code> (${openDate} ${openTime} UTC)\n` +
+        floatText +
+        `• Targets: SL <code>${t.stop_loss}</code> | TP <code>${t.take_profit}</code>\n` +
+        `• Plan: <b>1 : ${t.risk_reward || "1.75"} R:R</b> (1.0% Equity Risk)`
+      );
+    })
+  );
+
+  const text = 
+    `⚡ <b>ACTIVE LIVE TRADES (${activeEntries.length})</b>\n` +
+    `━━━━━━━━━━━━━━━━━━\n` +
+    `Currently floating in institutional market:\n` +
+    `━━━━━━━━━━━━━━━━━━\n\n` +
+    rows.join("\n\n") + "\n\n" +
+    `━━━━━━━━━━━━━━━━━━\n` +
+    `🔄 <i>Float updates automatically with live quotes.</i>\n` +
+    `🕒 <code>${utcNow}</code>`;
+
+  const keyboard = {
+    inline_keyboard: [
+      [
+        { text: "🔄 Refresh Active", callback_data: "cmd_active" },
+        { text: "📜 Completed History", callback_data: "cmd_history" }
+      ],
+      [
+        { text: "📈 Performance", callback_data: "cmd_performance" },
+        { text: "📡 Market Radar", callback_data: "cmd_radar" }
+      ],
+      [
+        { text: "« Main Menu", callback_data: "cmd_menu" }
+      ]
+    ]
+  };
+
+  await sendTelegramMessage(chatId, text, keyboard);
+}
+
+/**
+ * /history - Historical completed trade records ONLY with pair & date range filters
  */
 async function sendHistoryMessage(chatId, filterPair = "ALL", filterRange = "ALL", env) {
   const utcNow = new Date().toISOString().replace("T", " ").substring(0, 16) + " UTC";
   const nowMs = Date.now();
-  const { active, completed } = await getLedger(env);
+  const { completed } = await getLedger(env);
 
-  // Combine Active and Completed Trades
-  let allTrades = [];
-
-  // Active trades
-  for (const [sym, t] of Object.entries(active)) {
-    allTrades.push({ ...t, is_active: true });
-  }
-  // Completed trades
-  for (const t of completed) {
-    allTrades.push({ ...t, is_active: false });
-  }
+  let closedTrades = completed.slice();
 
   // 1. Filter by Pair
   if (filterPair !== "ALL") {
-    allTrades = allTrades.filter(t => (t.symbol || "").toUpperCase() === filterPair.toUpperCase());
+    closedTrades = closedTrades.filter(t => (t.symbol || "").toUpperCase() === filterPair.toUpperCase());
   }
 
   // 2. Filter by Date Range
@@ -386,69 +499,53 @@ async function sendHistoryMessage(chatId, filterPair = "ALL", filterRange = "ALL
   if (filterRange === "today" || filterRange === "1d") {
     rangeLabel = "TODAY";
     const todayStr = new Date().toISOString().substring(0, 10);
-    allTrades = allTrades.filter(t => (t.opened_at || "").startsWith(todayStr));
+    closedTrades = closedTrades.filter(t => (t.closed_at || t.opened_at || "").startsWith(todayStr));
   } else if (filterRange === "7d") {
     rangeLabel = "LAST 7 DAYS";
     const cutoff = nowMs - (7 * 24 * 60 * 60 * 1000);
-    allTrades = allTrades.filter(t => new Date(t.opened_at).getTime() >= cutoff);
+    closedTrades = closedTrades.filter(t => new Date(t.closed_at || t.opened_at).getTime() >= cutoff);
   } else if (filterRange === "30d") {
     rangeLabel = "LAST 30 DAYS";
     const cutoff = nowMs - (30 * 24 * 60 * 60 * 1000);
-    allTrades = allTrades.filter(t => new Date(t.opened_at).getTime() >= cutoff);
+    closedTrades = closedTrades.filter(t => new Date(t.closed_at || t.opened_at).getTime() >= cutoff);
   }
 
-  // Build Output Rows
-  let activeRows = [];
+  // Build Output Rows strictly for Completed Trades
   let closedRows = [];
-  let activeIdx = 1;
   let closedIdx = 1;
 
-  for (const t of allTrades) {
-    const dateStr = (t.opened_at || "").substring(0, 10);
+  for (const t of closedTrades) {
+    const num = closedIdx++;
+    const openDate = (t.opened_at || "").substring(0, 10);
+    const closeDate = (t.closed_at || "").substring(0, 10) || openDate;
     const pName = t.pair || t.symbol;
+    const isWin = t.outcome === "WIN";
+    const outcomeBadge = isWin ? "🎯 <b>WIN</b>" : "🛑 <b>LOSS</b>";
+    const pipsVal = typeof t.realized_pips === "number" ? t.realized_pips : parseFloat(t.realized_pips || 0);
+    const rVal = typeof t.realized_r === "number" ? t.realized_r : parseFloat(t.realized_r || 0);
+    const sign = pipsVal >= 0 ? "+" : "";
+    const rSign = rVal >= 0 ? "+" : "";
 
-    if (t.is_active) {
-      const num = activeIdx++;
-      const isLong = t.direction === "LONG";
-      const dirIcon = isLong ? "🟢" : "🔴";
-      const openTime = (t.opened_at || "").substring(11, 16) || "00:00";
-      activeRows.push(
-        `<b>${num}. ${pName}</b> · ${t.timeframe} · ${dirIcon} <b>${t.direction}</b>\n` +
-        `• Entry: <code>${t.entry}</code> (${openTime} UTC)\n` +
-        `• Targets: SL <code>${t.stop_loss}</code> | TP <code>${t.take_profit}</code>`
-      );
-    } else {
-      const num = closedIdx++;
-      const isWin = t.outcome === "WIN";
-      const outcomeBadge = isWin ? "🎯 <b>WIN</b>" : "🛑 <b>LOSS</b>";
-      const sign = t.realized_pips >= 0 ? "+" : "";
-      const rSign = t.realized_r >= 0 ? "+" : "";
-
-      closedRows.push(
-        `<b>${num}. ${pName}</b> · ${t.timeframe} · <b>${t.direction}</b>\n` +
-        `• Date: <code>${dateStr}</code>\n` +
-        `• Price: <code>${t.entry}</code> ➔ <code>${t.exit_price}</code>\n` +
-        `• Outcome: ${outcomeBadge} (${sign}${t.realized_pips}p / ${rSign}${t.realized_r}R)`
-      );
-    }
+    closedRows.push(
+      `<b>${num}. ${pName}</b> · ${t.timeframe || "1H"} · <b>${t.direction}</b>\n` +
+      `• Date: <code>${closeDate}</code>\n` +
+      `• Price: <code>${t.entry}</code> ➔ <code>${t.exit_price}</code>\n` +
+      `• Outcome: ${outcomeBadge} (${sign}${pipsVal.toFixed(1)}p / ${rSign}${rVal.toFixed(2)}R)`
+    );
   }
 
   let bodyText = "";
-  if (activeRows.length > 0) {
-    bodyText += `🟢 <b>ACTIVE POSITIONS (${activeRows.length})</b>\n\n` + activeRows.join("\n\n") + "\n\n";
-  }
   if (closedRows.length > 0) {
-    bodyText += `📁 <b>COMPLETED TRADES (${closedRows.length})</b>\n\n` + closedRows.join("\n\n") + "\n\n";
-  }
-  if (allTrades.length === 0) {
-    bodyText = `<i>No recorded trades found for ${filterPair} (${rangeLabel}).</i>\n\n`;
+    bodyText = closedRows.join("\n\n") + "\n\n";
+  } else {
+    bodyText = `<i>No completed trades found for ${filterPair} (${rangeLabel}).</i>\n\n`;
   }
 
   const text = 
-    `📜 <b>TRADE HISTORY LEDGER</b>\n` +
+    `📜 <b>COMPLETED TRADE HISTORY</b>\n` +
     `━━━━━━━━━━━━━━━━━━\n` +
     `Scope: <b>${filterPair}</b> | Range: <b>${rangeLabel}</b>\n` +
-    `Baseline: <code>2026-09-28</code> (Live Forward)\n` +
+    `Total Completed: <b>${closedTrades.length} Trades</b>\n` +
     `━━━━━━━━━━━━━━━━━━\n\n` +
     bodyText +
     `━━━━━━━━━━━━━━━━━━\n` +
@@ -467,7 +564,7 @@ async function sendHistoryMessage(chatId, filterPair = "ALL", filterRange = "ALL
         { text: "USD/CAD", callback_data: "hist_pair_USDCAD" }
       ],
       [
-        { text: "All Pairs", callback_data: "hist_pair_ALL" },
+        { text: "⚡ Active Trades", callback_data: "cmd_active" },
         { text: "📈 Performance", callback_data: "cmd_performance" },
         { text: "« Menu", callback_data: "cmd_menu" }
       ]
@@ -556,7 +653,10 @@ async function sendPerformanceMessage(chatId, filterPair = "ALL", env) {
         { text: "GOLD", callback_data: "perf_pair_XAUUSD" }
       ],
       [
-        { text: "📜 View Trade History", callback_data: "cmd_history" },
+        { text: "⚡ Active Trades", callback_data: "cmd_active" },
+        { text: "📜 History (Closed)", callback_data: "cmd_history" }
+      ],
+      [
         { text: "« Menu", callback_data: "cmd_menu" }
       ]
     ]
@@ -633,10 +733,11 @@ async function sendStatusMessage(chatId, env) {
   const keyboard = {
     inline_keyboard: [
       [
-        { text: "📡 Market Radar", callback_data: "cmd_radar" },
-        { text: "📈 Performance", callback_data: "cmd_performance" }
+        { text: "⚡ Active Trades", callback_data: "cmd_active" },
+        { text: "📡 Market Radar", callback_data: "cmd_radar" }
       ],
       [
+        { text: "📈 Performance", callback_data: "cmd_performance" },
         { text: "« Main Menu", callback_data: "cmd_menu" }
       ]
     ]
@@ -694,27 +795,31 @@ async function sendMenuMessage(chatId, env) {
     `Automated 24/7 Algorithmic Trading & Forward Verification\n` +
     `Coverage: <b>EURUSD · USDJPY · USDCAD · USDCHF · AUDUSD · GOLD</b>\n\n` +
     `<b>SYSTEM MODULES</b>\n` +
-    `1. /radar ── Market surveillance & live trades\n` +
-    `2. /prices ── Live quotes across all 6 pairs\n` +
-    `3. /history ── Historical trade log & ledger\n` +
-    `4. /performance ── Win rate & return metrics\n` +
-    `5. /strategy ── Systematic entry/exit rules\n` +
-    `6. /status ── 24/7 serverless engine health\n\n` +
+    `1. /active ── Running trades & live float pips\n` +
+    `2. /radar ── Market surveillance & live scan\n` +
+    `3. /prices ── Live quotes across all 6 pairs\n` +
+    `4. /history ── Completed trade history ledger\n` +
+    `5. /performance ── Win rate & return metrics\n` +
+    `6. /strategy ── Systematic entry/exit rules\n` +
+    `7. /status ── 24/7 serverless engine health\n\n` +
     `Select a dashboard module below:`;
 
   const keyboard = {
     inline_keyboard: [
       [
-        { text: `📡 Market Radar${activeLabel}`, callback_data: "cmd_radar" },
-        { text: "📊 Market Quotes", callback_data: "cmd_prices" }
+        { text: `⚡ Active Trades${activeLabel}`, callback_data: "cmd_active" },
+        { text: "📡 Market Radar", callback_data: "cmd_radar" }
       ],
       [
-        { text: "📜 Trade History", callback_data: "cmd_history" },
+        { text: "📜 History (Closed)", callback_data: "cmd_history" },
         { text: "📈 Performance", callback_data: "cmd_performance" }
       ],
       [
-        { text: "🟢 System Status", callback_data: "cmd_status" },
-        { text: "🎯 Strategy Rules", callback_data: "cmd_strategy" }
+        { text: "📊 Quotes", callback_data: "cmd_prices" },
+        { text: "🎯 Strategy", callback_data: "cmd_strategy" }
+      ],
+      [
+        { text: "🟢 System Status", callback_data: "cmd_status" }
       ]
     ]
   };
