@@ -11,6 +11,11 @@ An institutional-grade, **100% free, 24/7 automated algorithmic trading system**
 
 The engine runs entirely in the cloud with **zero hardware dependency** (runs 24/7 with your local PC powered off) and **zero paid subscriptions** (eliminates TradingView Premium, paid VPS, and external server costs).
 
+> 🏛️ **Executive Whitepaper & Architecture Specifications:**
+> - 📖 **[Institutional Whitepaper (GitHub Markdown View)](docs/Institutional_Trading_Engine_Whitepaper.md)** *(Instant rich rendering on GitHub)*
+> - 🌐 **[Interactive Web Whitepaper (HTML)](docs/Institutional_Trading_Engine_Whitepaper.html)** *(Full interactive web presentation & print-to-PDF)*
+> - 📑 **[Architecture Whitepaper (PDF)](docs/Institutional_Trading_Engine_Whitepaper.pdf)** *(Downloadable publication vector PDF)*
+
 ---
 
 ## 1. System Architecture

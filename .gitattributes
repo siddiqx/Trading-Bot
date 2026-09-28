@@ -1,0 +1,12 @@
+# Auto-detect text files and perform LF normalization
+* text=auto
+
+# Binary files - NEVER modify line endings
+*.pdf binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.db binary
+*.exe binary
