@@ -143,7 +143,11 @@ def check_active_trades(records: dict):
 
         opened_at_str = trade.get("opened_at")
         if opened_at_str:
-            df_trade = df[df["time"] >= opened_at_str]
+            try:
+                open_ts = pd.to_datetime(opened_at_str)
+                df_trade = df[df["time"] >= open_ts]
+            except Exception:
+                df_trade = df.iloc[-8:]
         else:
             df_trade = df.iloc[-8:]
 
@@ -151,25 +155,31 @@ def check_active_trades(records: dict):
             df_trade = df.iloc[-2:]
 
         is_long = (trade.get("direction") == "LONG")
-        max_high = df_trade["high"].max()
-        min_low = df_trade["low"].min()
-
         tp = trade["take_profit"]
         sl = trade["stop_loss"]
 
         hit_tp = False
         hit_sl = False
 
-        if is_long:
-            if max_high >= tp:
-                hit_tp = True
-            elif min_low <= sl:
-                hit_sl = True
-        else:
-            if min_low <= tp:
-                hit_tp = True
-            elif max_high >= sl:
-                hit_sl = True
+        # Chronological bar-by-bar evaluation to accurately determine which price extreme was touched first
+        for row in df_trade.itertuples():
+            b_high = row.high
+            b_low = row.low
+
+            if is_long:
+                if b_low <= sl:
+                    hit_sl = True
+                    break
+                elif b_high >= tp:
+                    hit_tp = True
+                    break
+            else:
+                if b_high >= sl:
+                    hit_sl = True
+                    break
+                elif b_low <= tp:
+                    hit_tp = True
+                    break
 
         if hit_tp:
             exit_price = tp

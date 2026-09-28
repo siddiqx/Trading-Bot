@@ -26,12 +26,11 @@ jobs:
         run: |
           pip install httpx pandas numpy
 
-      - name: Restore Signal State & Trade Records Cache
+      - name: Restore Signal State Cache
         uses: actions/cache@v4
         with:
           path: |
             market_scanner_state.json
-            trade_records.json
           key: market-state-${{ github.run_id }}
           restore-keys: |
             market-state-
@@ -48,17 +47,17 @@ jobs:
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git pull --rebase origin main || true
           if [ -n "$(git status --porcelain trade_records.json)" ]; then
             git add trade_records.json
             git commit -m "chore(ledger): update forward trade records from 24/7 cloud scanner"
-            git push
+            git push origin main
           fi
 
-      - name: Save Signal State & Trade Records Cache
+      - name: Save Signal State Cache
         uses: actions/cache@v4
         if: always()
         with:
           path: |
             market_scanner_state.json
-            trade_records.json
           key: market-state-${{ github.run_id }}

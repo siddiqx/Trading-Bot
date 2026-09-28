@@ -96,7 +96,29 @@ async function getLedger(env) {
 
 export default {
   async fetch(request, env) {
-    if (request.method !== "POST") return new Response("Gateway Operational", { status: 200 });
+    if (request.method === "GET") {
+      const kv = env && (env.TRADE_LEDGER || env.TRADES_KV || env.KV);
+      let kvActive = null;
+      let kvCompleted = null;
+      if (kv) {
+        try {
+          kvActive = await kv.get("active_trades", "json");
+          kvCompleted = await kv.get("completed_trades", "json");
+        } catch(e) {}
+      }
+      const ledger = await getLedger(env);
+      return new Response(JSON.stringify({
+        status: "OK",
+        kv_bound: !!kv,
+        env_keys: env ? Object.keys(env) : [],
+        kv_active: kvActive,
+        kv_completed: kvCompleted,
+        resolved_ledger: ledger
+      }, null, 2), {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
 
     try {
       const rawText = await request.text();
