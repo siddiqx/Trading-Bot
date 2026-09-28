@@ -38,6 +38,8 @@ SYMBOLS = {
 TIMEFRAMES = ["15m", "1h"]
 
 STATE_FILE = "market_scanner_state.json"
+TRADE_RECORDS_FILE = "trade_records.json"
+WORKER_SYNC_URL = "https://tradingview-telegram-relay.siddiqsiddiq00012.workers.dev/"
 
 
 def load_state():
@@ -58,6 +60,165 @@ def save_state(state):
             json.dump(state, f, indent=2)
     except Exception as e:
         logger.error(f"Error saving state: {e}")
+
+
+def load_trade_records():
+    if os.path.exists(TRADE_RECORDS_FILE):
+        try:
+            with open(TRADE_RECORDS_FILE, "r") as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return {
+        "tracking_started": "2026-09-28",
+        "active_trades": {},
+        "completed_trades": []
+    }
+
+
+def save_trade_records(records):
+    try:
+        with open(TRADE_RECORDS_FILE, "w") as f:
+            json.dump(records, f, indent=2)
+    except Exception as e:
+        logger.error(f"Error saving trade records: {e}")
+
+
+def sync_worker(records):
+    try:
+        payload = {
+            "event": "sync_trades",
+            "active_trades": records.get("active_trades", {}),
+            "completed_trades": records.get("completed_trades", [])
+        }
+        with httpx.Client(timeout=10.0) as client:
+            client.post(WORKER_SYNC_URL, json=payload, headers={"User-Agent": "MarketScanner/2.0"})
+    except Exception as e:
+        logger.warning(f"Could not sync with worker: {e}")
+
+
+def format_exit_message(trade: dict, outcome: str, exit_price: float, realized_pips: float, realized_r: float) -> str:
+    is_win = outcome == "WIN"
+    icon = "🎯" if is_win else "🛑"
+    header = "TARGET REACHED: TAKE PROFIT HIT" if is_win else "STRUCTURAL EXIT: STOP LOSS HIT"
+    status_text = "WIN (Target Achieved)" if is_win else "LOSS (Order Block Invalidation)"
+    sign = "+" if realized_pips >= 0 else ""
+    r_sign = "+" if realized_r >= 0 else ""
+
+    return (
+        f"{icon} <b>{header}</b>\n"
+        f"<b>──────────────────────────</b>\n"
+        f"📊 <b>Asset:</b> <b>{trade.get('pair', trade.get('symbol'))}</b> ({trade.get('timeframe', '1H')})\n"
+        f"🧭 <b>Position:</b> <b>{trade.get('direction', 'TRADE')} CLOSED</b>\n"
+        f"<b>──────────────────────────</b>\n\n"
+        f"<b>📋 EXECUTION OUTCOME</b>\n"
+        f"• <b>Entry Price:</b> <code>{trade.get('entry')}</code>\n"
+        f"• <b>Exit Price:</b> <code>{exit_price}</code>\n"
+        f"• <b>Net Realized:</b> <b>{sign}{realized_pips:.1f} pips</b>\n"
+        f"• <b>Realized Return:</b> <b>{r_sign}{realized_r:.2f} R</b>\n"
+        f"• <b>Outcome:</b> <b>{status_text}</b>\n\n"
+        f"<b>──────────────────────────</b>\n"
+        f"🕒 <b>Closed At:</b> <code>{datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}</code>\n"
+        f"🔓 <i>Pair unlocked. Returning to market surveillance radar.</i>"
+    )
+
+
+def check_active_trades(records: dict):
+    """Monitors live market prices against active trades for Take Profit and Stop Loss."""
+    active = records.get("active_trades", {})
+    if not active:
+        return
+
+    resolved_pairs = []
+
+    for pair, trade in list(active.items()):
+        ticker = trade.get("ticker")
+        if not ticker:
+            continue
+
+        df = fetch_candles(ticker, "15m", range_days="3d")
+        if df.empty or len(df) < 5:
+            continue
+
+        opened_at_str = trade.get("opened_at")
+        if opened_at_str:
+            df_trade = df[df["time"] >= opened_at_str]
+        else:
+            df_trade = df.iloc[-8:]
+
+        if df_trade.empty:
+            df_trade = df.iloc[-2:]
+
+        is_long = (trade.get("direction") == "LONG")
+        max_high = df_trade["high"].max()
+        min_low = df_trade["low"].min()
+
+        tp = trade["take_profit"]
+        sl = trade["stop_loss"]
+
+        hit_tp = False
+        hit_sl = False
+
+        if is_long:
+            if max_high >= tp:
+                hit_tp = True
+            elif min_low <= sl:
+                hit_sl = True
+        else:
+            if min_low <= tp:
+                hit_tp = True
+            elif max_high >= sl:
+                hit_sl = True
+
+        if hit_tp:
+            exit_price = tp
+            realized_pips = trade.get("tp_pips", 0.0)
+            realized_r = trade.get("rr", 1.75)
+            outcome = "WIN"
+
+            logger.info(f"==> TRADE RESOLVED (TP): {pair} {trade.get('direction')} (+{realized_pips} pips)")
+            msg = format_exit_message(trade, outcome, exit_price, realized_pips, realized_r)
+            send_telegram_alert(msg)
+
+            completed_record = {
+                **trade,
+                "exit_price": exit_price,
+                "outcome": outcome,
+                "realized_pips": round(realized_pips, 1),
+                "realized_r": round(realized_r, 2),
+                "closed_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "status": "CLOSED"
+            }
+            records.setdefault("completed_trades", []).append(completed_record)
+            del records["active_trades"][pair]
+            resolved_pairs.append(pair)
+
+        elif hit_sl:
+            exit_price = sl
+            realized_pips = -trade.get("sl_pips", 0.0)
+            realized_r = -1.00
+            outcome = "LOSS"
+
+            logger.info(f"==> TRADE RESOLVED (SL): {pair} {trade.get('direction')} ({realized_pips} pips)")
+            msg = format_exit_message(trade, outcome, exit_price, realized_pips, realized_r)
+            send_telegram_alert(msg)
+
+            completed_record = {
+                **trade,
+                "exit_price": exit_price,
+                "outcome": outcome,
+                "realized_pips": round(realized_pips, 1),
+                "realized_r": round(realized_r, 2),
+                "closed_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "status": "CLOSED"
+            }
+            records.setdefault("completed_trades", []).append(completed_record)
+            del records["active_trades"][pair]
+            resolved_pairs.append(pair)
+
+    if resolved_pairs:
+        save_trade_records(records)
+        sync_worker(records)
 
 
 def send_telegram_alert(text: str):
@@ -299,7 +460,7 @@ def format_alert_message(sig: dict) -> str:
     icon = "🟢" if is_long else "🔴"
     action_text = "BUY / LONG" if is_long else "SELL / SHORT"
     structure_text = "Origin Order Block Support" if is_long else "Origin Order Block Resistance"
-    trend_text = "Bullish (EMA 20 > EMA 50)" if is_long else "Bearish (EMA 20 < EMA 50)"
+    trend_text = "Bullish (EMA 20 above EMA 50)" if is_long else "Bearish (EMA 20 below EMA 50)"
     sl_sign = "-"
     tp_sign = "+"
 
@@ -333,11 +494,21 @@ def format_alert_message(sig: dict) -> str:
 def run_scan_cycle():
     """Performs one full scan cycle across all pairs and timeframes."""
     state = load_state()
+    records = load_trade_records()
     total_signals = 0
+
+    # 1. Monitor active floating positions for Take Profit / Stop Loss hits
+    check_active_trades(records)
+    active_pairs = set(records.get("active_trades", {}).keys())
     
-    logger.info("Starting scan cycle across 6 pairs on [15M, 1H]...")
+    logger.info(f"Starting scan cycle. Active locked pairs: {list(active_pairs)}")
     
     for pair_name, cfg in SYMBOLS.items():
+        # Enforce strict single-trade lock: skip scanning if pair is already in a trade
+        if pair_name in active_pairs:
+            logger.info(f"Skipping {pair_name}: Active position currently floating.")
+            continue
+
         for tf in TIMEFRAMES:
             try:
                 signals = scan_pair_timeframe(pair_name, cfg, tf, state)
@@ -346,10 +517,38 @@ def run_scan_cycle():
                     logger.info(f"==> NEW SIGNAL: {sig['pair']} {sig['timeframe']} {sig['direction']} @ {sig['entry']}")
                     msg = format_alert_message(sig)
                     send_telegram_alert(msg)
+
+                    # Register newly opened active trade into ledger
+                    new_trade_entry = {
+                        "trade_id": sig["id"],
+                        "pair": sig["pair"],
+                        "symbol": pair_name,
+                        "ticker": cfg["ticker"],
+                        "direction": sig["direction"],
+                        "timeframe": sig["timeframe"],
+                        "entry": sig["entry"],
+                        "stop_loss": sig["stop_loss"],
+                        "take_profit": sig["take_profit"],
+                        "sl_pips": sig["sl_pips"],
+                        "tp_pips": sig["tp_pips"],
+                        "rr": sig["rr"],
+                        "pip": cfg["pip"],
+                        "digits": cfg["digits"],
+                        "opened_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                        "status": "OPEN"
+                    }
+                    records.setdefault("active_trades", {})[pair_name] = new_trade_entry
+                    save_trade_records(records)
+                    sync_worker(records)
+                    active_pairs.add(pair_name)
+                    break # Only 1 trade per pair
+
             except Exception as e:
                 logger.error(f"Error scanning {pair_name} ({tf}): {e}")
                 
     save_state(state)
+    save_trade_records(records)
+    sync_worker(records)
     logger.info(f"Scan cycle complete. Dispatched {total_signals} new signal(s).")
     return total_signals
 
