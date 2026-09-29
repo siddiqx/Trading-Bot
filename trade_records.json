@@ -18,24 +18,6 @@
       "digits": 5,
       "opened_at": "2026-09-29T01:40:03Z",
       "status": "OPEN"
-    },
-    "EURUSD": {
-      "trade_id": "EURUSD_1H_2026-09-29T08:00:00Z_SHORT",
-      "pair": "EURUSD",
-      "symbol": "EURUSD",
-      "ticker": "EURUSD=X",
-      "direction": "SHORT",
-      "timeframe": "1H",
-      "entry": 1.13533,
-      "stop_loss": 1.13731,
-      "take_profit": 1.13187,
-      "sl_pips": 19.8,
-      "tp_pips": 34.6,
-      "rr": 1.75,
-      "pip": 0.0001,
-      "digits": 5,
-      "opened_at": "2026-09-29T08:00:00Z",
-      "status": "OPEN"
     }
   },
   "completed_trades": [
@@ -84,6 +66,29 @@
       "realized_pips": 31.5,
       "realized_r": 1.75,
       "closed_at": "2026-09-29T07:08:28Z"
+    },
+    {
+      "trade_id": "EURUSD_1H_2026-09-29T08:00:00Z_SHORT",
+      "pair": "EURUSD",
+      "symbol": "EURUSD",
+      "ticker": "EURUSD=X",
+      "direction": "SHORT",
+      "timeframe": "1H",
+      "entry": 1.13533,
+      "stop_loss": 1.13731,
+      "take_profit": 1.13187,
+      "sl_pips": 19.8,
+      "tp_pips": 34.6,
+      "rr": 1.75,
+      "pip": 0.0001,
+      "digits": 5,
+      "opened_at": "2026-09-29T08:00:00Z",
+      "status": "CLOSED",
+      "exit_price": 1.13187,
+      "outcome": "WIN",
+      "realized_pips": 34.6,
+      "realized_r": 1.75,
+      "closed_at": "2026-09-29T19:59:34Z"
     }
   ]
 }
