@@ -47,10 +47,10 @@ jobs:
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git pull --rebase origin main || true
           if [ -n "$(git status --porcelain trade_records.json data/ journals/)" ]; then
             git add trade_records.json data/ journals/
             git commit -m "chore(ledger): update trade records and post-mortem journals"
+            git pull --rebase origin main || true
             git push origin main
           fi
 

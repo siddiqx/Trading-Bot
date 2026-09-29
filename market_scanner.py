@@ -123,7 +123,7 @@ def format_exit_message(
     status_text = "WIN (Target Achieved)" if is_win else "LOSS (Order Block Invalidation)"
     sign = "+" if realized_pips >= 0 else ""
     r_sign = "+" if realized_r >= 0 else ""
-    pair_name = trade.get('pair', trade.get('symbol'))
+    pair_name = trade.get('pair') or trade.get('symbol') or 'ASSET'
 
     vol_text = ""
     diag_text = ""
@@ -188,12 +188,17 @@ def check_active_trades(records: dict):
                 open_ts = pd.to_datetime(opened_at_str)
                 df_trade = df[df["time"] >= open_ts]
             except Exception:
-                df_trade = df.iloc[-8:]
+                df_trade = df.iloc[-4:]
         else:
-            df_trade = df.iloc[-8:]
+            df_trade = df.iloc[-4:]
 
         if df_trade.empty:
-            df_trade = df.iloc[-2:]
+            # If no candle has opened >= open_ts yet, check if the latest available candle qualifies
+            if not df.empty and df.iloc[-1]["time"] >= open_ts:
+                df_trade = df.iloc[-1:]
+            else:
+                # Trade just opened; no subsequent price data exists yet
+                continue
 
         is_long = (trade.get("direction") == "LONG")
         tp = trade["take_profit"]
@@ -232,10 +237,10 @@ def check_active_trades(records: dict):
 
             completed_record = {
                 **trade,
-                "exit_price": exit_price,
+                "exit_price": float(exit_price),
                 "outcome": outcome,
-                "realized_pips": round(realized_pips, 1),
-                "realized_r": round(realized_r, 2),
+                "realized_pips": float(round(realized_pips, 1)),
+                "realized_r": float(round(realized_r, 2)),
                 "closed_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
                 "status": "CLOSED"
             }
@@ -264,10 +269,10 @@ def check_active_trades(records: dict):
 
             completed_record = {
                 **trade,
-                "exit_price": exit_price,
+                "exit_price": float(exit_price),
                 "outcome": outcome,
-                "realized_pips": round(realized_pips, 1),
-                "realized_r": round(realized_r, 2),
+                "realized_pips": float(round(realized_pips, 1)),
+                "realized_r": float(round(realized_r, 2)),
                 "closed_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
                 "status": "CLOSED"
             }
@@ -412,8 +417,8 @@ def scan_pair_timeframe(pair_name: str, config: dict, tf: str, state: dict) -> l
     closed_bar = closed_bars.iloc[-1]
     prev_bar = closed_bars.iloc[-2]
     
-    # Freshness check: only alert if the candle closed recently
-    max_age_seconds = 1800 if tf == "15m" else 3600
+    # Freshness check: allow ample window so GitHub Actions queue delay doesn't drop signals
+    max_age_seconds = 3600 if tf == "15m" else 7200
     seconds_since_close = (now_utc - closed_bar["close_time"]).total_seconds()
     if seconds_since_close > max_age_seconds:
         return []
@@ -435,8 +440,12 @@ def scan_pair_timeframe(pair_name: str, config: dict, tf: str, state: dict) -> l
     short_breakout = (closed_bar["close"] < closed_bar["donch_low"]) and (prev_bar["close"] >= prev_bar["donch_low"])
     
     atr = closed_bar["atr"]
-    min_sl_dist = 18.0 * pip
-    max_sl_dist = 60.0 * pip
+    if pair_name == "XAUUSD":
+        min_sl_dist = 60.0 * pip   # $6.00 minimum
+        max_sl_dist = 350.0 * pip  # $35.00 maximum
+    else:
+        min_sl_dist = 18.0 * pip
+        max_sl_dist = 65.0 * pip
     rr_ratio = 1.75
     
     # LONG SIGNAL CHECK
@@ -452,11 +461,11 @@ def scan_pair_timeframe(pair_name: str, config: dict, tf: str, state: dict) -> l
                     ob_low = c["low"]
                     break
             
-            entry = closed_bar["close"]
-            sl_candidate = ob_low - (0.50 * atr)
-            sl_dist = max(min_sl_dist, min(max_sl_dist, entry - sl_candidate))
-            stop_loss = entry - sl_dist
-            take_profit = entry + (sl_dist * rr_ratio)
+            entry = float(closed_bar["close"])
+            sl_candidate = float(ob_low - (0.50 * atr))
+            sl_dist = float(max(min_sl_dist, min(max_sl_dist, entry - sl_candidate)))
+            stop_loss = float(entry - sl_dist)
+            take_profit = float(entry + (sl_dist * rr_ratio))
             
             signals.append({
                 "id": sig_id,
@@ -470,8 +479,8 @@ def scan_pair_timeframe(pair_name: str, config: dict, tf: str, state: dict) -> l
                 "sl_pips": round(sl_dist / pip, 1),
                 "tp_pips": round((take_profit - entry) / pip, 1),
                 "rr": rr_ratio,
-                "rsi": round(closed_bar["rsi"], 1),
-                "atr": round(atr / pip, 1),
+                "rsi": float(round(closed_bar["rsi"], 1)),
+                "atr": float(round(atr / pip, 1)),
                 "score": 92
             })
             state["alerted_signals"].append(sig_id)
@@ -489,11 +498,11 @@ def scan_pair_timeframe(pair_name: str, config: dict, tf: str, state: dict) -> l
                     ob_high = c["high"]
                     break
             
-            entry = closed_bar["close"]
-            sl_candidate = ob_high + (0.50 * atr)
-            sl_dist = max(min_sl_dist, min(max_sl_dist, sl_candidate - entry))
-            stop_loss = entry + sl_dist
-            take_profit = entry - (sl_dist * rr_ratio)
+            entry = float(closed_bar["close"])
+            sl_candidate = float(ob_high + (0.50 * atr))
+            sl_dist = float(max(min_sl_dist, min(max_sl_dist, sl_candidate - entry)))
+            stop_loss = float(entry + sl_dist)
+            take_profit = float(entry - (sl_dist * rr_ratio))
             
             signals.append({
                 "id": sig_id,
@@ -507,8 +516,8 @@ def scan_pair_timeframe(pair_name: str, config: dict, tf: str, state: dict) -> l
                 "sl_pips": round(sl_dist / pip, 1),
                 "tp_pips": round((entry - take_profit) / pip, 1),
                 "rr": rr_ratio,
-                "rsi": round(closed_bar["rsi"], 1),
-                "atr": round(atr / pip, 1),
+                "rsi": float(round(closed_bar["rsi"], 1)),
+                "atr": float(round(atr / pip, 1)),
                 "score": 92
             })
             state["alerted_signals"].append(sig_id)
@@ -604,7 +613,7 @@ def run_scan_cycle():
                         "rr": sig["rr"],
                         "pip": cfg["pip"],
                         "digits": cfg["digits"],
-                        "opened_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                        "opened_at": sig.get("time") or datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
                         "status": "OPEN"
                     }
                     records.setdefault("active_trades", {})[pair_name] = new_trade_entry

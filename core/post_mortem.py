@@ -341,7 +341,9 @@ def record_trade_post_mortem(
         t_close = datetime.fromisoformat(closed_time.replace("Z", "+00:00"))
         diff_sec = (t_close - t_open).total_seconds()
         duration_hours = round(max(0.1, diff_sec / 3600.0), 2)
-        duration_bars = max(1, int(round(duration_hours)))
+        tf_str = str(trade.get("timeframe", "1H")).upper()
+        bar_sec = 900.0 if "15" in tf_str else 3600.0
+        duration_bars = max(1, int(round(diff_sec / bar_sec)))
     except Exception:
         pass
 

@@ -235,6 +235,8 @@ async function handleTelegramUpdate(update, env) {
       await sendStatusMessage(chatId, env);
     } else if (cmd === "/strategy" || cmd === "/rules") {
       await sendStrategyMessage(chatId);
+    } else if (cmd === "/clear" || cmd === "/clean" || cmd === "/reset") {
+      await sendClearInstructions(chatId);
     } else {
       await sendMenuMessage(chatId, env);
     }
@@ -439,7 +441,7 @@ async function sendActiveMessage(chatId, env) {
       let floatText = "";
 
       try {
-        const url = `https://query1.finance.yahoo.com/v8/finance/chart/${asset.ticker}?range=1d&interval=15m`;
+        const url = `https://query1.finance.yahoo.com/v8/finance/chart/${asset.ticker}?range=5d&interval=15m`;
         const res = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0" } });
         const json = await res.json();
         const quote = json?.chart?.result?.[0]?.indicators?.quote?.[0];
@@ -466,7 +468,7 @@ async function sendActiveMessage(chatId, env) {
         `• Entry: <code>${t.entry}</code> (${openDate} ${openTime} UTC)\n` +
         floatText +
         `• Targets: SL <code>${t.stop_loss}</code> | TP <code>${t.take_profit}</code>\n` +
-        `• Plan: <b>1 : ${t.risk_reward || "1.75"} R:R</b> (1.0% Equity Risk)`
+        `• Plan: <b>1 : ${t.rr || t.risk_reward || "1.75"} R:R</b> (1.0% Equity Risk)`
       );
     })
   );
@@ -809,7 +811,7 @@ async function sendPricesMessage(chatId) {
     ASSETS.map(async (asset, idx) => {
       const num = idx + 1;
       try {
-        const url = `https://query1.finance.yahoo.com/v8/finance/chart/${asset.ticker}?range=1d&interval=15m`;
+        const url = `https://query1.finance.yahoo.com/v8/finance/chart/${asset.ticker}?range=5d&interval=15m`;
         const res = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0" } });
         const json = await res.json();
         const closes = json?.chart?.result?.[0]?.indicators?.quote?.[0]?.close?.filter(v => v !== null) || [];
@@ -908,6 +910,38 @@ async function sendStrategyMessage(chatId) {
     inline_keyboard: [
       [
         { text: "📡 Market Radar", callback_data: "cmd_radar" },
+        { text: "« Main Menu", callback_data: "cmd_menu" }
+      ]
+    ]
+  };
+
+  await sendTelegramMessage(chatId, text, keyboard);
+}
+
+/**
+ * /clear - Clean bot chat & reset instructions
+ */
+async function sendClearInstructions(chatId) {
+  const text =
+    `🧹 <b>CLEAN BOT CHAT & LEDGER STATUS</b>\n` +
+    `━━━━━━━━━━━━━━━━━━\n` +
+    `<b>1. Live Ledger Baseline</b>\n` +
+    `• All legacy test/backtest data has been <b>completely wiped</b>.\n` +
+    `• The ledger tracks strictly live confirmed signals from <code>2026-09-28</code> onwards.\n\n` +
+    `<b>2. To Clear Telegram Chat History</b>\n` +
+    `• On Mobile / Desktop: Tap the <b>⋮ (Three Dots)</b> menu at the top right of this chat.\n` +
+    `• Select <b>Clear History</b> (or <b>Delete Chat</b>).\n` +
+    `• Type <code>/start</code> to resume with a 100% clean, fresh terminal!\n` +
+    `━━━━━━━━━━━━━━━━━━\n` +
+    `✨ <i>Fresh institutional session active.</i>`;
+
+  const keyboard = {
+    inline_keyboard: [
+      [
+        { text: "⚡ Active Trades", callback_data: "cmd_active" },
+        { text: "📡 Market Radar", callback_data: "cmd_radar" }
+      ],
+      [
         { text: "« Main Menu", callback_data: "cmd_menu" }
       ]
     ]
