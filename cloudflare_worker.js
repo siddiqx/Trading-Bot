@@ -290,9 +290,20 @@ async function sendRadarMessage(chatId, env) {
         // 2. NORMAL SURVEILLANCE (NO ACTIVE TRADE)
         const donchHigh = Math.max(...highs.slice(-22, -1));
         const donchLow = Math.min(...lows.slice(-22, -1));
-
+        const channelPips = (donchHigh - donchLow) / asset.pip;
         const distHigh = (donchHigh - price) / asset.pip;
         const distLow = (price - donchLow) / asset.pip;
+        const posPct = channelPips > 0 ? ((price - donchLow) / (donchHigh - donchLow)) * 100 : 50;
+
+        // Calculate EMAs for trend confluence
+        let ema20 = closes[0], ema50 = closes[0];
+        const k20 = 2 / (20 + 1), k50 = 2 / (50 + 1);
+        for (let i = 1; i < closes.length; i++) {
+          ema20 = closes[i] * k20 + ema20 * (1 - k20);
+          ema50 = closes[i] * k50 + ema50 * (1 - k50);
+        }
+        const isBullish = ema20 > ema50 && price > ema50;
+        const isBearish = ema20 < ema50 && price < ema50;
 
         let gains = 0, losses = 0;
         for (let i = closes.length - 14; i < closes.length; i++) {
@@ -307,31 +318,35 @@ async function sendRadarMessage(chatId, env) {
         if (rsi > 75) {
           badge = "🛡";
           status = "RSI Guard Active";
-          detail = `RSI ${rsi.toFixed(1)} Overbought`;
+          detail = `RSI ${rsi.toFixed(0)} Overbought`;
         } else if (rsi < 25) {
           badge = "🛡";
           status = "RSI Guard Active";
-          detail = `RSI ${rsi.toFixed(1)} Oversold`;
-        } else if (distHigh <= 8.0) {
-          badge = "⚡";
-          status = "Imminent Breakout";
-          detail = `${distHigh.toFixed(1)}p to Resistance`;
-        } else if (distLow <= 8.0) {
-          badge = "⚡";
-          status = "Imminent Breakdown";
-          detail = `${distLow.toFixed(1)}p to Support`;
-        } else if (distHigh <= 18.0) {
-          badge = "👀";
-          status = "Approaching Resistance";
-          detail = `${distHigh.toFixed(1)}p to High`;
-        } else if (distLow <= 18.0) {
-          badge = "👀";
-          status = "Approaching Support";
-          detail = `${distLow.toFixed(1)}p to Low`;
+          detail = `RSI ${rsi.toFixed(0)} Oversold`;
+        } else if (posPct >= 85) {
+          if (isBullish) {
+            badge = "⚡";
+            status = "Imminent Breakout Setup";
+            detail = `${distHigh <= 0 ? "Piercing High" : distHigh.toFixed(1) + "p to Break"} · Trend Bullish`;
+          } else {
+            badge = "👀";
+            status = "Testing Range High";
+            detail = `${distHigh.toFixed(1)}p to High · Counter-Trend EMA`;
+          }
+        } else if (posPct <= 15) {
+          if (isBearish) {
+            badge = "⚡";
+            status = "Imminent Breakdown Setup";
+            detail = `${distLow <= 0 ? "Piercing Low" : distLow.toFixed(1) + "p to Break"} · Trend Bearish`;
+          } else {
+            badge = "👀";
+            status = "Testing Range Low";
+            detail = `${distLow.toFixed(1)}p to Low · Counter-Trend EMA`;
+          }
         } else {
           badge = "⏸";
           status = "Range Consolidation";
-          detail = `±${Math.min(distHigh, distLow).toFixed(1)}p in Band`;
+          detail = `${channelPips.toFixed(0)}p Channel · Mid-Range (${posPct.toFixed(0)}%)`;
         }
 
         return `<b>${num}. ${asset.name}</b> · <code>${price.toFixed(asset.digits)}</code>\n${badge} <b>${status}</b> (${detail})`;
