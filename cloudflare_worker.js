@@ -468,35 +468,40 @@ async function sendRadarMessage(chatId, env) {
         const rs = (gains / 14) / ((losses / 14) || 1e-9);
         const rsi = 100 - (100 / (1 + rs));
 
+        // Calibrate channel minimum for Gold vs Forex
+        const minChannelPips = asset.symbol === "XAUUSD" ? 60.0 : 12.0;
+        const isCompressing = channelPips < minChannelPips;
+        const breakDistance = asset.symbol === "XAUUSD" ? 25.0 : 3.0;
+
         let badge = "", status = "", detail = "";
-        if (rsi > 75) {
+        if (rsi > 72) {
           badge = "🛡";
           status = "RSI Guard Active";
-          detail = `RSI ${rsi.toFixed(0)} Overbought`;
-        } else if (rsi < 25) {
+          detail = `RSI ${rsi.toFixed(0)} Overbought (Exhaustion)`;
+        } else if (rsi < 28) {
           badge = "🛡";
           status = "RSI Guard Active";
-          detail = `RSI ${rsi.toFixed(0)} Oversold`;
-        } else if (posPct >= 85) {
-          if (isBullish) {
-            badge = "⚡";
-            status = "Imminent Breakout Setup";
-            detail = `${distHigh <= 0 ? "Piercing High" : distHigh.toFixed(1) + "p to Break"} · Trend Bullish`;
-          } else {
-            badge = "👀";
-            status = "Testing Range High";
-            detail = `${distHigh.toFixed(1)}p to High · Counter-Trend EMA`;
-          }
-        } else if (posPct <= 15) {
-          if (isBearish) {
-            badge = "⚡";
-            status = "Imminent Breakdown Setup";
-            detail = `${distLow <= 0 ? "Piercing Low" : distLow.toFixed(1) + "p to Break"} · Trend Bearish`;
-          } else {
-            badge = "👀";
-            status = "Testing Range Low";
-            detail = `${distLow.toFixed(1)}p to Low · Counter-Trend EMA`;
-          }
+          detail = `RSI ${rsi.toFixed(0)} Oversold (Exhaustion)`;
+        } else if (isCompressing) {
+          badge = "💤";
+          status = "Tight Squeeze (Low Volatility)";
+          detail = `${channelPips.toFixed(0)}p Band · Awaiting Volume`;
+        } else if (distHigh <= breakDistance && isBullish && rsi >= 45.0 && rsi <= 72.0) {
+          badge = "⚡";
+          status = "Imminent Breakout Setup";
+          detail = `${Math.max(0, distHigh).toFixed(1)}p to Break · Trend Bullish`;
+        } else if (distLow <= breakDistance && isBearish && rsi >= 28.0 && rsi <= 55.0) {
+          badge = "⚡";
+          status = "Imminent Breakdown Setup";
+          detail = `${Math.max(0, distLow).toFixed(1)}p to Break · Trend Bearish`;
+        } else if (posPct >= 80) {
+          badge = "👀";
+          status = "Testing Range High";
+          detail = `${distHigh.toFixed(1)}p to High · ${posPct.toFixed(0)}% Band`;
+        } else if (posPct <= 20) {
+          badge = "👀";
+          status = "Testing Range Low";
+          detail = `${distLow.toFixed(1)}p to Low · ${posPct.toFixed(0)}% Band`;
         } else {
           badge = "⏸";
           status = "Range Consolidation";
