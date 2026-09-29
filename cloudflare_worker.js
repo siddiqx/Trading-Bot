@@ -94,6 +94,67 @@ async function getLedger(env) {
   };
 }
 
+/**
+ * Auto-resolves a trade that hit TP or SL, updating memory, KV, and triggering GitHub sync
+ */
+async function autoResolveTrade(symbol, t, outcome, exitPrice, env) {
+  const isWin = outcome === "WIN";
+  const pips = isWin 
+    ? (t.tp_pips || Math.abs(t.take_profit - t.entry) / (t.pip || 0.0001)) 
+    : -(t.sl_pips || Math.abs(t.entry - t.stop_loss) / (t.pip || 0.0001));
+  const r = isWin ? (t.rr || 1.75) : -1.0;
+
+  const completedRecord = {
+    ...t,
+    exit_price: exitPrice,
+    outcome: outcome,
+    realized_pips: Math.round(pips * 10) / 10,
+    realized_r: Math.round(r * 100) / 100,
+    closed_at: new Date().toISOString(),
+    status: "CLOSED"
+  };
+
+  delete STORED_ACTIVE_TRADES[symbol];
+  const alreadyExists = STORED_COMPLETED_TRADES.some(x => x.trade_id === t.trade_id);
+  if (!alreadyExists) {
+    STORED_COMPLETED_TRADES.push(completedRecord);
+  }
+
+  const kv = env && (env.TRADE_LEDGER || env.TRADES_KV || env.KV);
+  if (kv) {
+    try {
+      await kv.put("active_trades", JSON.stringify(STORED_ACTIVE_TRADES));
+      await kv.put("completed_trades", JSON.stringify(STORED_COMPLETED_TRADES));
+    } catch (e) {
+      console.error("KV resolve error:", e);
+    }
+  }
+
+  // Trigger GitHub Actions workflow to log post-mortem and persist to Git
+  await triggerGitHubScanner(env);
+}
+
+/**
+ * Dispatches GitHub Actions scanner workflow via REST API
+ */
+async function triggerGitHubScanner(env) {
+  const token = env && (env.GITHUB_TOKEN || env.GH_TOKEN);
+  if (!token) return;
+  try {
+    await fetch("https://api.github.com/repos/siddiqx/Trading-Bot/actions/workflows/scanner.yml/dispatches", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${token}`,
+        "Accept": "application/vnd.github.v3+json",
+        "User-Agent": "Cloudflare-Worker-Scheduler"
+      },
+      body: JSON.stringify({ ref: "main" })
+    });
+  } catch (e) {
+    console.error("Workflow dispatch error:", e);
+  }
+}
+
 export default {
   async fetch(request, env) {
     if (request.method === "GET") {
@@ -155,6 +216,78 @@ export default {
     } catch (err) {
       return new Response("Error: " + err.message, { status: 500 });
     }
+  },
+
+  /**
+   * Cloudflare Worker Scheduled Cron Trigger (Runs 24/7 without GitHub Actions delays)
+   */
+  async scheduled(event, env, ctx) {
+    ctx.waitUntil((async () => {
+      const ledger = await getLedger(env);
+      const activeEntries = Object.entries(ledger.active);
+
+      for (const [symbol, t] of activeEntries) {
+        const asset = ASSETS.find(a => a.symbol === symbol);
+        if (!asset) continue;
+        try {
+          const url = `https://query1.finance.yahoo.com/v8/finance/chart/${asset.ticker}?range=5d&interval=15m`;
+          const res = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0" } });
+          const json = await res.json();
+          const quote = json?.chart?.result?.[0]?.indicators?.quote?.[0];
+          const closes = quote?.close?.filter(v => v !== null && v !== undefined) || [];
+          const highs = quote?.high?.filter(v => v !== null && v !== undefined) || [];
+          const lows = quote?.low?.filter(v => v !== null && v !== undefined) || [];
+
+          if (closes.length > 0) {
+            const lastClose = closes[closes.length - 1];
+            const lastHigh = highs[highs.length - 1] || lastClose;
+            const lastLow = lows[lows.length - 1] || lastClose;
+            const isLong = (t.direction || "").toUpperCase() === "LONG";
+
+            let hitTP = false;
+            let hitSL = false;
+            if (isLong) {
+              if (lastLow <= t.stop_loss) hitSL = true;
+              else if (lastHigh >= t.take_profit) hitTP = true;
+            } else {
+              if (lastHigh >= t.stop_loss) hitSL = true;
+              else if (lastLow <= t.take_profit) hitTP = true;
+            }
+
+            if (hitTP || hitSL) {
+              const exitPrice = hitTP ? t.take_profit : t.stop_loss;
+              await autoResolveTrade(symbol, t, hitTP ? "WIN" : "LOSS", exitPrice, env);
+
+              const sign = hitTP ? "+" : "-";
+              const pips = hitTP ? (t.tp_pips || 31.5) : (t.sl_pips || 18.0);
+              const rVal = hitTP ? (t.rr || 1.75) : -1.0;
+              const icon = hitTP ? "🎯" : "🛑";
+              const title = hitTP ? "TARGET REACHED: TAKE PROFIT HIT" : "STRUCTURAL EXIT: STOP LOSS HIT";
+              const text = 
+                `${icon} <b>${title}</b>\n` +
+                `━━━━━━━━━━━━━━━━━━\n` +
+                `📊 <b>Asset:</b> <b>${t.pair || symbol}</b> (${t.timeframe || "1H"})\n` +
+                `🧭 <b>Position:</b> <b>${t.direction} CLOSED</b>\n` +
+                `━━━━━━━━━━━━━━━━━━\n\n` +
+                `<b>📋 EXECUTION OUTCOME</b>\n` +
+                `• <b>Entry Price:</b> <code>${t.entry}</code>\n` +
+                `• <b>Exit Price:</b> <code>${exitPrice}</code>\n` +
+                `• <b>Net Realized:</b> <b>${sign}${pips} pips</b>\n` +
+                `• <b>Realized Return:</b> <b>${hitTP ? "+" : ""}${rVal} R</b>\n\n` +
+                `━━━━━━━━━━━━━━━━━━\n` +
+                `🕒 <code>${new Date().toISOString().replace("T", " ").substring(0, 16)} UTC</code>\n` +
+                `🔓 <i>Pair unlocked. Surveillance resumed.</i>`;
+              await sendTelegramMessage("8142877259", text);
+            }
+          }
+        } catch (e) {
+          console.error("Scheduled check error:", e);
+        }
+      }
+
+      // Trigger GitHub Actions market scanner so it scans for new confirmed setups immediately
+      await triggerGitHubScanner(env);
+    })());
   }
 };
 
@@ -274,8 +407,27 @@ async function sendRadarMessage(chatId, env) {
         // 1. CHECK IF PAIR HAS AN ACTIVE RUNNING TRADE
         const activeTrade = active[asset.symbol];
         if (activeTrade) {
-          activeCount++;
           const isLong = activeTrade.direction === "LONG";
+          const hitTP = isLong ? price >= activeTrade.take_profit : price <= activeTrade.take_profit;
+          const hitSL = isLong ? price <= activeTrade.stop_loss : price >= activeTrade.stop_loss;
+
+          if (hitTP) {
+            autoResolveTrade(asset.symbol, activeTrade, "WIN", activeTrade.take_profit, env);
+            return (
+              `<b>${num}. ${asset.name}</b> · <code>${price.toFixed(asset.digits)}</code>\n` +
+              `🎯 <b>TAKE PROFIT ACHIEVED (+${activeTrade.tp_pips || "31.5"} pips | +1.75R)</b>\n` +
+              `• Target <code>${activeTrade.take_profit}</code> Booked · Surveillance Resumed`
+            );
+          } else if (hitSL) {
+            autoResolveTrade(asset.symbol, activeTrade, "LOSS", activeTrade.stop_loss, env);
+            return (
+              `<b>${num}. ${asset.name}</b> · <code>${price.toFixed(asset.digits)}</code>\n` +
+              `🛑 <b>STOP LOSS HIT (-${activeTrade.sl_pips || "18.0"} pips | -1.00R)</b>\n` +
+              `• SL <code>${activeTrade.stop_loss}</code> Executed · Surveillance Resumed`
+            );
+          }
+
+          activeCount++;
           const pnlPips = ((price - activeTrade.entry) / asset.pip) * (isLong ? 1 : -1);
           const pnlSign = pnlPips >= 0 ? "+" : "";
           const icon = isLong ? "🟢" : "🔴";
@@ -454,13 +606,24 @@ async function sendActiveMessage(chatId, env) {
       }
 
       if (currentPrice !== null) {
-        const pnlPips = ((currentPrice - t.entry) / asset.pip) * (isLong ? 1 : -1);
-        const pnlSign = pnlPips >= 0 ? "+" : "";
-        const riskDist = Math.abs(t.entry - t.stop_loss) / asset.pip;
-        const floatR = riskDist > 0 ? (pnlPips / riskDist).toFixed(2) : "0.00";
-        const rSign = parseFloat(floatR) >= 0 ? "+" : "";
-        const floatEmoji = pnlPips >= 0 ? "🟢" : "🔻";
-        floatText = `• Live Price: <code>${currentPrice.toFixed(asset.digits)}</code> (${floatEmoji} <b>${pnlSign}${pnlPips.toFixed(1)} pips</b> | <b>${rSign}${floatR}R</b>)\n`;
+        const hitTP = isLong ? currentPrice >= t.take_profit : currentPrice <= t.take_profit;
+        const hitSL = isLong ? currentPrice <= t.stop_loss : currentPrice >= t.stop_loss;
+
+        if (hitTP) {
+          autoResolveTrade(symbol, t, "WIN", t.take_profit, env);
+          floatText = `• Status: 🎯 <b>TARGET REACHED · TAKE PROFIT HIT (+${t.tp_pips || "31.5"} pips | +1.75R)</b>\n• Live Price: <code>${currentPrice.toFixed(asset.digits)}</code> (Target Booked)\n`;
+        } else if (hitSL) {
+          autoResolveTrade(symbol, t, "LOSS", t.stop_loss, env);
+          floatText = `• Status: 🛑 <b>STOP LOSS HIT (-${t.sl_pips || "18.0"} pips | -1.00R)</b>\n• Live Price: <code>${currentPrice.toFixed(asset.digits)}</code> (SL Booked)\n`;
+        } else {
+          const pnlPips = ((currentPrice - t.entry) / asset.pip) * (isLong ? 1 : -1);
+          const pnlSign = pnlPips >= 0 ? "+" : "";
+          const riskDist = Math.abs(t.entry - t.stop_loss) / asset.pip;
+          const floatR = riskDist > 0 ? (pnlPips / riskDist).toFixed(2) : "0.00";
+          const rSign = parseFloat(floatR) >= 0 ? "+" : "";
+          const floatEmoji = pnlPips >= 0 ? "🟢" : "🔻";
+          floatText = `• Live Price: <code>${currentPrice.toFixed(asset.digits)}</code> (${floatEmoji} <b>${pnlSign}${pnlPips.toFixed(1)} pips</b> | <b>${rSign}${floatR}R</b>)\n`;
+        }
       }
 
       return (
