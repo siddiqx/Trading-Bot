@@ -134,14 +134,17 @@ async function autoResolveTrade(symbol, t, outcome, exitPrice, env) {
   await triggerGitHubScanner(env);
 }
 
+const DEFAULT_GH_TOKEN = "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";
+const DEFAULT_CHAT_ID = "8142877259";
+
 /**
  * Dispatches GitHub Actions scanner workflow via REST API
  */
 async function triggerGitHubScanner(env) {
-  const token = env && (env.GITHUB_TOKEN || env.GH_TOKEN);
-  if (!token) return;
+  const token = (env && (env.GITHUB_TOKEN || env.GH_TOKEN)) || DEFAULT_GH_TOKEN;
+  if (!token) return false;
   try {
-    await fetch("https://api.github.com/repos/siddiqx/Trading-Bot/actions/workflows/scanner.yml/dispatches", {
+    const res = await fetch("https://api.github.com/repos/siddiqx/Trading-Bot/actions/workflows/scanner.yml/dispatches", {
       method: "POST",
       headers: {
         "Authorization": `Bearer ${token}`,
@@ -150,14 +153,99 @@ async function triggerGitHubScanner(env) {
       },
       body: JSON.stringify({ ref: "main" })
     });
+    return res.status === 204;
   } catch (e) {
     console.error("Workflow dispatch error:", e);
+    return false;
   }
+}
+
+/**
+ * Universal active trade monitor & auto-resolution loop
+ * Executed by Cloudflare Cron Trigger, external /cron pings, or Telegram /scan command
+ */
+async function runActiveTradeChecks(env) {
+  const ledger = await getLedger(env);
+  const activeEntries = Object.entries(ledger.active);
+  const resolved = [];
+
+  for (const [symbol, t] of activeEntries) {
+    const asset = ASSETS.find(a => a.symbol === symbol);
+    if (!asset) continue;
+    try {
+      const url = `https://query1.finance.yahoo.com/v8/finance/chart/${asset.ticker}?range=5d&interval=15m`;
+      const res = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0" } });
+      const json = await res.json();
+      const quote = json?.chart?.result?.[0]?.indicators?.quote?.[0];
+      const closes = quote?.close?.filter(v => v !== null && v !== undefined) || [];
+      const highs = quote?.high?.filter(v => v !== null && v !== undefined) || [];
+      const lows = quote?.low?.filter(v => v !== null && v !== undefined) || [];
+
+      if (closes.length > 0) {
+        const lastClose = closes[closes.length - 1];
+        const lastHigh = highs[highs.length - 1] || lastClose;
+        const lastLow = lows[lows.length - 1] || lastClose;
+        const isLong = (t.direction || "").toUpperCase() === "LONG";
+
+        let hitTP = false;
+        let hitSL = false;
+        if (isLong) {
+          if (lastLow <= t.stop_loss) hitSL = true;
+          else if (lastHigh >= t.take_profit) hitTP = true;
+        } else {
+          if (lastHigh >= t.stop_loss) hitSL = true;
+          else if (lastLow <= t.take_profit) hitTP = true;
+        }
+
+        if (hitTP || hitSL) {
+          const exitPrice = hitTP ? t.take_profit : t.stop_loss;
+          await autoResolveTrade(symbol, t, hitTP ? "WIN" : "LOSS", exitPrice, env);
+          resolved.push({ symbol, outcome: hitTP ? "WIN" : "LOSS", exitPrice });
+
+          const sign = hitTP ? "+" : "-";
+          const pips = hitTP ? (t.tp_pips || 31.5) : (t.sl_pips || 18.0);
+          const rVal = hitTP ? (t.rr || 1.75) : -1.0;
+          const icon = hitTP ? "🎯" : "🛑";
+          const title = hitTP ? "TARGET REACHED: TAKE PROFIT HIT" : "STRUCTURAL EXIT: STOP LOSS HIT";
+          const text = 
+            `${icon} <b>${title}</b>\n` +
+            `━━━━━━━━━━━━━━━━━━\n` +
+            `📊 <b>Asset:</b> <b>${t.pair || symbol}</b> (${t.timeframe || "1H"})\n` +
+            `🧭 <b>Position:</b> <b>${t.direction} CLOSED</b>\n` +
+            `━━━━━━━━━━━━━━━━━━\n\n` +
+            `<b>📋 EXECUTION OUTCOME</b>\n` +
+            `• <b>Entry Price:</b> <code>${t.entry}</code>\n` +
+            `• <b>Exit Price:</b> <code>${exitPrice}</code>\n` +
+            `• <b>Net Realized:</b> <b>${sign}${pips} pips</b>\n` +
+            `• <b>Realized Return:</b> <b>${hitTP ? "+" : ""}${rVal} R</b>\n\n` +
+            `━━━━━━━━━━━━━━━━━━\n` +
+            `🕒 <code>${new Date().toISOString().replace("T", " ").substring(0, 16)} UTC</code>\n` +
+            `🔓 <i>Pair unlocked. Surveillance resumed.</i>`;
+          await sendTelegramMessage(DEFAULT_CHAT_ID, text);
+        }
+      }
+    } catch (e) {
+      console.error("Scheduled check error:", e);
+    }
+  }
+
+  // Trigger GitHub Actions market scanner so it scans for new confirmed setups immediately
+  const dispatched = await triggerGitHubScanner(env);
+  return { checked_active: activeEntries.length, resolved_trades: resolved, github_scanner_dispatched: dispatched };
 }
 
 export default {
   async fetch(request, env) {
     if (request.method === "GET") {
+      const url = new URL(request.url);
+      if (url.pathname === "/cron" || url.pathname === "/tick" || url.pathname === "/check") {
+        const result = await runActiveTradeChecks(env);
+        return new Response(JSON.stringify({ status: "CRON_EXECUTED", ...result }, null, 2), {
+          status: 200,
+          headers: { "Content-Type": "application/json" }
+        });
+      }
+
       const kv = env && (env.TRADE_LEDGER || env.TRADES_KV || env.KV);
       let kvActive = null;
       let kvCompleted = null;
@@ -222,72 +310,7 @@ export default {
    * Cloudflare Worker Scheduled Cron Trigger (Runs 24/7 without GitHub Actions delays)
    */
   async scheduled(event, env, ctx) {
-    ctx.waitUntil((async () => {
-      const ledger = await getLedger(env);
-      const activeEntries = Object.entries(ledger.active);
-
-      for (const [symbol, t] of activeEntries) {
-        const asset = ASSETS.find(a => a.symbol === symbol);
-        if (!asset) continue;
-        try {
-          const url = `https://query1.finance.yahoo.com/v8/finance/chart/${asset.ticker}?range=5d&interval=15m`;
-          const res = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0" } });
-          const json = await res.json();
-          const quote = json?.chart?.result?.[0]?.indicators?.quote?.[0];
-          const closes = quote?.close?.filter(v => v !== null && v !== undefined) || [];
-          const highs = quote?.high?.filter(v => v !== null && v !== undefined) || [];
-          const lows = quote?.low?.filter(v => v !== null && v !== undefined) || [];
-
-          if (closes.length > 0) {
-            const lastClose = closes[closes.length - 1];
-            const lastHigh = highs[highs.length - 1] || lastClose;
-            const lastLow = lows[lows.length - 1] || lastClose;
-            const isLong = (t.direction || "").toUpperCase() === "LONG";
-
-            let hitTP = false;
-            let hitSL = false;
-            if (isLong) {
-              if (lastLow <= t.stop_loss) hitSL = true;
-              else if (lastHigh >= t.take_profit) hitTP = true;
-            } else {
-              if (lastHigh >= t.stop_loss) hitSL = true;
-              else if (lastLow <= t.take_profit) hitTP = true;
-            }
-
-            if (hitTP || hitSL) {
-              const exitPrice = hitTP ? t.take_profit : t.stop_loss;
-              await autoResolveTrade(symbol, t, hitTP ? "WIN" : "LOSS", exitPrice, env);
-
-              const sign = hitTP ? "+" : "-";
-              const pips = hitTP ? (t.tp_pips || 31.5) : (t.sl_pips || 18.0);
-              const rVal = hitTP ? (t.rr || 1.75) : -1.0;
-              const icon = hitTP ? "🎯" : "🛑";
-              const title = hitTP ? "TARGET REACHED: TAKE PROFIT HIT" : "STRUCTURAL EXIT: STOP LOSS HIT";
-              const text = 
-                `${icon} <b>${title}</b>\n` +
-                `━━━━━━━━━━━━━━━━━━\n` +
-                `📊 <b>Asset:</b> <b>${t.pair || symbol}</b> (${t.timeframe || "1H"})\n` +
-                `🧭 <b>Position:</b> <b>${t.direction} CLOSED</b>\n` +
-                `━━━━━━━━━━━━━━━━━━\n\n` +
-                `<b>📋 EXECUTION OUTCOME</b>\n` +
-                `• <b>Entry Price:</b> <code>${t.entry}</code>\n` +
-                `• <b>Exit Price:</b> <code>${exitPrice}</code>\n` +
-                `• <b>Net Realized:</b> <b>${sign}${pips} pips</b>\n` +
-                `• <b>Realized Return:</b> <b>${hitTP ? "+" : ""}${rVal} R</b>\n\n` +
-                `━━━━━━━━━━━━━━━━━━\n` +
-                `🕒 <code>${new Date().toISOString().replace("T", " ").substring(0, 16)} UTC</code>\n` +
-                `🔓 <i>Pair unlocked. Surveillance resumed.</i>`;
-              await sendTelegramMessage("8142877259", text);
-            }
-          }
-        } catch (e) {
-          console.error("Scheduled check error:", e);
-        }
-      }
-
-      // Trigger GitHub Actions market scanner so it scans for new confirmed setups immediately
-      await triggerGitHubScanner(env);
-    })());
+    ctx.waitUntil(runActiveTradeChecks(env));
   }
 };
 
@@ -341,7 +364,11 @@ async function handleTelegramUpdate(update, env) {
 
     if (cmd === "/active" || cmd === "/open" || cmd === "/trades" || cmd === "/positions") {
       await sendActiveMessage(chatId, env);
-    } else if (cmd === "/radar" || cmd === "/scan" || cmd === "/tracking") {
+    } else if (cmd === "/check" || cmd === "/scan" || cmd === "/refresh") {
+      await sendTelegramMessage(chatId, "⚡ <i>Executing instant real-time quote check & cloud scan dispatch...</i>");
+      await runActiveTradeChecks(env);
+      await sendActiveMessage(chatId, env);
+    } else if (cmd === "/radar" || cmd === "/tracking") {
       await sendRadarMessage(chatId, env);
     } else if (cmd === "/prices" || cmd === "/quotes") {
       await sendPricesMessage(chatId);
