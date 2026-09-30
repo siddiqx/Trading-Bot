@@ -1,24 +1,6 @@
 {
   "tracking_started": "2026-09-28",
   "active_trades": {
-    "USDCAD": {
-      "trade_id": "USDCAD_1H_2026-09-29T01:00:00Z_LONG",
-      "pair": "USDCAD",
-      "symbol": "USDCAD",
-      "ticker": "USDCAD=X",
-      "direction": "LONG",
-      "timeframe": "1H",
-      "entry": 1.41813,
-      "stop_loss": 1.4163,
-      "take_profit": 1.42133,
-      "sl_pips": 18.3,
-      "tp_pips": 32.0,
-      "rr": 1.75,
-      "pip": 0.0001,
-      "digits": 5,
-      "opened_at": "2026-09-29T01:40:03Z",
-      "status": "OPEN"
-    },
     "USDJPY": {
       "trade_id": "USDJPY_1H_2026-09-30T02:00:00Z_SHORT",
       "pair": "USDJPY",
@@ -35,6 +17,24 @@
       "pip": 0.01,
       "digits": 3,
       "opened_at": "2026-09-30T02:00:00Z",
+      "status": "OPEN"
+    },
+    "XAUUSD": {
+      "trade_id": "XAUUSD_15M_2026-09-30T15:30:00Z_SHORT",
+      "pair": "XAUUSD",
+      "symbol": "XAUUSD",
+      "ticker": "GC=F",
+      "direction": "SHORT",
+      "timeframe": "15M",
+      "entry": 4187.9,
+      "stop_loss": 4220.28,
+      "take_profit": 4131.23,
+      "sl_pips": 323.8,
+      "tp_pips": 566.7,
+      "rr": 1.75,
+      "pip": 0.1,
+      "digits": 2,
+      "opened_at": "2026-09-30T15:30:00Z",
       "status": "OPEN"
     }
   },
@@ -107,6 +107,29 @@
       "realized_pips": 34.6,
       "realized_r": 1.75,
       "closed_at": "2026-09-29T19:59:34Z"
+    },
+    {
+      "trade_id": "USDCAD_1H_2026-09-29T01:00:00Z_LONG",
+      "pair": "USDCAD",
+      "symbol": "USDCAD",
+      "ticker": "USDCAD=X",
+      "direction": "LONG",
+      "timeframe": "1H",
+      "entry": 1.41813,
+      "stop_loss": 1.4163,
+      "take_profit": 1.42133,
+      "sl_pips": 18.3,
+      "tp_pips": 32.0,
+      "rr": 1.75,
+      "pip": 0.0001,
+      "digits": 5,
+      "opened_at": "2026-09-29T01:40:03Z",
+      "status": "CLOSED",
+      "exit_price": 1.4163,
+      "outcome": "LOSS",
+      "realized_pips": -18.3,
+      "realized_r": -1.0,
+      "closed_at": "2026-09-30T15:41:15Z"
     }
   ]
 }
