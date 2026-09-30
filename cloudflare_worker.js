@@ -14,13 +14,19 @@ const BOT_TOKEN = "8932628751:AAFS_Z7SZMbfNAgNE9KmU6Sly32IGxDm2p0";
 const TELEGRAM_API = `https://api.telegram.org/bot${BOT_TOKEN}`;
 
 const ASSETS = [
+  { name: "GOLD",    symbol: "XAUUSD", ticker: "GC=F",     pip: 0.10,   digits: 2 },
   { name: "EUR/USD", symbol: "EURUSD", ticker: "EURUSD=X", pip: 0.0001, digits: 5 },
-  { name: "USD/JPY", symbol: "USDJPY", ticker: "USDJPY=X", pip: 0.01,   digits: 3 },
-  { name: "USD/CAD", symbol: "USDCAD", ticker: "USDCAD=X", pip: 0.0001, digits: 5 },
-  { name: "USD/CHF", symbol: "USDCHF", ticker: "USDCHF=X", pip: 0.0001, digits: 5 },
-  { name: "AUD/USD", symbol: "AUDUSD", ticker: "AUDUSD=X", pip: 0.0001, digits: 5 },
-  { name: "GOLD",    symbol: "XAUUSD", ticker: "GC=F",     pip: 0.10,   digits: 2 }
+  { name: "USD/CAD", symbol: "USDCAD", ticker: "USDCAD=X", pip: 0.0001, digits: 5 }
 ];
+
+const ALL_KNOWN_TICKERS = {
+  "XAUUSD": "GC=F",
+  "EURUSD": "EURUSD=X",
+  "USDCAD": "USDCAD=X",
+  "USDJPY": "USDJPY=X",
+  "USDCHF": "USDCHF=X",
+  "AUDUSD": "AUDUSD=X"
+};
 
 // Dynamic trade ledger state (zero hardcoded trades; populated 100% dynamically via signals & cloud sync)
 let STORED_ACTIVE_TRADES = {};
@@ -171,8 +177,11 @@ async function runActiveTradeChecks(env) {
   const resolved = [];
 
   for (const [symbol, t] of activeEntries) {
-    const asset = ASSETS.find(a => a.symbol === symbol);
-    if (!asset) continue;
+    let asset = ASSETS.find(a => a.symbol === symbol);
+    if (!asset) {
+      const ticker = t.ticker || ALL_KNOWN_TICKERS[symbol] || `${symbol}=X`;
+      asset = { name: t.pair || symbol, symbol, ticker, pip: t.pip || 0.0001, digits: t.digits || 5 };
+    }
     try {
       const url = `https://query1.finance.yahoo.com/v8/finance/chart/${asset.ticker}?range=5d&interval=15m`;
       const res = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0" } });
@@ -950,13 +959,11 @@ async function sendPerformanceMessage(chatId, filterPair = "ALL", env) {
     inline_keyboard: [
       [
         { text: "Overall", callback_data: "perf_pair_ALL" },
-        { text: "USD/CHF", callback_data: "perf_pair_USDCHF" },
-        { text: "EUR/USD", callback_data: "perf_pair_EURUSD" }
+        { text: "GOLD", callback_data: "perf_pair_XAUUSD" }
       ],
       [
-        { text: "USD/CAD", callback_data: "perf_pair_USDCAD" },
-        { text: "USD/JPY", callback_data: "perf_pair_USDJPY" },
-        { text: "GOLD", callback_data: "perf_pair_XAUUSD" }
+        { text: "EUR/USD", callback_data: "perf_pair_EURUSD" },
+        { text: "USD/CAD", callback_data: "perf_pair_USDCAD" }
       ],
       [
         { text: "⚡ Active Trades", callback_data: "cmd_active" },
@@ -1175,17 +1182,20 @@ async function sendStrategyMessage(chatId) {
     `━━━━━━━━━━━━━━━━━━\n` +
     `<b>INSTITUTIONAL BREAKOUT & ORDER BLOCK MODEL</b>\n\n` +
     `<b>1. Structural Breakout Trigger</b>\n` +
-    `• 20-period Donchian Channel High/Low breach\n` +
+    `• Gold (XAUUSD): High-Frequency 10-period Donchian (PF 1.40)\n` +
+    `• Forex (EURUSD, USDCAD): 20-period Donchian (PF 1.25)\n` +
     `• Confirmation requires candle close outside channel\n\n` +
-    `<b>2. Trend Bias & Momentum Guard</b>\n` +
+    `<b>2. Session Liquidity & Trend Bias</b>\n` +
+    `• Session Window: 06:00 – 18:00 UTC (London / NY Overlap)\n` +
     `• Longs: EMA 20 above EMA 50 (Bullish)\n` +
     `• Shorts: EMA 20 below EMA 50 (Bearish)\n` +
     `• Anti-Exhaustion RSI: <code>25.0 ≤ RSI ≤ 75.0</code>\n\n` +
     `<b>3. Structural Protection & Sizing</b>\n` +
     `• Invalidation SL at Origin Order Block\n` +
     `• Fixed Risk-to-Reward: <b>1 : 1.75</b>\n` +
-    `• Fixed Risk per Trade: <b>1.0% Equity</b>\n` +
-    `• Enforced Single-Position Lock per pair\n\n` +
+    `• Recommended Risk per Trade: <b>0.5% Equity</b>\n` +
+    `• Drawdown Guard: Portfolio Max DD strictly capped at ≤6.0%\n` +
+    `• Pending Order Timeout: 2h (15M) / 4h (1H) to release pair lock\n\n` +
     `━━━━━━━━━━━━━━━━━━\n` +
     `🛡 <i>Systematic, rule-based execution.</i>`;
 

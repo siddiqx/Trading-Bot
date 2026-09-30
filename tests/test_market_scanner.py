@@ -234,3 +234,67 @@ def test_check_active_trades_pending_order_cancellation(monkeypatch):
     assert any("SETUP CANCELLED" in a for a in alerts)
 
 
+def test_check_active_trades_pending_order_timeout(monkeypatch):
+    """Ensure an unfilled PENDING order automatically expires after session limit without loss."""
+    from market_scanner import check_active_trades
+
+    old_time_dt = datetime.now(timezone.utc) - timedelta(hours=5)
+    old_time = old_time_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+    t0 = old_time_dt + timedelta(minutes=15)
+
+    # Mock candle data where price stays below entry and SL for SHORT (no fill, no breach)
+    mock_df = pd.DataFrame({
+        "timestamp": [int(t0.timestamp())],
+        "time": [t0],
+        "open": [4180.00],
+        "high": [4185.00], # Stays below limit entry 4187.90 (unfilled)
+        "low": [4175.00],  # Stays above TP 4131.23
+        "close": [4180.00],
+        "volume": [100]
+    })
+
+    alerts = []
+    monkeypatch.setattr("market_scanner.fetch_candles", lambda *args, **kwargs: mock_df)
+    monkeypatch.setattr("market_scanner.send_telegram_alert", lambda msg: alerts.append(msg))
+    monkeypatch.setattr("market_scanner.sync_worker", lambda *args, **kwargs: None)
+    monkeypatch.setattr("market_scanner.save_trade_records", lambda *args, **kwargs: None)
+
+    records = {
+        "active_trades": {
+            "XAUUSD": {
+                "trade_id": "XAUUSD_TIMEOUT_TEST",
+                "pair": "XAUUSD",
+                "symbol": "XAUUSD",
+                "ticker": "GC=F",
+                "direction": "SHORT",
+                "timeframe": "15M",
+                "entry": 4187.90,
+                "stop_loss": 4220.28,
+                "take_profit": 4131.23,
+                "sl_pips": 323.8,
+                "tp_pips": 566.7,
+                "rr": 1.75,
+                "pip": 0.1,
+                "digits": 2,
+                "opened_at": old_time,
+                "status": "PENDING",
+                "filled_at": None
+            }
+        },
+        "completed_trades": []
+    }
+
+    check_active_trades(records)
+
+    # Order must be removed from active and moved to completed as EXPIRED
+    assert "XAUUSD" not in records["active_trades"]
+    assert len(records["completed_trades"]) == 1
+    expired = records["completed_trades"][0]
+    assert expired["status"] == "EXPIRED"
+    assert expired["outcome"] == "EXPIRED_UNFILLED"
+    assert expired["realized_pips"] == 0.0
+    assert expired["realized_r"] == 0.0
+    assert any("SETUP EXPIRED" in a for a in alerts)
+
+
+
