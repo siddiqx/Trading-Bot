@@ -105,3 +105,28 @@
 
 ---
 
+### #5 · USDJPY (1H) — 🛑 LOSS (-1.00R)
+
+- **Global Sequence**: Trade `#5`
+- **Direction**: `SHORT` | **Outcome**: `LOSS` (`-65.0 pips` / `-1.0R`)
+- **Execution Range**: Entry ` 156.746 ` ➔ Exit ` 157.396 `
+- **Targets**: Stop Loss ` 157.396 ` | Take Profit ` 155.609 `
+- **Holding Time**: `21.95 hours` (22 bars)
+- **Window**: `2026-09-30 02:00:00 UTC` ➔ `2026-09-30 23:56:42 UTC`
+
+#### 📊 Excursion & Market Regime
+| Metric | Value | Detail |
+| :--- | :--- | :--- |
+| **Max Favorable Excursion (MFE)** | `+37.6 pips` | Reached `+0.58R` (33.1% of TP) |
+| **Max Adverse Excursion (MAE)** | `-83.9 pips` | Deepest drawdown `-1.29R` |
+| **Session** | `Asian/Tokyo Session` | Institutional Market Timing |
+| **Entry RSI (14)** | `50.0` | Momentum Baseline |
+| **EMA Alignment** | `BEARISH_EXPANDING` | Structural Trend Bias |
+
+#### 🔬 Post-Mortem Diagnosis: `LOW_LIQUIDITY_CHOP`
+> **Analysis**: Signal triggered during Asian/Tokyo Session. Lower institutional volume led to whipsaw without sustainable directional continuation.
+>
+> **Actionable Takeaway**: Restrict or weight signal scoring lower during off-peak liquidity windows.
+
+---
+
