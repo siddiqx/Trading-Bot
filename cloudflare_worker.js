@@ -1292,7 +1292,9 @@ async function handleIncomingSignal(payload) {
     const icon = isLong ? "🟢" : "🔴";
     const actionText = isLong ? "BUY / LONG" : "SELL / SHORT";
     const pair = payload.symbol || "FOREX";
-    const displayPair = pair === "XAUUSD" ? "GOLD (XAU/USD)" : (pair.length === 6 ? `${pair.substring(0,3)}/${pair.substring(3)}` : pair);
+    const isGold = (pair === "XAUUSD");
+    const displayPair = isGold ? "GOLD (XAU/USD)" : (pair.length === 6 ? `${pair.substring(0,3)}/${pair.substring(3)}` : pair);
+    const goldNote = (isGold && payload.ticker === "GC=F") ? "• <b>Feed:</b> <code>COMEX GC=F Futures</code> <i>(~$32 basis over spot)</i>\n\n" : "";
 
     alertMessage = 
       `${icon} <b>NEW TRADE SIGNAL · ${displayPair}</b>\n` +
@@ -1307,6 +1309,7 @@ async function handleIncomingSignal(payload) {
       `• <b>Take Profit:</b> <code>${payload.take_profit}</code>\n` +
       `• <b>Risk / Reward:</b> <b>1 : ${payload.risk_reward || "1.75"}</b>\n` +
       `• <b>Suggested Risk:</b> <b>1.0% Equity</b>\n\n` +
+      goldNote +
       `<b>🔬 CONFLUENCE MODEL</b>\n` +
       `• <b>Setup:</b> 20-Bar Structural Breakout\n` +
       `• <b>Signal Score:</b> <b>${payload.signal_score || 92} / 100</b>\n\n` +

@@ -517,10 +517,11 @@ def scan_pair_timeframe(pair_name: str, config: dict, tf: str, state: dict) -> l
     closed_bar = closed_bars.iloc[-1]
     prev_bar = closed_bars.iloc[-2]
     
-    # Freshness check: allow ample window so GitHub Actions queue delay doesn't drop signals
-    max_age_seconds = 3600 if tf == "15m" else 7200
+    # Anti-lag freshness guard: Never broadcast signals if candle closed >6 mins ago (15M) or >15 mins ago (1H)
+    max_age_seconds = 360 if tf == "15m" else 900
     seconds_since_close = (now_utc - closed_bar["close_time"]).total_seconds()
     if seconds_since_close > max_age_seconds:
+        logger.info(f"Skipping {pair_name} ({tf}): Bar closed {int(seconds_since_close)}s ago (exceeds {max_age_seconds}s freshness limit). Move already occurred.")
         return []
     
     bar_time_str = closed_bar["close_time"].strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -628,8 +629,10 @@ def scan_pair_timeframe(pair_name: str, config: dict, tf: str, state: dict) -> l
 def format_alert_message(sig: dict) -> str:
     # Format asset display name
     pair = sig["pair"]
+    gold_basis_note = ""
     if pair == "XAUUSD":
-        display_pair = "GOLD (XAU/USD)"
+        display_pair = "GOLD (COMEX GC=F)"
+        gold_basis_note = "• <b>Market Feed:</b> <code>COMEX Gold Futures (GC=F)</code>\n• <b>Basis Note:</b> <i>Futures trades at ~$32 basis premium over Spot XAU/USD.</i>\n\n"
     elif len(pair) == 6:
         display_pair = f"{pair[:3]}/{pair[3:]}"
     else:
@@ -658,6 +661,7 @@ def format_alert_message(sig: dict) -> str:
         f"• <b>Take Profit:</b> <code>{sig['take_profit']}</code> <i>({tp_sign}{sig['tp_pips']} pips)</i>\n"
         f"• <b>Risk / Reward:</b> <b>1 : {sig['rr']}</b>\n"
         f"• <b>Suggested Risk:</b> <b>1.0% Equity</b>\n\n"
+        f"{gold_basis_note}"
         f"<b>🔬 CONFLUENCE MODEL</b>\n"
         f"• <b>Setup:</b> 20-Bar Structural Breakout\n"
         f"• <b>Structure:</b> {structure_text}\n"
