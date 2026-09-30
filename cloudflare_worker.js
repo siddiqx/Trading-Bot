@@ -98,11 +98,12 @@ async function getLedger(env) {
  * Auto-resolves a trade that hit TP or SL, updating memory, KV, and triggering GitHub sync
  */
 async function autoResolveTrade(symbol, t, outcome, exitPrice, env) {
+  const isCancelled = outcome === "CANCELLED";
   const isWin = outcome === "WIN";
-  const pips = isWin 
+  const pips = isCancelled ? 0.0 : (isWin 
     ? (t.tp_pips || Math.abs(t.take_profit - t.entry) / (t.pip || 0.0001)) 
-    : -(t.sl_pips || Math.abs(t.entry - t.stop_loss) / (t.pip || 0.0001));
-  const r = isWin ? (t.rr || 1.75) : -1.0;
+    : -(t.sl_pips || Math.abs(t.entry - t.stop_loss) / (t.pip || 0.0001)));
+  const r = isCancelled ? 0.0 : (isWin ? (t.rr || 1.75) : -1.0);
 
   const completedRecord = {
     ...t,
@@ -111,7 +112,7 @@ async function autoResolveTrade(symbol, t, outcome, exitPrice, env) {
     realized_pips: Math.round(pips * 10) / 10,
     realized_r: Math.round(r * 100) / 100,
     closed_at: new Date().toISOString(),
-    status: "CLOSED"
+    status: isCancelled ? "CANCELLED" : "CLOSED"
   };
 
   delete STORED_ACTIVE_TRADES[symbol];
@@ -434,7 +435,38 @@ async function sendRadarMessage(chatId, env) {
         // 1. CHECK IF PAIR HAS AN ACTIVE RUNNING TRADE
         const activeTrade = active[asset.symbol];
         if (activeTrade) {
+          const isPending = activeTrade.status === "PENDING";
           const isLong = activeTrade.direction === "LONG";
+
+          if (isPending) {
+            const hitSL = isLong ? price <= activeTrade.stop_loss : price >= activeTrade.stop_loss;
+            const hitEntry = isLong ? price <= activeTrade.entry : price >= activeTrade.entry;
+
+            if (hitSL && !hitEntry) {
+              autoResolveTrade(asset.symbol, activeTrade, "CANCELLED", price, env);
+              return (
+                `<b>${num}. ${asset.name}</b> · <code>${price.toFixed(asset.digits)}</code>\n` +
+                `⚠️ <b>SETUP CANCELLED (SL Breached Before Fill)</b>\n` +
+                `• Target <code>${activeTrade.entry}</code> · 0 Loss · Surveillance Resumed`
+              );
+            }
+
+            if (hitEntry) {
+              activeTrade.status = "OPEN";
+              activeTrade.filled_at = new Date().toISOString();
+            } else {
+              const distPips = (Math.abs(price - activeTrade.entry) / asset.pip).toFixed(1);
+              return (
+                `<b>${num}. ${asset.name}</b> · <code>${price.toFixed(asset.digits)}</code>\n` +
+                `⏳ <b>PENDING ${activeTrade.direction}</b> (${activeTrade.timeframe})\n` +
+                `• Entry Target: <code>${activeTrade.entry}</code> (⏳ ${distPips}p to fill)\n` +
+                `• Float: <code>0.0 pips (Awaiting Fill)</code>\n` +
+                `• SL: <code>${activeTrade.stop_loss}</code> | TP: <code>${activeTrade.take_profit}</code>`
+              );
+            }
+          }
+
+          // Active OPEN position
           const hitTP = isLong ? price >= activeTrade.take_profit : price <= activeTrade.take_profit;
           const hitSL = isLong ? price <= activeTrade.stop_loss : price >= activeTrade.stop_loss;
 
@@ -637,30 +669,82 @@ async function sendActiveMessage(chatId, env) {
         // Fallback to null
       }
 
-      if (currentPrice !== null) {
-        const hitTP = isLong ? currentPrice >= t.take_profit : currentPrice <= t.take_profit;
-        const hitSL = isLong ? currentPrice <= t.stop_loss : currentPrice >= t.stop_loss;
+      const isPending = (t.status === "PENDING");
 
-        if (hitTP) {
-          autoResolveTrade(symbol, t, "WIN", t.take_profit, env);
-          floatText = `• Status: 🎯 <b>TARGET REACHED · TAKE PROFIT HIT (+${t.tp_pips || "31.5"} pips | +1.75R)</b>\n• Live Price: <code>${currentPrice.toFixed(asset.digits)}</code> (Target Booked)\n`;
-        } else if (hitSL) {
-          autoResolveTrade(symbol, t, "LOSS", t.stop_loss, env);
-          floatText = `• Status: 🛑 <b>STOP LOSS HIT (-${t.sl_pips || "18.0"} pips | -1.00R)</b>\n• Live Price: <code>${currentPrice.toFixed(asset.digits)}</code> (SL Booked)\n`;
+      if (currentPrice !== null) {
+        if (isPending) {
+          const hitSL = isLong ? currentPrice <= t.stop_loss : currentPrice >= t.stop_loss;
+          const hitEntry = isLong ? currentPrice <= t.entry : currentPrice >= t.entry;
+
+          if (hitSL && !hitEntry) {
+            autoResolveTrade(symbol, t, "CANCELLED", currentPrice, env);
+            floatText = 
+              `• Status: ⚠️ <b>SETUP CANCELLED · SL BREACHED BEFORE FILL</b>\n` +
+              `• Live Price: <code>${currentPrice.toFixed(asset.digits)}</code> (0.0 pips | Unfilled)\n`;
+          } else if (hitEntry) {
+            t.status = "OPEN";
+            t.filled_at = new Date().toISOString();
+            const hitTP = isLong ? currentPrice >= t.take_profit : currentPrice <= t.take_profit;
+            const hitSLAfterFill = isLong ? currentPrice <= t.stop_loss : currentPrice >= t.stop_loss;
+
+            if (hitTP) {
+              autoResolveTrade(symbol, t, "WIN", t.take_profit, env);
+              floatText = `• Status: 🎯 <b>TARGET REACHED · TAKE PROFIT HIT (+${t.tp_pips || "31.5"} pips | +1.75R)</b>\n• Live Price: <code>${currentPrice.toFixed(asset.digits)}</code> (Target Booked)\n`;
+            } else if (hitSLAfterFill) {
+              autoResolveTrade(symbol, t, "LOSS", t.stop_loss, env);
+              floatText = `• Status: 🛑 <b>STOP LOSS HIT (-${t.sl_pips || "18.0"} pips | -1.00R)</b>\n• Live Price: <code>${currentPrice.toFixed(asset.digits)}</code> (SL Booked)\n`;
+            } else {
+              const pnlPips = ((currentPrice - t.entry) / asset.pip) * (isLong ? 1 : -1);
+              const pnlSign = pnlPips >= 0 ? "+" : "";
+              const riskDist = Math.abs(t.entry - t.stop_loss) / asset.pip;
+              const floatR = riskDist > 0 ? (pnlPips / riskDist).toFixed(2) : "0.00";
+              const rSign = parseFloat(floatR) >= 0 ? "+" : "";
+              const floatEmoji = pnlPips >= 0 ? "🟢" : "🔻";
+              floatText = 
+                `• Status: 🎯 <b>ORDER FILLED @ ${t.entry}</b>\n` +
+                `• Live Price: <code>${currentPrice.toFixed(asset.digits)}</code> (${floatEmoji} <b>${pnlSign}${pnlPips.toFixed(1)} pips</b> | <b>${rSign}${floatR}R</b>)\n`;
+            }
+          } else {
+            // Still pending entry fill
+            const distPips = (Math.abs(currentPrice - t.entry) / asset.pip).toFixed(1);
+            floatText = 
+              `• Status: ⏳ <b>PENDING ENTRY FILL</b>\n` +
+              `• Live Price: <code>${currentPrice.toFixed(asset.digits)}</code> (⏳ <b>${distPips} pips to entry</b>)\n` +
+              `• Floating PnL: <b>0.0 pips</b> (<i>Awaiting Market Fill · Zero Exposure</i>)\n`;
+          }
         } else {
-          const pnlPips = ((currentPrice - t.entry) / asset.pip) * (isLong ? 1 : -1);
-          const pnlSign = pnlPips >= 0 ? "+" : "";
-          const riskDist = Math.abs(t.entry - t.stop_loss) / asset.pip;
-          const floatR = riskDist > 0 ? (pnlPips / riskDist).toFixed(2) : "0.00";
-          const rSign = parseFloat(floatR) >= 0 ? "+" : "";
-          const floatEmoji = pnlPips >= 0 ? "🟢" : "🔻";
-          floatText = `• Live Price: <code>${currentPrice.toFixed(asset.digits)}</code> (${floatEmoji} <b>${pnlSign}${pnlPips.toFixed(1)} pips</b> | <b>${rSign}${floatR}R</b>)\n`;
+          // Normal active OPEN position
+          const hitTP = isLong ? currentPrice >= t.take_profit : currentPrice <= t.take_profit;
+          const hitSL = isLong ? currentPrice <= t.stop_loss : currentPrice >= t.stop_loss;
+
+          if (hitTP) {
+            autoResolveTrade(symbol, t, "WIN", t.take_profit, env);
+            floatText = `• Status: 🎯 <b>TARGET REACHED · TAKE PROFIT HIT (+${t.tp_pips || "31.5"} pips | +1.75R)</b>\n• Live Price: <code>${currentPrice.toFixed(asset.digits)}</code> (Target Booked)\n`;
+          } else if (hitSL) {
+            autoResolveTrade(symbol, t, "LOSS", t.stop_loss, env);
+            floatText = `• Status: 🛑 <b>STOP LOSS HIT (-${t.sl_pips || "18.0"} pips | -1.00R)</b>\n• Live Price: <code>${currentPrice.toFixed(asset.digits)}</code> (SL Booked)\n`;
+          } else {
+            const pnlPips = ((currentPrice - t.entry) / asset.pip) * (isLong ? 1 : -1);
+            const pnlSign = pnlPips >= 0 ? "+" : "";
+            const riskDist = Math.abs(t.entry - t.stop_loss) / asset.pip;
+            const floatR = riskDist > 0 ? (pnlPips / riskDist).toFixed(2) : "0.00";
+            const rSign = parseFloat(floatR) >= 0 ? "+" : "";
+            const floatEmoji = pnlPips >= 0 ? "🟢" : "🔻";
+            floatText = `• Live Price: <code>${currentPrice.toFixed(asset.digits)}</code> (${floatEmoji} <b>${pnlSign}${pnlPips.toFixed(1)} pips</b> | <b>${rSign}${floatR}R</b>)\n`;
+          }
+        }
+      } else {
+        if (isPending) {
+          floatText = `• Status: ⏳ <b>PENDING ENTRY FILL</b>\n• Floating PnL: <b>0.0 pips</b> (<i>Price Feed Offline · Awaiting Fill</i>)\n`;
         }
       }
 
+      const statusBadge = isPending ? `⏳ <b>PENDING ${t.direction}</b>` : `${dirIcon} <b>${t.direction}</b>`;
+      const entryLabel = isPending ? "• Entry Target:" : "• Entry:";
+
       return (
-        `<b>${num}. ${pName}</b> · ${t.timeframe || "1H"} · ${dirIcon} <b>${t.direction}</b>\n` +
-        `• Entry: <code>${t.entry}</code> (${openDate} ${openTime} UTC)\n` +
+        `<b>${num}. ${pName}</b> · ${t.timeframe || "1H"} · ${statusBadge}\n` +
+        `${entryLabel} <code>${t.entry}</code> (${openDate} ${openTime} UTC)\n` +
         floatText +
         `• Targets: SL <code>${t.stop_loss}</code> | TP <code>${t.take_profit}</code>\n` +
         `• Plan: <b>1 : ${t.rr || t.risk_reward || "1.75"} R:R</b> (1.0% Equity Risk)`
@@ -737,18 +821,20 @@ async function sendHistoryMessage(chatId, filterPair = "ALL", filterRange = "ALL
     const openDate = (t.opened_at || "").substring(0, 10);
     const closeDate = (t.closed_at || "").substring(0, 10) || openDate;
     const pName = t.pair || t.symbol;
+    const isCancelled = t.outcome === "CANCELLED";
     const isWin = t.outcome === "WIN";
-    const outcomeBadge = isWin ? "🎯 <b>WIN</b>" : "🛑 <b>LOSS</b>";
+    const outcomeBadge = isCancelled ? "⚠️ <b>CANCELLED</b>" : (isWin ? "🎯 <b>WIN</b>" : "🛑 <b>LOSS</b>");
     const pipsVal = typeof t.realized_pips === "number" ? t.realized_pips : parseFloat(t.realized_pips || 0);
     const rVal = typeof t.realized_r === "number" ? t.realized_r : parseFloat(t.realized_r || 0);
     const sign = pipsVal >= 0 ? "+" : "";
     const rSign = rVal >= 0 ? "+" : "";
+    const outcomeDetail = isCancelled ? "(Unfilled · 0.0p / 0.00R)" : `(${sign}${pipsVal.toFixed(1)}p / ${rSign}${rVal.toFixed(2)}R)`;
 
     closedRows.push(
       `<b>${num}. ${pName}</b> · ${t.timeframe || "1H"} · <b>${t.direction}</b>\n` +
       `• Date: <code>${closeDate}</code>\n` +
       `• Price: <code>${t.entry}</code> ➔ <code>${t.exit_price}</code>\n` +
-      `• Outcome: ${outcomeBadge} (${sign}${pipsVal.toFixed(1)}p / ${rSign}${rVal.toFixed(2)}R)`
+      `• Outcome: ${outcomeBadge} ${outcomeDetail}`
     );
   }
 
@@ -810,7 +896,9 @@ async function sendPerformanceMessage(chatId, filterPair = "ALL", env) {
   const totalClosed = closed.length;
   const wins = closed.filter(t => t.outcome === "WIN").length;
   const losses = closed.filter(t => t.outcome === "LOSS").length;
-  const winRate = totalClosed > 0 ? ((wins / totalClosed) * 100).toFixed(1) : "N/A";
+  const cancelled = closed.filter(t => t.outcome === "CANCELLED").length;
+  const decided = wins + losses;
+  const winRate = decided > 0 ? ((wins / decided) * 100).toFixed(1) : "N/A";
 
   let netPips = 0;
   let netR = 0;
@@ -847,8 +935,8 @@ async function sendPerformanceMessage(chatId, filterPair = "ALL", env) {
     `<b>1. TRADE EXECUTION</b>\n` +
     `• Total Closed: <code>${totalClosed}</code>\n` +
     `• Active Live: <code>${active.length} positions</code>\n` +
-    `• Win / Loss: <b>${wins}W</b> · <b>${losses}L</b>\n` +
-    `• Win Rate: <b>${winRate}${totalClosed > 0 ? "%" : ""}</b>\n\n` +
+    `• Win / Loss: <b>${wins}W</b> · <b>${losses}L</b>${cancelled > 0 ? ` <i>(${cancelled} cancelled)</i>` : ""}\n` +
+    `• Win Rate: <b>${winRate}${decided > 0 ? "%" : ""}</b>\n\n` +
     `<b>2. RETURNS & PROFITABILITY</b>\n` +
     `• Net Realized Pips: <b>${pipsSign}${netPips.toFixed(1)} pips</b>\n` +
     `• Net Realized Return: <b>${rSign}${netR.toFixed(2)} R</b>\n` +
@@ -1213,7 +1301,8 @@ async function handleIncomingSignal(payload) {
       `⏱ <b>Timeframe:</b> <b>${payload.timeframe || "1H"}</b>\n` +
       `━━━━━━━━━━━━━━━━━━\n\n` +
       `<b>📋 TRADE PARAMETERS</b>\n` +
-      `• <b>Entry Price:</b> <code>${payload.entry || payload.price}</code>\n` +
+      `• <b>Entry Target:</b> <code>${payload.entry || payload.price}</code> <i>(Limit / Retest Level)</i>\n` +
+      `• <b>Order State:</b> ⏳ <b>PENDING ENTRY FILL</b>\n` +
       `• <b>Stop Loss:</b> <code>${payload.stop_loss}</code>\n` +
       `• <b>Take Profit:</b> <code>${payload.take_profit}</code>\n` +
       `• <b>Risk / Reward:</b> <b>1 : ${payload.risk_reward || "1.75"}</b>\n` +
@@ -1223,7 +1312,7 @@ async function handleIncomingSignal(payload) {
       `• <b>Signal Score:</b> <b>${payload.signal_score || 92} / 100</b>\n\n` +
       `━━━━━━━━━━━━━━━━━━\n` +
       `🕒 <b>Confirmed Bar:</b> <code>${payload.signal_time || new Date().toISOString()}</code>\n` +
-      `⚠️ <i>Bar strictly closed. Execute with strict risk discipline.</i>`;
+      `⏳ <i>Order pending fill. Floating PnL activates once entry point is touched.</i>`;
   } else {
     alertMessage = payload.text || JSON.stringify(payload);
   }

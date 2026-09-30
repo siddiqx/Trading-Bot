@@ -172,6 +172,7 @@ def check_active_trades(records: dict):
         return
 
     resolved_pairs = []
+    modified_pairs = []
 
     for pair, trade in list(active.items()):
         ticker = trade.get("ticker")
@@ -179,7 +180,7 @@ def check_active_trades(records: dict):
             continue
 
         df = fetch_candles(ticker, "15m", range_days="7d")
-        if df.empty or len(df) < 5:
+        if df.empty:
             continue
 
         opened_at_str = trade.get("opened_at")
@@ -201,33 +202,132 @@ def check_active_trades(records: dict):
                 continue
 
         is_long = (trade.get("direction") == "LONG")
+        entry = trade["entry"]
         tp = trade["take_profit"]
         sl = trade["stop_loss"]
+        is_pending = (trade.get("status") == "PENDING")
 
         hit_tp = False
         hit_sl = False
+        cancelled_before_fill = False
 
-        # Chronological bar-by-bar evaluation to accurately determine which price extreme was touched first
+        # Chronological bar-by-bar evaluation to accurately determine order fill and exit triggers
         for row in df_trade.itertuples():
             b_high = row.high
             b_low = row.low
 
-            if is_long:
-                if b_low <= sl:
-                    hit_sl = True
-                    break
-                elif b_high >= tp:
-                    hit_tp = True
-                    break
-            else:
-                if b_high >= sl:
-                    hit_sl = True
-                    break
-                elif b_low <= tp:
-                    hit_tp = True
-                    break
+            if is_pending:
+                if is_long:
+                    # Invalidation: If price breaches SL before ever reaching entry, cancel order
+                    if b_low <= sl:
+                        cancelled_before_fill = True
+                        break
+                    # Fill execution: price touched or traded through entry price
+                    elif b_low <= entry:
+                        trade["status"] = "OPEN"
+                        fill_time_str = row.time.strftime("%Y-%m-%dT%H:%M:%SZ") if hasattr(row.time, "strftime") else str(row.time)
+                        trade["filled_at"] = fill_time_str
+                        is_pending = False
+                        modified_pairs.append(pair)
+                        logger.info(f"==> ORDER FILLED: {pair} LONG @ {entry} (Bar time: {fill_time_str})")
 
-        if hit_tp:
+                        fill_msg = (
+                            f"🎯 <b>ORDER FILLED · {pair} LONG</b>\n"
+                            f"━━━━━━━━━━━━━━━━━━\n"
+                            f"• <b>Fill Price:</b> <code>{entry}</code>\n"
+                            f"• <b>Stop Loss:</b> <code>{sl}</code> <i>(-{trade.get('sl_pips', 0.0)} pips)</i>\n"
+                            f"• <b>Take Profit:</b> <code>{tp}</code> <i>(+{trade.get('tp_pips', 0.0)} pips)</i>\n"
+                            f"• <b>Risk / Reward:</b> <b>1 : {trade.get('rr', 1.75)}</b>\n"
+                            f"━━━━━━━━━━━━━━━━━━\n"
+                            f"🟢 <i>Order executed. Position is now actively floating in market.</i>"
+                        )
+                        send_telegram_alert(fill_msg)
+
+                        # Evaluate if the remainder of this fill candle hit TP or SL
+                        if b_high >= tp:
+                            hit_tp = True
+                            break
+                        elif b_low <= sl:
+                            hit_sl = True
+                            break
+                else:
+                    # SHORT
+                    # Invalidation: If price breaches SL before ever reaching entry, cancel order
+                    if b_high >= sl:
+                        cancelled_before_fill = True
+                        break
+                    # Fill execution: price touched or traded through entry price
+                    elif b_high >= entry:
+                        trade["status"] = "OPEN"
+                        fill_time_str = row.time.strftime("%Y-%m-%dT%H:%M:%SZ") if hasattr(row.time, "strftime") else str(row.time)
+                        trade["filled_at"] = fill_time_str
+                        is_pending = False
+                        modified_pairs.append(pair)
+                        logger.info(f"==> ORDER FILLED: {pair} SHORT @ {entry} (Bar time: {fill_time_str})")
+
+                        fill_msg = (
+                            f"🎯 <b>ORDER FILLED · {pair} SHORT</b>\n"
+                            f"━━━━━━━━━━━━━━━━━━\n"
+                            f"• <b>Fill Price:</b> <code>{entry}</code>\n"
+                            f"• <b>Stop Loss:</b> <code>{sl}</code> <i>(-{trade.get('sl_pips', 0.0)} pips)</i>\n"
+                            f"• <b>Take Profit:</b> <code>{tp}</code> <i>(+{trade.get('tp_pips', 0.0)} pips)</i>\n"
+                            f"• <b>Risk / Reward:</b> <b>1 : {trade.get('rr', 1.75)}</b>\n"
+                            f"━━━━━━━━━━━━━━━━━━\n"
+                            f"🔴 <i>Order executed. Position is now actively floating in market.</i>"
+                        )
+                        send_telegram_alert(fill_msg)
+
+                        # Evaluate if the remainder of this fill candle hit TP or SL
+                        if b_low <= tp:
+                            hit_tp = True
+                            break
+                        elif b_high >= sl:
+                            hit_sl = True
+                            break
+            else:
+                # Trade is active and OPEN
+                if is_long:
+                    if b_low <= sl:
+                        hit_sl = True
+                        break
+                    elif b_high >= tp:
+                        hit_tp = True
+                        break
+                else:
+                    if b_high >= sl:
+                        hit_sl = True
+                        break
+                    elif b_low <= tp:
+                        hit_tp = True
+                        break
+
+        if cancelled_before_fill:
+            logger.info(f"==> SETUP CANCELLED (SL breached prior to entry fill): {pair} {trade.get('direction')}")
+            completed_record = {
+                **trade,
+                "exit_price": float(sl),
+                "outcome": "CANCELLED",
+                "realized_pips": 0.0,
+                "realized_r": 0.0,
+                "closed_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "status": "CANCELLED"
+            }
+            msg = (
+                f"⚠️ <b>SETUP CANCELLED · {pair} {trade.get('direction')}</b>\n"
+                f"━━━━━━━━━━━━━━━━━━\n"
+                f"• <b>Entry Target:</b> <code>{trade.get('entry')}</code>\n"
+                f"• <b>Stop Loss:</b> <code>{trade.get('stop_loss')}</code>\n"
+                f"• <b>Reason:</b> Price breached Stop Loss prior to entry fill.\n"
+                f"• <b>Net Realized:</b> <b>0.0 pips / 0.00 R (Zero Loss · Unfilled)</b>\n"
+                f"━━━━━━━━━━━━━━━━━━\n"
+                f"🔓 <i>Pair unlocked. Surveillance resumed.</i>"
+            )
+            send_telegram_alert(msg)
+            records.setdefault("completed_trades", []).append(completed_record)
+            del records["active_trades"][pair]
+            resolved_pairs.append(pair)
+
+        elif hit_tp:
             exit_price = tp
             realized_pips = trade.get("tp_pips", 0.0)
             realized_r = trade.get("rr", 1.75)
@@ -291,7 +391,7 @@ def check_active_trades(records: dict):
             del records["active_trades"][pair]
             resolved_pairs.append(pair)
 
-    if resolved_pairs:
+    if resolved_pairs or modified_pairs:
         save_trade_records(records)
         sync_worker(records)
 
@@ -552,7 +652,8 @@ def format_alert_message(sig: dict) -> str:
         f"⏱ <b>Timeframe:</b> <b>{tf_label}</b>\n"
         f"━━━━━━━━━━━━━━━━━━\n\n"
         f"<b>📋 TRADE PARAMETERS</b>\n"
-        f"• <b>Entry Price:</b> <code>{sig['entry']}</code>\n"
+        f"• <b>Entry Target:</b> <code>{sig['entry']}</code> <i>(Limit / Retest Level)</i>\n"
+        f"• <b>Order State:</b> ⏳ <b>PENDING ENTRY FILL</b>\n"
         f"• <b>Stop Loss:</b> <code>{sig['stop_loss']}</code> <i>({sl_sign}{sig['sl_pips']} pips)</i>\n"
         f"• <b>Take Profit:</b> <code>{sig['take_profit']}</code> <i>({tp_sign}{sig['tp_pips']} pips)</i>\n"
         f"• <b>Risk / Reward:</b> <b>1 : {sig['rr']}</b>\n"
@@ -566,7 +667,7 @@ def format_alert_message(sig: dict) -> str:
         f"• <b>Signal Score:</b> <b>{sig['score']} / 100</b>\n\n"
         f"━━━━━━━━━━━━━━━━━━\n"
         f"🕒 <b>Confirmed Bar:</b> <code>{sig['time']}</code>\n"
-        f"⚠️ <i>Bar strictly closed. Execute with strict risk discipline.</i>"
+        f"⏳ <i>Order pending fill. Floating PnL activates once entry point is touched.</i>"
     )
 
 
@@ -597,7 +698,7 @@ def run_scan_cycle():
                     msg = format_alert_message(sig)
                     send_telegram_alert(msg)
 
-                    # Register newly opened active trade into ledger
+                    # Register newly opened active trade as PENDING awaiting market fill
                     new_trade_entry = {
                         "trade_id": sig["id"],
                         "pair": sig["pair"],
@@ -614,7 +715,8 @@ def run_scan_cycle():
                         "pip": cfg["pip"],
                         "digits": cfg["digits"],
                         "opened_at": sig.get("time") or datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-                        "status": "OPEN"
+                        "status": "PENDING",
+                        "filled_at": None
                     }
                     records.setdefault("active_trades", {})[pair_name] = new_trade_entry
                     save_trade_records(records)

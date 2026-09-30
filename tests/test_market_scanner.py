@@ -121,3 +121,116 @@ def test_check_active_trades_skips_pre_entry_bars(monkeypatch):
     assert "USDCAD" in records["active_trades"]
     assert len(records["completed_trades"]) == 0
 
+
+def test_check_active_trades_pending_order_fill(monkeypatch):
+    """Ensure a PENDING trade transitions to OPEN when price touches entry price."""
+    from market_scanner import check_active_trades
+
+    t0 = datetime(2026, 9, 30, 15, 30, tzinfo=timezone.utc)
+    # Candle 0 touches entry (high touches 4187.90), but stays above SL
+    mock_df = pd.DataFrame({
+        "timestamp": [int(t0.timestamp())],
+        "time": [t0],
+        "open": [4185.00],
+        "high": [4188.50], # Touches entry 4187.90
+        "low": [4184.00],
+        "close": [4186.00],
+        "volume": [100]
+    })
+
+    alerts = []
+    monkeypatch.setattr("market_scanner.fetch_candles", lambda *args, **kwargs: mock_df)
+    monkeypatch.setattr("market_scanner.send_telegram_alert", lambda msg: alerts.append(msg))
+    monkeypatch.setattr("market_scanner.sync_worker", lambda *args, **kwargs: None)
+    monkeypatch.setattr("market_scanner.save_trade_records", lambda *args, **kwargs: None)
+
+    records = {
+        "active_trades": {
+            "XAUUSD": {
+                "trade_id": "XAUUSD_TEST_1",
+                "pair": "XAUUSD",
+                "symbol": "XAUUSD",
+                "ticker": "GC=F",
+                "direction": "SHORT",
+                "entry": 4187.90,
+                "stop_loss": 4220.28,
+                "take_profit": 4131.23,
+                "sl_pips": 323.8,
+                "tp_pips": 566.7,
+                "rr": 1.75,
+                "pip": 0.1,
+                "digits": 2,
+                "opened_at": "2026-09-30T15:30:00Z",
+                "status": "PENDING",
+                "filled_at": None
+            }
+        },
+        "completed_trades": []
+    }
+
+    check_active_trades(records)
+
+    trade = records["active_trades"]["XAUUSD"]
+    assert trade["status"] == "OPEN"
+    assert trade["filled_at"] is not None
+    assert any("ORDER FILLED" in a for a in alerts)
+
+
+def test_check_active_trades_pending_order_cancellation(monkeypatch):
+    """Ensure a PENDING trade is CANCELLED with 0 loss if price hits SL before ever touching entry."""
+    from market_scanner import check_active_trades
+
+    t0 = datetime(2026, 9, 30, 15, 30, tzinfo=timezone.utc)
+    # Candle breaches SL (4220.28) without touching entry (4187.90) for SHORT
+    mock_df = pd.DataFrame({
+        "timestamp": [int(t0.timestamp())],
+        "time": [t0],
+        "open": [4200.00],
+        "high": [4225.00], # Breaches SL 4220.28
+        "low": [4195.00],  # Never touches 4187.90
+        "close": [4210.00],
+        "volume": [100]
+    })
+
+    alerts = []
+    monkeypatch.setattr("market_scanner.fetch_candles", lambda *args, **kwargs: mock_df)
+    monkeypatch.setattr("market_scanner.send_telegram_alert", lambda msg: alerts.append(msg))
+    monkeypatch.setattr("market_scanner.sync_worker", lambda *args, **kwargs: None)
+    monkeypatch.setattr("market_scanner.save_trade_records", lambda *args, **kwargs: None)
+
+    records = {
+        "active_trades": {
+            "XAUUSD": {
+                "trade_id": "XAUUSD_TEST_2",
+                "pair": "XAUUSD",
+                "symbol": "XAUUSD",
+                "ticker": "GC=F",
+                "direction": "SHORT",
+                "entry": 4187.90,
+                "stop_loss": 4220.28,
+                "take_profit": 4131.23,
+                "sl_pips": 323.8,
+                "tp_pips": 566.7,
+                "rr": 1.75,
+                "pip": 0.1,
+                "digits": 2,
+                "opened_at": "2026-09-30T15:30:00Z",
+                "status": "PENDING",
+                "filled_at": None
+            }
+        },
+        "completed_trades": []
+    }
+
+    check_active_trades(records)
+
+    assert "XAUUSD" not in records["active_trades"]
+    assert len(records["completed_trades"]) == 1
+    cancelled = records["completed_trades"][0]
+    assert cancelled["status"] == "CANCELLED"
+    assert cancelled["outcome"] == "CANCELLED"
+    assert cancelled["realized_pips"] == 0.0
+    assert cancelled["realized_r"] == 0.0
+    assert any("SETUP CANCELLED" in a for a in alerts)
+
+
