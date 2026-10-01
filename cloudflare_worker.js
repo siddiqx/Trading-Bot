@@ -1150,7 +1150,7 @@ async function sendStatusMessage(chatId, env) {
     `1. Engine Core: 🟢 <b>OPERATIONAL (24/7)</b>\n` +
     `2. Cloud Edge: Cloudflare Global Edge\n` +
     `3. Scanner Host: GitHub Actions Cron\n` +
-    `4. Monitored Assets: <code>6 pairs</code> (Forex + Gold)\n` +
+    `4. Monitored Assets: <code>Core Alpha Triad (XAUUSD, EURUSD, USDCAD)</code>\n` +
     `5. Active Positions: <code>${activeCount} locked</code>\n` +
     `6. Recorded Trades: <code>${closedCount} closed</code>\n` +
     `7. PC Dependency: Zero (100% Serverless)\n` +
@@ -1189,10 +1189,11 @@ async function sendStrategyMessage(chatId) {
     `• Longs: Targets Buy-Side Liquidity (BSL) above previous swing highs\n` +
     `• Shorts: Targets Sell-Side Liquidity (SSL) below previous swing lows\n` +
     `• Liquidity Calibration: Dynamic 1.0R – 2.5R to nearest un-swept pool\n\n` +
-    `<b>3. Session Liquidity & Sizing</b>\n` +
+    `<b>3. Session Liquidity & Invalidation Rules</b>\n` +
     `• Session Window: 06:00 – 18:00 UTC (London / NY Overlap)\n` +
-    `• Recommended Risk: <b>0.5% Equity</b> (Max DD strictly capped at ≤6.0%)\n` +
-    `• Pending Order Timeout: 2h (15M) / 4h (1H) to release pair lock\n\n` +
+    `• 24h Time-Stop: 20-EMA counter-trend exit cuts stagnant chop early\n` +
+    `• Pending Order Timeout: 2h (15M) / 4h (1H) to release pair lock\n` +
+    `• Recommended Risk: <b>0.5% - 1.0% Equity</b> (Max DD capped at ≤6.0%)\n\n` +
     `━━━━━━━━━━━━━━━━━━\n` +
     `🛡 <i>Systematic, rule-based execution.</i>`;
 
