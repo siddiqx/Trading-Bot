@@ -564,10 +564,26 @@ def send_telegram_alert(text: str):
 
 
 def fetch_candles(ticker: str, interval: str, range_days: str = "7d") -> pd.DataFrame:
-    """Fetch candles from real-time API (1:1 Spot Gold for XAUUSD, Yahoo Finance for Forex)."""
-    # 1:1 London Physical Spot Gold Feed (Matches MT5 XAUUSD prices directly)
+    """Fetch candles from real-time API (Calibrated MT5 Spot Gold for XAUUSD, Yahoo Finance for Forex)."""
+    # 1:1 MT5 Spot Gold Feed (Calibrated directly to OANDA / MT5 XAUUSD price ~4161)
     if ticker in ["PAXGUSDT", "XAUUSD"]:
         try:
+            # 1. Query live MT5/OANDA spot price
+            live_spot = None
+            try:
+                url_tv = "https://scanner.tradingview.com/cfd/scan"
+                payload = {"symbols": {"tickers": ["OANDA:XAUUSD", "FX:XAUUSD"]}, "columns": ["close"]}
+                with httpx.Client(timeout=5.0) as tv_client:
+                    tv_resp = tv_client.post(url_tv, json=payload, headers={"User-Agent": "Mozilla/5.0"})
+                    if tv_resp.status_code == 200:
+                        tv_data = tv_resp.json()
+                        prices = [row["d"][0] for row in tv_data.get("data", []) if row.get("d")]
+                        if prices:
+                            live_spot = float(prices[0])
+            except Exception as e:
+                logger.warning(f"Live MT5 spot price query notice: {e}")
+
+            # 2. Fetch candle series
             b_interval = "15m" if interval == "15m" else "1h"
             limit = 400 if interval == "15m" else 200
             url = f"https://api.binance.com/api/v3/klines?symbol=PAXGUSDT&interval={b_interval}&limit={limit}"
@@ -590,6 +606,13 @@ def fetch_candles(ticker: str, interval: str, range_days: str = "7d") -> pd.Data
                     df.dropna(subset=["open", "high", "low", "close"], inplace=True)
                     df.sort_values("time", inplace=True)
                     df.reset_index(drop=True, inplace=True)
+
+                    # 3. Calibrate offset so all candle prices match MT5 XAUUSD directly
+                    if live_spot is not None and not df.empty:
+                        offset = live_spot - df.iloc[-1]["close"]
+                        for col in ["open", "high", "low", "close"]:
+                            df[col] = (df[col] + offset).round(2)
+
                     if not df.empty:
                         return df
         except Exception as e:

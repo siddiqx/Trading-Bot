@@ -184,17 +184,34 @@ async function runActiveTradeChecks(env) {
     }
     try {
       let lastClose, lastHigh, lastLow;
-      if (symbol === "XAUUSD" || asset.ticker === "PAXGUSDT") {
+      if (symbol === "XAUUSD" || asset.ticker === "PAXGUSDT" || asset.ticker === "XAUUSD") {
         try {
-          const bRes = await fetch("https://api.binance.com/api/v3/klines?symbol=PAXGUSDT&interval=15m&limit=10", { headers: { "User-Agent": "Mozilla/5.0" } });
-          const bData = await bRes.json();
-          if (Array.isArray(bData) && bData.length > 0) {
-            const lastBar = bData[bData.length - 1];
-            lastHigh = parseFloat(lastBar[2]);
-            lastLow = parseFloat(lastBar[3]);
-            lastClose = parseFloat(lastBar[4]);
+          const tvRes = await fetch("https://scanner.tradingview.com/cfd/scan", {
+            method: "POST",
+            headers: { "User-Agent": "Mozilla/5.0", "Content-Type": "application/json" },
+            body: JSON.stringify({ symbols: { tickers: ["OANDA:XAUUSD"] }, columns: ["close", "high|15", "low|15"] })
+          });
+          const tvJson = await tvRes.json();
+          const d = tvJson?.data?.[0]?.d;
+          if (Array.isArray(d) && d[0] !== null) {
+            lastClose = parseFloat(d[0]);
+            lastHigh = parseFloat(d[1]) || lastClose;
+            lastLow = parseFloat(d[2]) || lastClose;
           }
-        } catch(be) {}
+        } catch(tve) {}
+
+        if (lastClose === undefined) {
+          try {
+            const bRes = await fetch("https://api.binance.com/api/v3/klines?symbol=PAXGUSDT&interval=15m&limit=10", { headers: { "User-Agent": "Mozilla/5.0" } });
+            const bData = await bRes.json();
+            if (Array.isArray(bData) && bData.length > 0) {
+              const lastBar = bData[bData.length - 1];
+              lastHigh = parseFloat(lastBar[2]);
+              lastLow = parseFloat(lastBar[3]);
+              lastClose = parseFloat(lastBar[4]);
+            }
+          } catch(be) {}
+        }
       }
 
       if (lastClose === undefined) {
@@ -1119,7 +1136,18 @@ async function sendPricesMessage(chatId) {
     ASSETS.map(async (asset, idx) => {
       const num = idx + 1;
       try {
-        if (asset.symbol === "XAUUSD" || asset.ticker === "PAXGUSDT") {
+        if (asset.symbol === "XAUUSD" || asset.ticker === "PAXGUSDT" || asset.ticker === "XAUUSD") {
+          try {
+            const tvRes = await fetch("https://scanner.tradingview.com/cfd/scan", {
+              method: "POST",
+              headers: { "User-Agent": "Mozilla/5.0", "Content-Type": "application/json" },
+              body: JSON.stringify({ symbols: { tickers: ["OANDA:XAUUSD"] }, columns: ["close"] })
+            });
+            const tvJson = await tvRes.json();
+            const p = parseFloat(tvJson?.data?.[0]?.d?.[0]);
+            if (!isNaN(p)) return `<b>${num}. ${asset.name}</b> · <code>${p.toFixed(asset.digits)}</code>`;
+          } catch(tve) {}
+
           try {
             const bRes = await fetch("https://api.binance.com/api/v3/ticker/price?symbol=PAXGUSDT", { headers: { "User-Agent": "Mozilla/5.0" } });
             const bJson = await bRes.json();
