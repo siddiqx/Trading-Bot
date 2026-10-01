@@ -824,8 +824,9 @@ def scan_pair_timeframe(pair_name: str, config: dict, tf: str, state: dict) -> l
     closed_bar = closed_bars.iloc[-1]
     prev_bar = closed_bars.iloc[-2]
     
-    # Anti-lag freshness guard: Never broadcast signals if candle closed >6 mins ago (15M) or >15 mins ago (1H)
-    max_age_seconds = 360 if tf == "15m" else 900
+    # Anti-lag freshness guard: Accommodate runner jitter (allows up to 60m for 15M and 3h for 1H).
+    # Deduplication is strictly guaranteed by state['alerted_signals'] so valid retest setups are never lost.
+    max_age_seconds = 3600 if tf == "15m" else 10800
     seconds_since_close = (now_utc - closed_bar["close_time"]).total_seconds()
     if seconds_since_close > max_age_seconds:
         logger.info(f"Skipping {pair_name} ({tf}): Bar closed {int(seconds_since_close)}s ago (exceeds {max_age_seconds}s freshness limit). Move already occurred.")

@@ -12,6 +12,8 @@
 
 const BOT_TOKEN = "8932628751:AAFS_Z7SZMbfNAgNE9KmU6Sly32IGxDm2p0";
 const TELEGRAM_API = `https://api.telegram.org/bot${BOT_TOKEN}`;
+const DEFAULT_GH_TOKEN = "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";
+const DEFAULT_CHAT_ID = "8142877259";
 
 const ASSETS = [
   { name: "GOLD",    symbol: "XAUUSD", ticker: "GC=F",     pip: 0.10,   digits: 2 },
@@ -59,12 +61,13 @@ async function getLedger(env) {
     }
   }
 
-  // 2. Private GitHub API via GITHUB_TOKEN secret
-  if (env && env.GITHUB_TOKEN) {
+  // 2. Private GitHub API via GITHUB_TOKEN secret or fallback
+  const ghAuthToken = (env && (env.GITHUB_TOKEN || env.GH_TOKEN)) || DEFAULT_GH_TOKEN;
+  if (ghAuthToken) {
     try {
       const ghRes = await fetch("https://api.github.com/repos/siddiqx/Trading-Bot/contents/trade_records.json", {
         headers: {
-          "Authorization": `Bearer ${env.GITHUB_TOKEN}`,
+          "Authorization": `Bearer ${ghAuthToken}`,
           "Accept": "application/vnd.github.raw",
           "User-Agent": "Cloudflare-Worker-Ledger"
         }
@@ -150,9 +153,6 @@ async function autoResolveTrade(symbol, t, outcome, exitPrice, env) {
   // Trigger GitHub Actions workflow to log post-mortem and persist to Git
   await triggerGitHubScanner(env);
 }
-
-const DEFAULT_GH_TOKEN = "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";
-const DEFAULT_CHAT_ID = "8142877259";
 
 /**
  * Dispatches GitHub Actions scanner workflow via REST API
@@ -428,7 +428,10 @@ async function handleTelegramUpdate(update, env) {
       body: JSON.stringify({ callback_query_id: cb.id })
     });
 
-    if (action === "cmd_radar") await sendRadarMessage(chatId, env);
+    if (action === "cmd_radar") {
+      triggerGitHubScanner(env).catch(() => {});
+      await sendRadarMessage(chatId, env);
+    }
     else if (action === "cmd_active") await sendActiveMessage(chatId, env);
     else if (action === "cmd_prices") await sendPricesMessage(chatId);
     else if (action === "cmd_history") await sendHistoryMessage(chatId, "ALL", "ALL", env);
@@ -471,6 +474,7 @@ async function handleTelegramUpdate(update, env) {
       await runActiveTradeChecks(env);
       await sendActiveMessage(chatId, env);
     } else if (cmd === "/radar" || cmd === "/tracking") {
+      triggerGitHubScanner(env).catch(() => {});
       await sendRadarMessage(chatId, env);
     } else if (cmd === "/prices" || cmd === "/quotes") {
       await sendPricesMessage(chatId);
@@ -606,6 +610,7 @@ async function sendRadarMessage(chatId, env) {
   const utcNow = new Date().toISOString().replace("T", " ").substring(0, 16) + " UTC";
   const { active } = await getLedger(env);
   let activeCount = 0;
+  let hasImminentBreakout = false;
 
   const results = await Promise.all(
     ASSETS.map(async (asset, idx) => {
@@ -686,8 +691,9 @@ async function sendRadarMessage(chatId, env) {
         }
 
         // 2. NORMAL SURVEILLANCE (NO ACTIVE TRADE)
-        const donchHigh = Math.max(...highs.slice(-22, -1));
-        const donchLow = Math.min(...lows.slice(-22, -1));
+        const donchLen = asset.symbol === "XAUUSD" ? 10 : 15;
+        const donchHigh = Math.max(...highs.slice(-(donchLen + 1), -1));
+        const donchLow = Math.min(...lows.slice(-(donchLen + 1), -1));
         const channelPips = (donchHigh - donchLow) / asset.pip;
         const distHigh = (donchHigh - price) / asset.pip;
         const distLow = (price - donchLow) / asset.pip;
@@ -718,26 +724,38 @@ async function sendRadarMessage(chatId, env) {
         const breakDistance = asset.symbol === "XAUUSD" ? 25.0 : 3.0;
 
         let badge = "", status = "", detail = "";
-        if (rsi > 72) {
+        if (rsi > 80.0) {
           badge = "🛡";
           status = "RSI Guard Active";
-          detail = `RSI ${rsi.toFixed(0)} Overbought (Exhaustion)`;
-        } else if (rsi < 28) {
+          detail = `RSI ${rsi.toFixed(0)} Overbought (>80 Exhaustion)`;
+        } else if (rsi < 20.0) {
           badge = "🛡";
           status = "RSI Guard Active";
-          detail = `RSI ${rsi.toFixed(0)} Oversold (Exhaustion)`;
+          detail = `RSI ${rsi.toFixed(0)} Oversold (<20 Exhaustion)`;
         } else if (isCompressing) {
           badge = "💤";
           status = "Tight Squeeze (Low Volatility)";
           detail = `${channelPips.toFixed(0)}p Band · Awaiting Volume`;
-        } else if (distHigh <= breakDistance && isBullish && rsi >= 45.0 && rsi <= 72.0) {
+        } else if (distHigh <= 0.0 && isBullish && rsi >= 40.0 && rsi <= 80.0) {
+          hasImminentBreakout = true;
+          badge = "⚡";
+          status = "Testing Breakout (Live Bar at High)";
+          detail = `Awaiting 15M Close · Trend Bullish`;
+        } else if (distHigh <= breakDistance && isBullish && rsi >= 40.0 && rsi <= 80.0) {
+          hasImminentBreakout = true;
           badge = "⚡";
           status = "Imminent Breakout Setup";
-          detail = `${Math.max(0, distHigh).toFixed(1)}p to Break · Trend Bullish`;
-        } else if (distLow <= breakDistance && isBearish && rsi >= 28.0 && rsi <= 55.0) {
+          detail = `${distHigh.toFixed(1)}p to Break · Trend Bullish`;
+        } else if (distLow <= 0.0 && isBearish && rsi >= 20.0 && rsi <= 60.0) {
+          hasImminentBreakout = true;
+          badge = "⚡";
+          status = "Testing Breakdown (Live Bar at Low)";
+          detail = `Awaiting 15M Close · Trend Bearish`;
+        } else if (distLow <= breakDistance && isBearish && rsi >= 20.0 && rsi <= 60.0) {
+          hasImminentBreakout = true;
           badge = "⚡";
           status = "Imminent Breakdown Setup";
-          detail = `${Math.max(0, distLow).toFixed(1)}p to Break · Trend Bearish`;
+          detail = `${distLow.toFixed(1)}p to Break · Trend Bearish`;
         } else if (posPct >= 80) {
           badge = "👀";
           status = "Testing Range High";
@@ -758,6 +776,10 @@ async function sendRadarMessage(chatId, env) {
       }
     })
   );
+
+  if (hasImminentBreakout) {
+    triggerGitHubScanner(env).catch(() => {});
+  }
 
   const text = 
     `📡 <b>MARKET SURVEILLANCE RADAR</b>\n` +
