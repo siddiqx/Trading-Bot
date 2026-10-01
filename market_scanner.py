@@ -976,8 +976,8 @@ def format_alert_message(sig: dict) -> str:
         f"⏱ <b>Timeframe:</b> <b>{tf_label}</b>\n"
         f"━━━━━━━━━━━━━━━━━━\n\n"
         f"<b>📋 TRADE PARAMETERS</b>\n"
-        f"• <b>Entry Target:</b> <code>{sig['entry']}</code> <i>(Limit / Retest Level)</i>\n"
-        f"• <b>Order State:</b> ⏳ <b>PENDING ENTRY FILL</b>\n"
+        f"• <b>Entry Target:</b> <code>{sig['entry']}</code> <i>(Market Execution on Bar Close)</i>\n"
+        f"• <b>Order State:</b> 🟢 <b>ACTIVE MARKET POSITION</b>\n"
         f"• <b>Stop Loss:</b> <code>{sig['stop_loss']}</code> <i>({sl_sign}{sig['sl_pips']} pips)</i>\n"
         f"• <b>Take Profit:</b> <code>{sig['take_profit']}</code> <i>({tp_sign}{sig['tp_pips']} pips · {sig.get('target_type', 'Target')})</i>\n"
         f"• <b>Risk / Reward:</b> <b>1 : {sig['rr']}</b>\n"
@@ -993,7 +993,7 @@ def format_alert_message(sig: dict) -> str:
         f"• <b>Signal Score:</b> <b>{sig['score']} / 100</b>\n\n"
         f"━━━━━━━━━━━━━━━━━━\n"
         f"🕒 <b>Confirmed Bar:</b> <code>{sig['time']}</code>\n"
-        f"⏳ <i>Order pending fill. Floating PnL activates once entry point is touched.</i>"
+        f"🟢 <i>Confirmed bar close. Enter at market price immediately. Live floating PnL tracking active.</i>"
     )
 
 
@@ -1024,7 +1024,8 @@ def run_scan_cycle():
                     msg = format_alert_message(sig)
                     send_telegram_alert(msg)
 
-                    # Register newly opened active trade as PENDING awaiting market fill
+                    # Register newly opened active trade as OPEN market execution
+                    bar_time = sig.get("time") or datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
                     new_trade_entry = {
                         "trade_id": sig["id"],
                         "pair": sig["pair"],
@@ -1040,9 +1041,9 @@ def run_scan_cycle():
                         "rr": sig["rr"],
                         "pip": cfg["pip"],
                         "digits": cfg["digits"],
-                        "opened_at": sig.get("time") or datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-                        "status": "PENDING",
-                        "filled_at": None
+                        "opened_at": bar_time,
+                        "status": "OPEN",
+                        "filled_at": bar_time
                     }
                     records.setdefault("active_trades", {})[pair_name] = new_trade_entry
                     save_trade_records(records)

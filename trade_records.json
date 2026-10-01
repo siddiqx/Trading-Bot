@@ -1,7 +1,8 @@
 {
   "tracking_started": "2026-09-28",
-  "active_trades": {
-    "EURUSD": {
+  "active_trades": {},
+  "completed_trades": [
+    {
       "trade_id": "EURUSD_15M_2026-10-01T14:45:00Z_SHORT",
       "pair": "EURUSD",
       "symbol": "EURUSD",
@@ -17,11 +18,13 @@
       "pip": 0.0001,
       "digits": 5,
       "opened_at": "2026-10-01T14:45:00Z",
-      "status": "PENDING",
-      "filled_at": null
-    }
-  },
-  "completed_trades": [
+      "status": "CLOSED",
+      "exit_price": 1.1233,
+      "outcome": "WIN",
+      "realized_pips": 44.7,
+      "realized_r": 1.75,
+      "closed_at": "2026-10-01T15:35:00Z"
+    },
     {
       "trade_id": "EURUSD_1H_2026-09-28T14:00:00Z_SHORT",
       "pair": "EURUSD",
