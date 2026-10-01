@@ -106,9 +106,15 @@ async function getLedger(env) {
 }
 
 /**
- * Auto-resolves a trade that hit TP or SL, updating memory, KV, and triggering GitHub sync
+ * Auto-resolves a trade that hit TP or SL, updating memory, KV, and triggering GitHub sync.
+ * @param {string} symbol
+ * @param {object} t - trade record
+ * @param {string} outcome - "WIN" | "LOSS" | "CANCELLED"
+ * @param {number} exitPrice
+ * @param {object} env - Cloudflare env bindings
+ * @param {object|null} prefetchedLedger - already-fetched {active, completed} to avoid re-fetching
  */
-async function autoResolveTrade(symbol, t, outcome, exitPrice, env) {
+async function autoResolveTrade(symbol, t, outcome, exitPrice, env, prefetchedLedger = null) {
   const isCancelled = outcome === "CANCELLED";
   const isWin = outcome === "WIN";
   const pips = isCancelled ? 0.0 : (isWin 
@@ -126,10 +132,10 @@ async function autoResolveTrade(symbol, t, outcome, exitPrice, env) {
     status: isCancelled ? "CANCELLED" : "CLOSED"
   };
 
-  // Resolve against current KV state to prevent overwriting active ledger
-  const currentLedger = await getLedger(env);
-  const currentActive = currentLedger.active || {};
-  const currentCompleted = currentLedger.completed || [];
+  // Use pre-fetched ledger if provided — avoids 3 redundant HTTP calls on every resolve
+  const currentLedger = prefetchedLedger || await getLedger(env);
+  const currentActive = { ...(currentLedger.active || {}) };
+  const currentCompleted = [...(currentLedger.completed || [])];
 
   delete currentActive[symbol];
   delete STORED_ACTIVE_TRADES[symbol];
@@ -282,7 +288,7 @@ async function runActiveTradeChecks(env) {
 
         if (hitTP || hitSL) {
           const exitPrice = hitTP ? t.take_profit : t.stop_loss;
-          await autoResolveTrade(symbol, t, hitTP ? "WIN" : "LOSS", exitPrice, env);
+          await autoResolveTrade(symbol, t, hitTP ? "WIN" : "LOSS", exitPrice, env, ledger);
           resolved.push({ symbol, outcome: hitTP ? "WIN" : "LOSS", exitPrice });
 
           const sign = hitTP ? "+" : "-";
@@ -562,11 +568,11 @@ async function handleTelegramUpdate(update, env) {
       const outcomeArg = parts[2] ? parts[2].toUpperCase() : null;
       if (symbol && outcomeArg) {
         const outcome = outcomeArg === "WIN" ? "WIN" : outcomeArg === "LOSS" ? "LOSS" : "CANCELLED";
-        const { active } = await getLedger(env);
-        const trade = active[symbol];
+        const closeLedger = await getLedger(env);  // fetch once, reuse
+        const trade = closeLedger.active[symbol];
         if (trade) {
           const exitPrice = outcome === "WIN" ? trade.take_profit : outcome === "LOSS" ? trade.stop_loss : trade.entry;
-          await autoResolveTrade(symbol, trade, outcome, exitPrice, env);
+          await autoResolveTrade(symbol, trade, outcome, exitPrice, env, closeLedger);
           await sendTelegramMessage(chatId,
             `✅ <b>ADMIN FORCE-CLOSE · ${symbol} ${outcome}</b>\n` +
             `━━━━━━━━━━━━━━━━━━\n` +
@@ -691,7 +697,8 @@ async function fetchAssetCandles(asset) {
  */
 async function sendRadarMessage(chatId, env) {
   const utcNow = new Date().toISOString().replace("T", " ").substring(0, 16) + " UTC";
-  const { active } = await getLedger(env);
+  const radarLedger = await getLedger(env);
+  const { active } = radarLedger;
   let activeCount = 0;
   let hasImminentBreakout = false;
 
@@ -716,7 +723,7 @@ async function sendRadarMessage(chatId, env) {
             const hitEntry = isLong ? price <= activeTrade.entry : price >= activeTrade.entry;
 
             if (hitSL && !hitEntry) {
-              autoResolveTrade(asset.symbol, activeTrade, "CANCELLED", price, env);
+              autoResolveTrade(asset.symbol, activeTrade, "CANCELLED", price, env, radarLedger);
               return (
                 `<b>${num}. ${asset.name}</b> · <code>${price.toFixed(asset.digits)}</code>\n` +
                 `⚠️ <b>SETUP CANCELLED (SL Breached Before Fill)</b>\n` +
@@ -744,14 +751,14 @@ async function sendRadarMessage(chatId, env) {
           const hitSL = isLong ? price <= activeTrade.stop_loss : price >= activeTrade.stop_loss;
 
           if (hitTP) {
-            autoResolveTrade(asset.symbol, activeTrade, "WIN", activeTrade.take_profit, env);
+            autoResolveTrade(asset.symbol, activeTrade, "WIN", activeTrade.take_profit, env, radarLedger);
             return (
               `<b>${num}. ${asset.name}</b> · <code>${price.toFixed(asset.digits)}</code>\n` +
               `🎯 <b>TAKE PROFIT ACHIEVED (+${activeTrade.tp_pips || "31.5"} pips | +1.75R)</b>\n` +
               `• Target <code>${activeTrade.take_profit}</code> Booked · Surveillance Resumed`
             );
           } else if (hitSL) {
-            autoResolveTrade(asset.symbol, activeTrade, "LOSS", activeTrade.stop_loss, env);
+            autoResolveTrade(asset.symbol, activeTrade, "LOSS", activeTrade.stop_loss, env, radarLedger);
             return (
               `<b>${num}. ${asset.name}</b> · <code>${price.toFixed(asset.digits)}</code>\n` +
               `🛑 <b>STOP LOSS HIT (-${activeTrade.sl_pips || "18.0"} pips | -1.00R)</b>\n` +
@@ -985,7 +992,7 @@ async function sendActiveMessage(chatId, env) {
           const hitEntry = isLong ? currentPrice <= t.entry : currentPrice >= t.entry;
 
           if (hitSL && !hitEntry) {
-            autoResolveTrade(symbol, t, "CANCELLED", currentPrice, env);
+            autoResolveTrade(symbol, t, "CANCELLED", currentPrice, env, { active: currentActive, completed: currentCompleted });
             floatText = 
               `• Status: ⚠️ <b>SETUP CANCELLED · SL BREACHED BEFORE FILL</b>\n` +
               `• Live Price: <code>${currentPrice.toFixed(asset.digits)}</code> (0.0 pips | Unfilled)\n`;
@@ -996,10 +1003,10 @@ async function sendActiveMessage(chatId, env) {
             const hitSLAfterFill = isLong ? currentPrice <= t.stop_loss : currentPrice >= t.stop_loss;
 
             if (hitTP) {
-              autoResolveTrade(symbol, t, "WIN", t.take_profit, env);
+              autoResolveTrade(symbol, t, "WIN", t.take_profit, env, { active: currentActive, completed: currentCompleted });
               floatText = `• Status: 🎯 <b>TARGET REACHED · TAKE PROFIT HIT (+${t.tp_pips || "31.5"} pips | +1.75R)</b>\n• Live Price: <code>${currentPrice.toFixed(asset.digits)}</code> (Target Booked)\n`;
             } else if (hitSLAfterFill) {
-              autoResolveTrade(symbol, t, "LOSS", t.stop_loss, env);
+              autoResolveTrade(symbol, t, "LOSS", t.stop_loss, env, { active: currentActive, completed: currentCompleted });
               floatText = `• Status: 🛑 <b>STOP LOSS HIT (-${t.sl_pips || "18.0"} pips | -1.00R)</b>\n• Live Price: <code>${currentPrice.toFixed(asset.digits)}</code> (SL Booked)\n`;
             } else {
               const pnlPips = ((currentPrice - t.entry) / asset.pip) * (isLong ? 1 : -1);
@@ -1026,10 +1033,10 @@ async function sendActiveMessage(chatId, env) {
           const hitSL = isLong ? currentPrice <= t.stop_loss : currentPrice >= t.stop_loss;
 
           if (hitTP) {
-            autoResolveTrade(symbol, t, "WIN", t.take_profit, env);
+            autoResolveTrade(symbol, t, "WIN", t.take_profit, env, { active: currentActive, completed: currentCompleted });
             floatText = `• Status: 🎯 <b>TARGET REACHED · TAKE PROFIT HIT (+${t.tp_pips || "31.5"} pips | +1.75R)</b>\n• Live Price: <code>${currentPrice.toFixed(asset.digits)}</code> (Target Booked)\n`;
           } else if (hitSL) {
-            autoResolveTrade(symbol, t, "LOSS", t.stop_loss, env);
+            autoResolveTrade(symbol, t, "LOSS", t.stop_loss, env, { active: currentActive, completed: currentCompleted });
             floatText = `• Status: 🛑 <b>STOP LOSS HIT (-${t.sl_pips || "18.0"} pips | -1.00R)</b>\n• Live Price: <code>${currentPrice.toFixed(asset.digits)}</code> (SL Booked)\n`;
           } else {
             const pnlPips = ((currentPrice - t.entry) / asset.pip) * (isLong ? 1 : -1);
