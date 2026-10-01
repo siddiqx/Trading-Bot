@@ -743,7 +743,7 @@ def find_ict_liquidity_target(
     sl_dist: float,
     is_long: bool,
     lookback_bars: int = 120,
-    min_rr: float = 1.0,
+    min_rr: float = 1.5,
     max_rr: float = 2.5,
     default_rr: float = 1.75
 ) -> tuple[float, float, str]:
