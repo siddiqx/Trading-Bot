@@ -38,6 +38,25 @@
       "opened_at": "2026-10-01T17:30:00Z",
       "status": "OPEN",
       "filled_at": "2026-10-01T17:30:00Z"
+    },
+    "USDCAD": {
+      "trade_id": "USDCAD_15M_2026-10-01T19:45:00Z_SHORT",
+      "pair": "USDCAD",
+      "symbol": "USDCAD",
+      "ticker": "USDCAD=X",
+      "direction": "SHORT",
+      "timeframe": "15M",
+      "entry": 1.42258,
+      "stop_loss": 1.42438,
+      "take_profit": 1.4191,
+      "sl_pips": 18.0,
+      "tp_pips": 34.8,
+      "rr": 1.93,
+      "pip": 0.0001,
+      "digits": 5,
+      "opened_at": "2026-10-01T19:45:00Z",
+      "status": "OPEN",
+      "filled_at": "2026-10-01T19:45:00Z"
     }
   },
   "completed_trades": [
