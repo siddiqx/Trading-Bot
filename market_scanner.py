@@ -31,8 +31,8 @@ TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID") or "8142877259"
 # Core Alpha Asset Universe (Proven by 2-year backtest to cap portfolio drawdown at 6.0% while maximizing net return)
 SYMBOLS = {
     "XAUUSD": {"ticker": "PAXGUSDT", "pip": 0.10,   "digits": 2, "donchian_len": 10}, # 1:1 Physical Spot Gold (matches MT5 XAUUSD directly)
-    "EURUSD": {"ticker": "EURUSD=X", "pip": 0.0001, "digits": 5, "donchian_len": 20}, # Low Drawdown Anchor: PF 1.25, max DD 6.0R
-    "USDCAD": {"ticker": "USDCAD=X", "pip": 0.0001, "digits": 5, "donchian_len": 20}, # Session Momentum Mover: PF 1.11, clean 15M structure
+    "EURUSD": {"ticker": "EURUSD=X", "pip": 0.0001, "digits": 5, "donchian_len": 15}, # Responsive Momentum Anchor: 15-period Donchian
+    "USDCAD": {"ticker": "USDCAD=X", "pip": 0.0001, "digits": 5, "donchian_len": 15}, # Session Momentum Mover: 15-period Donchian
 }
 
 TIMEFRAMES = ["15m", "1h"]
@@ -565,56 +565,101 @@ def send_telegram_alert(text: str):
 
 def fetch_candles(ticker: str, interval: str, range_days: str = "7d") -> pd.DataFrame:
     """Fetch candles from real-time API (Calibrated MT5 Spot Gold for XAUUSD, Yahoo Finance for Forex)."""
-    # 1:1 MT5 Spot Gold Feed (Calibrated directly to OANDA / MT5 XAUUSD price ~4161)
-    if ticker in ["PAXGUSDT", "XAUUSD"]:
+    # 1:1 MT5 Spot Gold Feed (Calibrated directly to spot London gold / MT5 XAUUSD price)
+    if ticker in ["PAXGUSDT", "XAUUSD", "GC=F"]:
         try:
-            # 1. Query live MT5/OANDA spot price
+            # 1. Query live MT5/Spot Gold price with instant fallback
             live_spot = None
             try:
-                url_tv = "https://scanner.tradingview.com/cfd/scan"
-                payload = {"symbols": {"tickers": ["OANDA:XAUUSD", "FX:XAUUSD"]}, "columns": ["close"]}
-                with httpx.Client(timeout=5.0) as tv_client:
-                    tv_resp = tv_client.post(url_tv, json=payload, headers={"User-Agent": "Mozilla/5.0"})
-                    if tv_resp.status_code == 200:
-                        tv_data = tv_resp.json()
-                        prices = [row["d"][0] for row in tv_data.get("data", []) if row.get("d")]
-                        if prices:
-                            live_spot = float(prices[0])
-            except Exception as e:
-                logger.warning(f"Live MT5 spot price query notice: {e}")
+                # Primary: gold-api.com (100% uptime, zero Cloudflare/IP blocking, spot London/MT5 gold)
+                with httpx.Client(timeout=4.0) as g_client:
+                    g_resp = g_client.get("https://api.gold-api.com/price/XAU", headers={"User-Agent": "Mozilla/5.0"})
+                    if g_resp.status_code == 200:
+                        g_data = g_resp.json()
+                        p = float(g_data.get("price", 0))
+                        if p > 0:
+                            live_spot = p
+            except Exception as ge:
+                logger.debug(f"gold-api query notice: {ge}")
 
-            # 2. Fetch candle series
-            b_interval = "15m" if interval == "15m" else "1h"
-            limit = 400 if interval == "15m" else 200
-            url = f"https://api.binance.com/api/v3/klines?symbol=PAXGUSDT&interval={b_interval}&limit={limit}"
-            with httpx.Client(timeout=10.0) as client:
-                resp = client.get(url, headers={"User-Agent": "MarketScanner/2.0"})
-                if resp.status_code == 200:
-                    data = resp.json()
-                    records = []
-                    for b in data:
-                        records.append({
-                            "timestamp": int(b[0] / 1000),
-                            "time": pd.to_datetime(b[0], unit="ms", utc=True),
-                            "open": float(b[1]),
-                            "high": float(b[2]),
-                            "low": float(b[3]),
-                            "close": float(b[4]),
-                            "volume": float(b[5])
-                        })
-                    df = pd.DataFrame(records)
-                    df.dropna(subset=["open", "high", "low", "close"], inplace=True)
-                    df.sort_values("time", inplace=True)
-                    df.reset_index(drop=True, inplace=True)
+            if live_spot is None:
+                try:
+                    # Secondary: TradingView CFD scanner
+                    url_tv = "https://scanner.tradingview.com/cfd/scan"
+                    payload = {"symbols": {"tickers": ["OANDA:XAUUSD", "FX:XAUUSD"]}, "columns": ["close"]}
+                    with httpx.Client(timeout=4.0) as tv_client:
+                        tv_resp = tv_client.post(url_tv, json=payload, headers={"User-Agent": "Mozilla/5.0"})
+                        if tv_resp.status_code == 200:
+                            tv_data = tv_resp.json()
+                            prices = [row["d"][0] for row in tv_data.get("data", []) if row.get("d")]
+                            if prices:
+                                live_spot = float(prices[0])
+                except Exception as tve:
+                    logger.debug(f"TradingView spot query notice: {tve}")
 
-                    # 3. Calibrate offset so all candle prices match MT5 XAUUSD directly
-                    if live_spot is not None and not df.empty:
-                        offset = live_spot - df.iloc[-1]["close"]
-                        for col in ["open", "high", "low", "close"]:
-                            df[col] = (df[col] + offset).round(2)
+            # 2. Fetch candle series: Try Binance PAXG first, if blocked or fails, use Yahoo Finance GC=F
+            df_gold = pd.DataFrame()
+            try:
+                b_interval = "15m" if interval == "15m" else "1h"
+                limit = 400 if interval == "15m" else 200
+                url = f"https://api.binance.com/api/v3/klines?symbol=PAXGUSDT&interval={b_interval}&limit={limit}"
+                with httpx.Client(timeout=6.0) as client:
+                    resp = client.get(url, headers={"User-Agent": "MarketScanner/2.0"})
+                    if resp.status_code == 200:
+                        data = resp.json()
+                        records = []
+                        for b in data:
+                            records.append({
+                                "timestamp": int(b[0] / 1000),
+                                "time": pd.to_datetime(b[0], unit="ms", utc=True),
+                                "open": float(b[1]),
+                                "high": float(b[2]),
+                                "low": float(b[3]),
+                                "close": float(b[4]),
+                                "volume": float(b[5])
+                            })
+                        df_gold = pd.DataFrame(records)
+            except Exception:
+                pass
 
-                    if not df.empty:
-                        return df
+            # If Binance was blocked (e.g., HTTP 451 in US / Cloud environments), fall back to Yahoo GC=F
+            if df_gold.empty or len(df_gold) < 30:
+                try:
+                    yf_url = f"https://query1.finance.yahoo.com/v8/finance/chart/GC=F?range={range_days}&interval={interval}"
+                    with httpx.Client(timeout=10.0) as client:
+                        resp = client.get(yf_url, headers={"User-Agent": "Mozilla/5.0"})
+                        if resp.status_code == 200:
+                            data = resp.json()
+                            result = data.get("chart", {}).get("result")
+                            if result:
+                                timestamps = result[0].get("timestamp", [])
+                                quotes = result[0].get("indicators", {}).get("quote", [{}])[0]
+                                if timestamps and "close" in quotes:
+                                    df_gold = pd.DataFrame({
+                                        "timestamp": timestamps,
+                                        "open": quotes.get("open", []),
+                                        "high": quotes.get("high", []),
+                                        "low": quotes.get("low", []),
+                                        "close": quotes.get("close", []),
+                                        "volume": quotes.get("volume", [0] * len(timestamps))
+                                    })
+                except Exception as yfe:
+                    logger.warning(f"Yahoo Gold fallback notice: {yfe}")
+
+            if not df_gold.empty:
+                df_gold.dropna(subset=["open", "high", "low", "close"], inplace=True)
+                if "time" not in df_gold.columns:
+                    df_gold["time"] = pd.to_datetime(df_gold["timestamp"], unit="s", utc=True)
+                df_gold.sort_values("time", inplace=True)
+                df_gold.reset_index(drop=True, inplace=True)
+
+                # 3. Calibrate offset so all candle prices match MT5 XAUUSD spot directly
+                if live_spot is not None and not df_gold.empty:
+                    offset = live_spot - df_gold.iloc[-1]["close"]
+                    for col in ["open", "high", "low", "close"]:
+                        df_gold[col] = (df_gold[col] + offset).round(2)
+
+                return df_gold
         except Exception as e:
             logger.warning(f"Spot gold feed notice: {e}, attempting secondary source...")
 
@@ -757,10 +802,10 @@ def scan_pair_timeframe(pair_name: str, config: dict, tf: str, state: dict) -> l
     
     now_utc = datetime.now(timezone.utc)
 
-    # High-liquidity Session Guard: Restrict new signal generation to London/NY hours (06:00 to 18:00 UTC).
-    # Filters out low-liquidity Asian chop, preventing premature breakout traps and protecting drawdown.
-    if not (6 <= now_utc.hour <= 18):
-        logger.info(f"Skipping {pair_name} ({tf}): Current time {now_utc.strftime('%H:%M')} UTC outside active London/NY liquidity hours (06:00 - 18:00 UTC).")
+    # High-liquidity Session Guard: Restrict new signal generation to Frankfurt/London/NY hours (05:00 to 21:00 UTC).
+    # Captures European open momentum through late NY session while protecting against overnight Asian chop.
+    if not (5 <= now_utc.hour <= 21):
+        logger.info(f"Skipping {pair_name} ({tf}): Current time {now_utc.strftime('%H:%M')} UTC outside active liquidity hours (05:00 - 21:00 UTC).")
         return []
 
     donch_len = config.get("donchian_len", 20)
@@ -794,9 +839,9 @@ def scan_pair_timeframe(pair_name: str, config: dict, tf: str, state: dict) -> l
     bullish_trend = (closed_bar["close"] > closed_bar["ema50"]) and (closed_bar["ema20"] > closed_bar["ema50"]) and (closed_bar["ema20_slope"] > 0)
     bearish_trend = (closed_bar["close"] < closed_bar["ema50"]) and (closed_bar["ema20"] < closed_bar["ema50"]) and (closed_bar["ema20_slope"] < 0)
     
-    # Anti-exhaustion RSI guard (Avoid chasing overbought/oversold)
-    rsi_bullish_ok = 45.0 <= closed_bar["rsi"] <= 75.0
-    rsi_bearish_ok = 25.0 <= closed_bar["rsi"] <= 55.0
+    # Anti-exhaustion RSI guard (Optimized: 40-80 for Longs, 20-60 for Shorts)
+    rsi_bullish_ok = 40.0 <= closed_bar["rsi"] <= 80.0
+    rsi_bearish_ok = 20.0 <= closed_bar["rsi"] <= 60.0
     
     # Donchian Breakout on completed bar
     long_breakout = (closed_bar["close"] > closed_bar["donch_high"]) and (prev_bar["close"] <= prev_bar["donch_high"])

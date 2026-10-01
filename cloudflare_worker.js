@@ -14,7 +14,7 @@ const BOT_TOKEN = "8932628751:AAFS_Z7SZMbfNAgNE9KmU6Sly32IGxDm2p0";
 const TELEGRAM_API = `https://api.telegram.org/bot${BOT_TOKEN}`;
 
 const ASSETS = [
-  { name: "GOLD",    symbol: "XAUUSD", ticker: "PAXGUSDT", pip: 0.10,   digits: 2 },
+  { name: "GOLD",    symbol: "XAUUSD", ticker: "GC=F",     pip: 0.10,   digits: 2 },
   { name: "EUR/USD", symbol: "EURUSD", ticker: "EURUSD=X", pip: 0.0001, digits: 5 },
   { name: "USD/CAD", symbol: "USDCAD", ticker: "USDCAD=X", pip: 0.0001, digits: 5 }
 ];
@@ -474,7 +474,25 @@ async function sendRadarMessage(chatId, env) {
 
         if (closes.length < 25) return `<b>${num}. ${asset.name}</b> · <i>Syncing Data</i>`;
 
-        const price = closes[closes.length - 1];
+        let price = closes[closes.length - 1];
+
+        // Calibrate Spot Gold to match London Spot / MT5 XAUUSD directly
+        if (asset.symbol === "XAUUSD") {
+          try {
+            const gRes = await fetch("https://api.gold-api.com/price/XAU", { headers: { "User-Agent": "Mozilla/5.0" } });
+            if (gRes.ok) {
+              const gJson = await gRes.json();
+              const p = parseFloat(gJson?.price);
+              if (!isNaN(p) && p > 0) {
+                const offset = p - price;
+                price = p;
+                for (let i = 0; i < highs.length; i++) highs[i] += offset;
+                for (let i = 0; i < lows.length; i++) lows[i] += offset;
+                for (let i = 0; i < closes.length; i++) closes[i] += offset;
+              }
+            }
+          } catch (ge) {}
+        }
 
         // 1. CHECK IF PAIR HAS AN ACTIVE RUNNING TRADE
         const activeTrade = active[asset.symbol];
@@ -700,17 +718,30 @@ async function sendActiveMessage(chatId, env) {
       let currentPrice = null;
       let floatText = "";
 
-      try {
-        const url = `https://query1.finance.yahoo.com/v8/finance/chart/${asset.ticker}?range=5d&interval=15m`;
-        const res = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0" } });
-        const json = await res.json();
-        const quote = json?.chart?.result?.[0]?.indicators?.quote?.[0];
-        const closes = quote?.close?.filter(v => v !== null && v !== undefined) || [];
-        if (closes.length > 0) {
-          currentPrice = closes[closes.length - 1];
+      if (asset.symbol === "XAUUSD") {
+        try {
+          const gRes = await fetch("https://api.gold-api.com/price/XAU", { headers: { "User-Agent": "Mozilla/5.0" } });
+          if (gRes.ok) {
+            const gJson = await gRes.json();
+            const p = parseFloat(gJson?.price);
+            if (!isNaN(p) && p > 0) currentPrice = p;
+          }
+        } catch (ge) {}
+      }
+
+      if (currentPrice === null) {
+        try {
+          const url = `https://query1.finance.yahoo.com/v8/finance/chart/${asset.ticker}?range=5d&interval=15m`;
+          const res = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0" } });
+          const json = await res.json();
+          const quote = json?.chart?.result?.[0]?.indicators?.quote?.[0];
+          const closes = quote?.close?.filter(v => v !== null && v !== undefined) || [];
+          if (closes.length > 0) {
+            currentPrice = closes[closes.length - 1];
+          }
+        } catch (e) {
+          // Fallback to null
         }
-      } catch (e) {
-        // Fallback to null
       }
 
       const isPending = (t.status === "PENDING");
@@ -1136,7 +1167,18 @@ async function sendPricesMessage(chatId) {
     ASSETS.map(async (asset, idx) => {
       const num = idx + 1;
       try {
-        if (asset.symbol === "XAUUSD" || asset.ticker === "PAXGUSDT" || asset.ticker === "XAUUSD") {
+        if (asset.symbol === "XAUUSD" || asset.ticker === "GC=F" || asset.ticker === "XAUUSD") {
+          // 1. Primary: gold-api.com (100% uptime, zero Cloudflare block, live MT5 spot price)
+          try {
+            const gRes = await fetch("https://api.gold-api.com/price/XAU", { headers: { "User-Agent": "Mozilla/5.0" } });
+            if (gRes.ok) {
+              const gJson = await gRes.json();
+              const p = parseFloat(gJson?.price);
+              if (!isNaN(p) && p > 0) return `<b>${num}. ${asset.name}</b> · <code>${p.toFixed(asset.digits)}</code>`;
+            }
+          } catch(ge) {}
+
+          // 2. Secondary: TradingView CFD scanner
           try {
             const tvRes = await fetch("https://scanner.tradingview.com/cfd/scan", {
               method: "POST",
@@ -1148,6 +1190,7 @@ async function sendPricesMessage(chatId) {
             if (!isNaN(p)) return `<b>${num}. ${asset.name}</b> · <code>${p.toFixed(asset.digits)}</code>`;
           } catch(tve) {}
 
+          // 3. Binance PAXG
           try {
             const bRes = await fetch("https://api.binance.com/api/v3/ticker/price?symbol=PAXGUSDT", { headers: { "User-Agent": "Mozilla/5.0" } });
             const bJson = await bRes.json();
@@ -1237,14 +1280,15 @@ async function sendStrategyMessage(chatId) {
     `<b>INSTITUTIONAL ICT ORDER BLOCK & LIQUIDITY MODEL</b>\n\n` +
     `<b>1. Structural Breakout & Order Block Entry</b>\n` +
     `• Gold (XAUUSD): High-Frequency 10-period Donchian (PF 1.40)\n` +
-    `• Forex (EURUSD, USDCAD): 20-period Donchian (PF 1.25)\n` +
+    `• Forex (EURUSD, USDCAD): Responsive 15-period Donchian (PF 1.25)\n` +
+    `• RSI Filter: Longs 40–80, Shorts 20–60 (Anti-exhaustion)\n` +
     `• Stop Loss: Origin Order Block Invalidation (+0.5 ATR buffer)\n\n` +
     `<b>2. Institutional Target: BSL & SSL Liquidity Pools</b>\n` +
     `• Longs: Targets Buy-Side Liquidity (BSL) above previous swing highs\n` +
     `• Shorts: Targets Sell-Side Liquidity (SSL) below previous swing lows\n` +
     `• Liquidity Calibration: Dynamic 1.0R – 2.5R to nearest un-swept pool\n\n` +
     `<b>3. Session Liquidity & Invalidation Rules</b>\n` +
-    `• Session Window: 06:00 – 18:00 UTC (London / NY Overlap)\n` +
+    `• Session Window: 05:00 – 21:00 UTC (Frankfurt, London, New York)\n` +
     `• 24h Time-Stop: 20-EMA counter-trend exit cuts stagnant chop early\n` +
     `• Pending Order Timeout: 2h (15M) / 4h (1H) to release pair lock\n` +
     `• Recommended Risk: <b>0.5% - 1.0% Equity</b> (Max DD capped at ≤6.0%)\n\n` +
