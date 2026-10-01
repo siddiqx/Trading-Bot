@@ -216,7 +216,7 @@ async function runActiveTradeChecks(env) {
           const pips = hitTP ? (t.tp_pips || 31.5) : (t.sl_pips || 18.0);
           const rVal = hitTP ? (t.rr || 1.75) : -1.0;
           const icon = hitTP ? "🎯" : "🛑";
-          const title = hitTP ? "TARGET REACHED: TAKE PROFIT HIT" : "STRUCTURAL EXIT: STOP LOSS HIT";
+          const title = hitTP ? "TARGET REACHED: LIQUIDITY POOL SWEPT" : "STRUCTURAL EXIT: STOP LOSS HIT";
           const text = 
             `${icon} <b>${title}</b>\n` +
             `━━━━━━━━━━━━━━━━━━\n` +
@@ -1180,21 +1180,18 @@ async function sendStrategyMessage(chatId) {
   const text = 
     `🎯 <b>STRATEGY SPECIFICATIONS</b>\n` +
     `━━━━━━━━━━━━━━━━━━\n` +
-    `<b>INSTITUTIONAL BREAKOUT & ORDER BLOCK MODEL</b>\n\n` +
-    `<b>1. Structural Breakout Trigger</b>\n` +
+    `<b>INSTITUTIONAL ICT ORDER BLOCK & LIQUIDITY MODEL</b>\n\n` +
+    `<b>1. Structural Breakout & Order Block Entry</b>\n` +
     `• Gold (XAUUSD): High-Frequency 10-period Donchian (PF 1.40)\n` +
     `• Forex (EURUSD, USDCAD): 20-period Donchian (PF 1.25)\n` +
-    `• Confirmation requires candle close outside channel\n\n` +
-    `<b>2. Session Liquidity & Trend Bias</b>\n` +
+    `• Stop Loss: Origin Order Block Invalidation (+0.5 ATR buffer)\n\n` +
+    `<b>2. Institutional Target: BSL & SSL Liquidity Pools</b>\n` +
+    `• Longs: Targets Buy-Side Liquidity (BSL) above previous swing highs\n` +
+    `• Shorts: Targets Sell-Side Liquidity (SSL) below previous swing lows\n` +
+    `• Liquidity Calibration: Dynamic 1.0R – 2.5R to nearest un-swept pool\n\n` +
+    `<b>3. Session Liquidity & Sizing</b>\n` +
     `• Session Window: 06:00 – 18:00 UTC (London / NY Overlap)\n` +
-    `• Longs: EMA 20 above EMA 50 (Bullish)\n` +
-    `• Shorts: EMA 20 below EMA 50 (Bearish)\n` +
-    `• Anti-Exhaustion RSI: <code>25.0 ≤ RSI ≤ 75.0</code>\n\n` +
-    `<b>3. Structural Protection & Sizing</b>\n` +
-    `• Invalidation SL at Origin Order Block\n` +
-    `• Fixed Risk-to-Reward: <b>1 : 1.75</b>\n` +
-    `• Recommended Risk per Trade: <b>0.5% Equity</b>\n` +
-    `• Drawdown Guard: Portfolio Max DD strictly capped at ≤6.0%\n` +
+    `• Recommended Risk: <b>0.5% Equity</b> (Max DD strictly capped at ≤6.0%)\n` +
     `• Pending Order Timeout: 2h (15M) / 4h (1H) to release pair lock\n\n` +
     `━━━━━━━━━━━━━━━━━━\n` +
     `🛡 <i>Systematic, rule-based execution.</i>`;

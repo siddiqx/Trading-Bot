@@ -297,4 +297,65 @@ def test_check_active_trades_pending_order_timeout(monkeypatch):
     assert any("SETUP EXPIRED" in a for a in alerts)
 
 
+def test_find_ict_liquidity_target_long_bsl():
+    """Ensure find_ict_liquidity_target correctly targets the nearest overhead BSL pool for longs."""
+    from market_scanner import find_ict_liquidity_target
+
+    # Create a series with a clear fractal swing high at bar 4 (high = 1.1450)
+    highs = [1.1380, 1.1400, 1.1420, 1.1440, 1.1450, 1.1430, 1.1410, 1.1390, 1.1400, 1.1410]
+    lows = [h - 0.0020 for h in highs]
+    df = pd.DataFrame({"high": highs, "low": lows})
+
+    entry = 1.1410
+    sl_dist = 0.0020 # 20 pips SL
+
+    # BSL at 1.1450 is 40 pips above entry -> 2.0R
+    tp, rr, pool_name = find_ict_liquidity_target(df, entry=entry, sl_dist=sl_dist, is_long=True)
+
+    assert tp == 1.1450
+    assert rr == 2.0
+    assert "BSL Pool" in pool_name
+
+
+def test_find_ict_liquidity_target_short_ssl():
+    """Ensure find_ict_liquidity_target correctly targets the nearest resting SSL pool for shorts."""
+    from market_scanner import find_ict_liquidity_target
+
+    # Create a series with a clear fractal swing low at bar 4 (low = 1.1350)
+    lows = [1.1420, 1.1400, 1.1380, 1.1360, 1.1350, 1.1370, 1.1390, 1.1400, 1.1390, 1.1380]
+    highs = [l + 0.0020 for l in lows]
+    df = pd.DataFrame({"high": highs, "low": lows})
+
+    entry = 1.1380
+    sl_dist = 0.0020 # 20 pips SL
+
+    # SSL at 1.1350 is 30 pips below entry -> 1.5R
+    tp, rr, pool_name = find_ict_liquidity_target(df, entry=entry, sl_dist=sl_dist, is_long=False)
+
+    assert tp == 1.1350
+    assert rr == 1.5
+    assert "SSL Pool" in pool_name
+
+
+def test_find_ict_liquidity_target_fallback():
+    """Ensure find_ict_liquidity_target falls back to 1.75R expansion when no qualifying pool exists."""
+    from market_scanner import find_ict_liquidity_target
+
+    # Monotonically increasing bars (no overhead swing high)
+    highs = [1.1000 + (0.0010 * i) for i in range(15)]
+    lows = [h - 0.0010 for h in highs]
+    df = pd.DataFrame({"high": highs, "low": lows})
+
+    entry = highs[-1]
+    sl_dist = 0.0020
+
+    tp, rr, pool_name = find_ict_liquidity_target(df, entry=entry, sl_dist=sl_dist, is_long=True)
+
+    expected_tp = entry + (sl_dist * 1.75)
+    assert round(tp, 5) == round(expected_tp, 5)
+    assert rr == 1.75
+    assert "Structural Expansion" in pool_name
+
+
+
 

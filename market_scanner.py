@@ -117,8 +117,8 @@ def format_exit_message(
 ) -> str:
     is_win = outcome == "WIN"
     icon = "🎯" if is_win else "🛑"
-    header = "TARGET REACHED: TAKE PROFIT HIT" if is_win else "STRUCTURAL EXIT: STOP LOSS HIT"
-    status_text = "WIN (Target Achieved)" if is_win else "LOSS (Order Block Invalidation)"
+    header = "TARGET REACHED: LIQUIDITY POOL SWEPT" if is_win else "STRUCTURAL EXIT: STOP LOSS HIT"
+    status_text = "WIN (Liquidity Pool Swept)" if is_win else "LOSS (Order Block Invalidation)"
     sign = "+" if realized_pips >= 0 else ""
     r_sign = "+" if realized_r >= 0 else ""
     pair_name = trade.get('pair') or trade.get('symbol') or 'ASSET'
@@ -562,6 +562,59 @@ def compute_indicators(df: pd.DataFrame, donchian_len: int = 20) -> pd.DataFrame
     return df
 
 
+def find_ict_liquidity_target(
+    df: pd.DataFrame,
+    entry: float,
+    sl_dist: float,
+    is_long: bool,
+    lookback_bars: int = 120,
+    min_rr: float = 1.0,
+    max_rr: float = 2.5,
+    default_rr: float = 1.75
+) -> tuple[float, float, str]:
+    """
+    Identifies the nearest un-swept institutional liquidity pool for Take Profit targeting.
+    - Longs target un-swept Buy-Side Liquidity (BSL) above previous swing highs.
+    - Shorts target un-swept Sell-Side Liquidity (SSL) below previous swing lows.
+    Returns (take_profit_price, realized_rr, liquidity_target_name).
+    """
+    highs = df["high"].values
+    lows = df["low"].values
+    n = len(df)
+    closed_idx = n - 1
+
+    if is_long:
+        bsl_candidates = []
+        # Search backwards for confirmed fractal swing highs
+        for k in range(closed_idx - 2, max(2, closed_idx - lookback_bars), -1):
+            if highs[k] >= highs[k-1] and highs[k] >= highs[k-2] and highs[k] >= highs[k+1] and highs[k] >= highs[k+2]:
+                if highs[k] >= entry + (sl_dist * min_rr):
+                    bsl_candidates.append(highs[k])
+        if bsl_candidates:
+            tp = min(bsl_candidates)
+            rr = (tp - entry) / sl_dist
+            if rr > max_rr:
+                rr = max_rr
+                tp = entry + (sl_dist * max_rr)
+            return float(tp), float(round(rr, 2)), "BSL Pool (Buy-Side Liquidity)"
+        return float(entry + (sl_dist * default_rr)), float(default_rr), "Structural Expansion (1.75R)"
+    else:
+        ssl_candidates = []
+        # Search backwards for confirmed fractal swing lows
+        for k in range(closed_idx - 2, max(2, closed_idx - lookback_bars), -1):
+            if lows[k] <= lows[k-1] and lows[k] <= lows[k-2] and lows[k] <= lows[k+1] and lows[k] <= lows[k+2]:
+                if lows[k] <= entry - (sl_dist * min_rr):
+                    ssl_candidates.append(lows[k])
+        if ssl_candidates:
+            tp = max(ssl_candidates)
+            rr = (entry - tp) / sl_dist
+            if rr > max_rr:
+                rr = max_rr
+                tp = entry - (sl_dist * max_rr)
+            return float(tp), float(round(rr, 2)), "SSL Pool (Sell-Side Liquidity)"
+        return float(entry - (sl_dist * default_rr)), float(default_rr), "Structural Expansion (1.75R)"
+
+
 def scan_pair_timeframe(pair_name: str, config: dict, tf: str, state: dict) -> list:
     """Scans a single pair and timeframe for confirmed structural breakout setups."""
     ticker = config["ticker"]
@@ -645,7 +698,9 @@ def scan_pair_timeframe(pair_name: str, config: dict, tf: str, state: dict) -> l
             sl_candidate = float(ob_low - (0.50 * atr))
             sl_dist = float(max(min_sl_dist, min(max_sl_dist, entry - sl_candidate)))
             stop_loss = float(entry - sl_dist)
-            take_profit = float(entry + (sl_dist * rr_ratio))
+            
+            # ICT Liquidity Target: Target nearest un-swept Buy-Side Liquidity (BSL)
+            take_profit, calc_rr, pool_name = find_ict_liquidity_target(df, entry, sl_dist, is_long=True)
             
             signals.append({
                 "id": sig_id,
@@ -658,11 +713,12 @@ def scan_pair_timeframe(pair_name: str, config: dict, tf: str, state: dict) -> l
                 "take_profit": round(take_profit, digits),
                 "sl_pips": round(sl_dist / pip, 1),
                 "tp_pips": round((take_profit - entry) / pip, 1),
-                "rr": rr_ratio,
+                "rr": calc_rr,
+                "target_type": pool_name,
                 "donchian_len": donch_len,
                 "rsi": float(round(closed_bar["rsi"], 1)),
                 "atr": float(round(atr / pip, 1)),
-                "score": 92
+                "score": 95
             })
             state["alerted_signals"].append(sig_id)
 
@@ -683,7 +739,9 @@ def scan_pair_timeframe(pair_name: str, config: dict, tf: str, state: dict) -> l
             sl_candidate = float(ob_high + (0.50 * atr))
             sl_dist = float(max(min_sl_dist, min(max_sl_dist, sl_candidate - entry)))
             stop_loss = float(entry + sl_dist)
-            take_profit = float(entry - (sl_dist * rr_ratio))
+            
+            # ICT Liquidity Target: Target nearest un-swept Sell-Side Liquidity (SSL)
+            take_profit, calc_rr, pool_name = find_ict_liquidity_target(df, entry, sl_dist, is_long=False)
             
             signals.append({
                 "id": sig_id,
@@ -696,11 +754,12 @@ def scan_pair_timeframe(pair_name: str, config: dict, tf: str, state: dict) -> l
                 "take_profit": round(take_profit, digits),
                 "sl_pips": round(sl_dist / pip, 1),
                 "tp_pips": round((entry - take_profit) / pip, 1),
-                "rr": rr_ratio,
+                "rr": calc_rr,
+                "target_type": pool_name,
                 "donchian_len": donch_len,
                 "rsi": float(round(closed_bar["rsi"], 1)),
                 "atr": float(round(atr / pip, 1)),
-                "score": 92
+                "score": 95
             })
             state["alerted_signals"].append(sig_id)
             
@@ -744,13 +803,14 @@ def format_alert_message(sig: dict) -> str:
         f"• <b>Entry Target:</b> <code>{sig['entry']}</code> <i>(Limit / Retest Level)</i>\n"
         f"• <b>Order State:</b> ⏳ <b>PENDING ENTRY FILL</b>\n"
         f"• <b>Stop Loss:</b> <code>{sig['stop_loss']}</code> <i>({sl_sign}{sig['sl_pips']} pips)</i>\n"
-        f"• <b>Take Profit:</b> <code>{sig['take_profit']}</code> <i>({tp_sign}{sig['tp_pips']} pips)</i>\n"
+        f"• <b>Take Profit:</b> <code>{sig['take_profit']}</code> <i>({tp_sign}{sig['tp_pips']} pips · {sig.get('target_type', 'Target')})</i>\n"
         f"• <b>Risk / Reward:</b> <b>1 : {sig['rr']}</b>\n"
         f"• <b>Suggested Risk:</b> <b>0.5% Equity (Max DD Guard: &lt;6.0% Cap)</b>\n\n"
         f"{gold_basis_note}"
         f"<b>🔬 CONFLUENCE MODEL</b>\n"
         f"• <b>Setup:</b> {setup_len}-Bar Structural Breakout\n"
         f"• <b>Structure:</b> {structure_text}\n"
+        f"• <b>Liquidity Target:</b> {sig.get('target_type', 'BSL/SSL Pool')}\n"
         f"• <b>Trend Alignment:</b> {trend_text}\n"
         f"• <b>Momentum RSI:</b> <code>{sig['rsi']}</code> (Optimal Zone)\n"
         f"• <b>Volatility ATR:</b> <code>{sig['atr']}</code> pips\n"
