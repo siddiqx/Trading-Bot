@@ -704,6 +704,181 @@ def fetch_candles(ticker: str, interval: str, range_days: str = "7d") -> pd.Data
         return pd.DataFrame()
 
 
+def fetch_5m_entry_trigger(
+    ticker: str,
+    direction: str,
+    ote_zone_low: float,
+    ote_zone_high: float,
+    entry_ref: float,
+    pip: float,
+    digits: int
+) -> dict:
+    """
+    ICT Lower-Timeframe Entry Trigger Analysis (5M Precision Entry).
+
+    Fetches the live 5-minute chart and identifies the best entry signal
+    currently forming within the 15M OTE zone. Uses ICT micro-structure:
+    - Rejection Wick: Long lower wick on a bullish 5M bar (for longs) near OTE
+    - Bearish Engulfing: 5M bar that fully engulfs previous bullish bar (for shorts)
+    - Fair Value Gap (FVG): 3-bar pattern gap retest near OTE
+    - Momentum Continuation: current 5M bar direction confirming 15M signal
+
+    Returns a dict with 'trigger_type', 'precision_entry', 'confidence', and 'action_text'.
+    Returns None if no clear trigger is found.
+    """
+    try:
+        df5 = fetch_candles(ticker, "5m", range_days="2d")
+        if df5.empty or len(df5) < 10:
+            return None
+
+        now_utc = datetime.now(timezone.utc)
+        tf_delta_5m = pd.Timedelta(minutes=5)
+        df5["close_time"] = df5["time"] + tf_delta_5m
+        # Only consider fully closed 5M bars
+        closed_5m = df5[df5["close_time"] <= now_utc]
+        if len(closed_5m) < 4:
+            return None
+
+        c0 = closed_5m.iloc[-1]   # Most recent closed 5M bar
+        c1 = closed_5m.iloc[-2]   # Bar before that
+        c2 = closed_5m.iloc[-3]   # Two bars back
+
+        is_long = (direction == "LONG")
+        trigger_found = None
+        precision_entry = None
+        confidence = 0
+        action_text = ""
+        trigger_type = ""
+
+        def in_ote_zone(price):
+            """Check if price is near the OTE zone (within 3 pips for forex, 15 pips for gold)."""
+            buffer = 15.0 * pip if pip >= 0.1 else 3.0 * pip
+            return (ote_zone_low - buffer) <= price <= (ote_zone_high + buffer)
+
+        if is_long:
+            # --- Pattern 1: Rejection Wick (Bullish Pin Bar on 5M) ---
+            # Lower wick > 2x body, close near high, price near OTE
+            body = abs(c0["close"] - c0["open"])
+            lower_wick = c0["open"] - c0["low"] if c0["close"] >= c0["open"] else c0["close"] - c0["low"]
+            upper_wick = c0["high"] - c0["close"] if c0["close"] >= c0["open"] else c0["high"] - c0["open"]
+            is_bullish_bar = c0["close"] > c0["open"]
+            if (lower_wick > 2.0 * max(body, pip) and
+                    lower_wick > upper_wick and
+                    is_bullish_bar and
+                    in_ote_zone(c0["low"])):
+                trigger_found = True
+                precision_entry = round(c0["close"], digits)
+                confidence = 92
+                trigger_type = "5M Rejection Wick"
+                action_text = f"Bullish pin bar on 5M — enter at close <code>{precision_entry}</code>"
+
+            # --- Pattern 2: Bullish Engulfing on 5M (strong reversal from OTE) ---
+            elif (not trigger_found and
+                  c0["close"] > c0["open"] and
+                  c1["close"] < c1["open"] and
+                  c0["close"] > c1["open"] and
+                  c0["open"] <= c1["close"] and
+                  in_ote_zone(c0["low"])):
+                trigger_found = True
+                precision_entry = round(c0["close"], digits)
+                confidence = 88
+                trigger_type = "5M Bullish Engulf"
+                action_text = f"Bullish engulfing off OTE zone — enter at close <code>{precision_entry}</code>"
+
+            # --- Pattern 3: Fair Value Gap (FVG) Retest ---
+            # Gap = c2.high < c0.low  → price retraces into the gap area on c0
+            elif not trigger_found:
+                fvg_low = c2["high"]
+                fvg_high = c0["low"]
+                if (fvg_low < fvg_high and
+                        in_ote_zone(c1["low"]) and
+                        c0["close"] > c0["open"]):
+                    trigger_found = True
+                    precision_entry = round(c0["close"], digits)
+                    confidence = 84
+                    trigger_type = "5M FVG Retest"
+                    action_text = f"5M Fair Value Gap filled and bouncing — enter at close <code>{precision_entry}</code>"
+
+            # --- Pattern 4: Momentum continuation (last 2 x bullish 5M bars) ---
+            elif not trigger_found:
+                if (c0["close"] > c0["open"] and
+                        c1["close"] > c1["open"] and
+                        c0["close"] > entry_ref and
+                        c0["close"] <= ote_zone_high + (10 * pip)):
+                    trigger_found = True
+                    precision_entry = round(c0["close"], digits)
+                    confidence = 75
+                    trigger_type = "5M Momentum Continuation"
+                    action_text = f"2 consecutive bullish 5M bars — momentum entry at <code>{precision_entry}</code>"
+
+        else:  # SHORT
+            # --- Pattern 1: Rejection Wick (Bearish Pin Bar on 5M) ---
+            body = abs(c0["close"] - c0["open"])
+            upper_wick = c0["high"] - c0["open"] if c0["close"] <= c0["open"] else c0["high"] - c0["close"]
+            lower_wick = c0["open"] - c0["low"] if c0["close"] <= c0["open"] else c0["close"] - c0["low"]
+            is_bearish_bar = c0["close"] < c0["open"]
+            if (upper_wick > 2.0 * max(body, pip) and
+                    upper_wick > lower_wick and
+                    is_bearish_bar and
+                    in_ote_zone(c0["high"])):
+                trigger_found = True
+                precision_entry = round(c0["close"], digits)
+                confidence = 92
+                trigger_type = "5M Rejection Wick"
+                action_text = f"Bearish pin bar on 5M — enter at close <code>{precision_entry}</code>"
+
+            # --- Pattern 2: Bearish Engulfing on 5M ---
+            elif (not trigger_found and
+                  c0["close"] < c0["open"] and
+                  c1["close"] > c1["open"] and
+                  c0["close"] < c1["open"] and
+                  c0["open"] >= c1["close"] and
+                  in_ote_zone(c0["high"])):
+                trigger_found = True
+                precision_entry = round(c0["close"], digits)
+                confidence = 88
+                trigger_type = "5M Bearish Engulf"
+                action_text = f"Bearish engulfing at OTE zone — enter at close <code>{precision_entry}</code>"
+
+            # --- Pattern 3: FVG Retest (bearish) ---
+            elif not trigger_found:
+                fvg_high = c2["low"]
+                fvg_low = c0["high"]
+                if (fvg_high > fvg_low and
+                        in_ote_zone(c1["high"]) and
+                        c0["close"] < c0["open"]):
+                    trigger_found = True
+                    precision_entry = round(c0["close"], digits)
+                    confidence = 84
+                    trigger_type = "5M FVG Retest"
+                    action_text = f"5M Fair Value Gap filled and rejecting — enter at close <code>{precision_entry}</code>"
+
+            # --- Pattern 4: Momentum continuation (last 2 x bearish 5M bars) ---
+            elif not trigger_found:
+                if (c0["close"] < c0["open"] and
+                        c1["close"] < c1["open"] and
+                        c0["close"] < entry_ref and
+                        c0["close"] >= ote_zone_low - (10 * pip)):
+                    trigger_found = True
+                    precision_entry = round(c0["close"], digits)
+                    confidence = 75
+                    trigger_type = "5M Momentum Continuation"
+                    action_text = f"2 consecutive bearish 5M bars — momentum entry at <code>{precision_entry}</code>"
+
+        if trigger_found and precision_entry is not None:
+            return {
+                "trigger_type": trigger_type,
+                "precision_entry": precision_entry,
+                "confidence": confidence,
+                "action_text": action_text,
+                "bar_close_time": c0["close_time"].strftime("%H:%M UTC")
+            }
+        return None
+    except Exception as e:
+        logger.debug(f"5M entry trigger analysis notice for {ticker}: {e}")
+        return None
+
+
 def compute_indicators(df: pd.DataFrame, donchian_len: int = 20) -> pd.DataFrame:
     """Compute technical indicators matching strategy specifications."""
     df = df.copy()
@@ -878,6 +1053,26 @@ def scan_pair_timeframe(pair_name: str, config: dict, tf: str, state: dict) -> l
             # ICT Liquidity Target: Target nearest un-swept Buy-Side Liquidity (BSL)
             take_profit, calc_rr, pool_name = find_ict_liquidity_target(df, entry, sl_dist, is_long=True)
             
+            # ICT Multi-Timeframe Entry Modeling (50% Consequent Encroachment / OTE Retest)
+            disp_range = entry - ob_low
+            ote_entry = round(entry - (0.50 * disp_range), digits)
+            max_chase_pips = 25.0 if pair_name == "XAUUSD" else 3.5
+            max_chase_price = round(entry + (max_chase_pips * pip), digits)
+            valid_zone_low = round(ote_entry, digits)
+            valid_zone_high = round(max_chase_price, digits)
+
+            # ICT 5M Precision Entry Trigger (lower-timeframe confirmation)
+            lf_trigger = fetch_5m_entry_trigger(
+                ticker, "LONG", valid_zone_low, valid_zone_high, entry, pip, digits
+            )
+            # Boost signal score if 5M trigger confirms
+            sig_score = 95
+            if lf_trigger:
+                if lf_trigger["confidence"] >= 90:
+                    sig_score = 100
+                elif lf_trigger["confidence"] >= 80:
+                    sig_score = 98
+
             signals.append({
                 "id": sig_id,
                 "pair": pair_name,
@@ -885,6 +1080,11 @@ def scan_pair_timeframe(pair_name: str, config: dict, tf: str, state: dict) -> l
                 "direction": "LONG",
                 "time": bar_time_str,
                 "entry": round(entry, digits),
+                "ote_entry": ote_entry,
+                "valid_zone_low": valid_zone_low,
+                "valid_zone_high": valid_zone_high,
+                "max_chase_price": max_chase_price,
+                "max_chase_pips": max_chase_pips,
                 "stop_loss": round(stop_loss, digits),
                 "take_profit": round(take_profit, digits),
                 "sl_pips": round(sl_dist / pip, 1),
@@ -894,7 +1094,8 @@ def scan_pair_timeframe(pair_name: str, config: dict, tf: str, state: dict) -> l
                 "donchian_len": donch_len,
                 "rsi": float(round(closed_bar["rsi"], 1)),
                 "atr": float(round(atr / pip, 1)),
-                "score": 95
+                "score": sig_score,
+                "lf_trigger": lf_trigger
             })
             state["alerted_signals"].append(sig_id)
 
@@ -919,6 +1120,26 @@ def scan_pair_timeframe(pair_name: str, config: dict, tf: str, state: dict) -> l
             # ICT Liquidity Target: Target nearest un-swept Sell-Side Liquidity (SSL)
             take_profit, calc_rr, pool_name = find_ict_liquidity_target(df, entry, sl_dist, is_long=False)
             
+            # ICT Multi-Timeframe Entry Modeling (50% Consequent Encroachment / OTE Retest)
+            disp_range = ob_high - entry
+            ote_entry = round(entry + (0.50 * disp_range), digits)
+            max_chase_pips = 25.0 if pair_name == "XAUUSD" else 3.5
+            max_chase_price = round(entry - (max_chase_pips * pip), digits)
+            valid_zone_low = round(max_chase_price, digits)
+            valid_zone_high = round(ote_entry, digits)
+
+            # ICT 5M Precision Entry Trigger (lower-timeframe confirmation)
+            lf_trigger = fetch_5m_entry_trigger(
+                ticker, "SHORT", valid_zone_low, valid_zone_high, entry, pip, digits
+            )
+            # Boost signal score if 5M trigger confirms
+            sig_score = 95
+            if lf_trigger:
+                if lf_trigger["confidence"] >= 90:
+                    sig_score = 100
+                elif lf_trigger["confidence"] >= 80:
+                    sig_score = 98
+
             signals.append({
                 "id": sig_id,
                 "pair": pair_name,
@@ -926,6 +1147,11 @@ def scan_pair_timeframe(pair_name: str, config: dict, tf: str, state: dict) -> l
                 "direction": "SHORT",
                 "time": bar_time_str,
                 "entry": round(entry, digits),
+                "ote_entry": ote_entry,
+                "valid_zone_low": valid_zone_low,
+                "valid_zone_high": valid_zone_high,
+                "max_chase_price": max_chase_price,
+                "max_chase_pips": max_chase_pips,
                 "stop_loss": round(stop_loss, digits),
                 "take_profit": round(take_profit, digits),
                 "sl_pips": round(sl_dist / pip, 1),
@@ -935,7 +1161,8 @@ def scan_pair_timeframe(pair_name: str, config: dict, tf: str, state: dict) -> l
                 "donchian_len": donch_len,
                 "rsi": float(round(closed_bar["rsi"], 1)),
                 "atr": float(round(atr / pip, 1)),
-                "score": 95
+                "score": sig_score,
+                "lf_trigger": lf_trigger
             })
             state["alerted_signals"].append(sig_id)
             
@@ -969,15 +1196,41 @@ def format_alert_message(sig: dict) -> str:
     tf_label = "1-HOUR (1H)" if sig["timeframe"] == "1H" else "15-MINUTE (15M)"
     setup_len = sig.get("donchian_len", 20)
 
+    # --- 5M Precision Entry Block ---
+    lf = sig.get("lf_trigger")  # May be None if no 5M trigger found
+    if lf:
+        lf_block = (
+            f"\n<b>⚡ 5M PRECISION ENTRY TRIGGER</b>\n"
+            f"• <b>Pattern:</b> <b>{lf['trigger_type']}</b> (Confidence: {lf['confidence']}%)\n"
+            f"• <b>Action:</b> {lf['action_text']}\n"
+            f"• <b>5M Bar Closed:</b> <code>{lf['bar_close_time']}</code>\n"
+            f"• <b>⚠️ Use this entry NOW</b> — 5M structure confirmed 15M signal\n\n"
+        )
+        immediate_entry = lf["precision_entry"]
+    else:
+        lf_block = (
+            f"\n<b>⚡ 5M ENTRY TRIGGER</b>\n"
+            f"• No 5M reversal pattern detected yet in OTE zone\n"
+            f"• Wait for next 5M bar close near <code>{sig.get('ote_entry', sig['entry'])}</code>\n"
+            f"  and look for rejection wick or engulfing before entering\n\n"
+        )
+        immediate_entry = sig["entry"]
+
     return (
         f"{icon} <b>NEW TRADE SIGNAL · {display_pair}</b>\n"
         f"━━━━━━━━━━━━━━━━━━\n"
         f"🧭 <b>Direction:</b> <b>{action_text}</b>\n"
         f"⏱ <b>Timeframe:</b> <b>{tf_label}</b>\n"
         f"━━━━━━━━━━━━━━━━━━\n\n"
-        f"<b>📋 TRADE PARAMETERS</b>\n"
-        f"• <b>Entry Target:</b> <code>{sig['entry']}</code> <i>(Market Execution on Bar Close)</i>\n"
-        f"• <b>Order State:</b> 🟢 <b>ACTIVE MARKET POSITION</b>\n"
+        f"<b>🚀 IMMEDIATE ENTRY PRICE: <code>{immediate_entry}</code></b>\n"
+        f"<i>Enter at market within 3 minutes of this alert</i>\n\n"
+        f"{lf_block}"
+        f"<b>📋 ICT ENTRY ZONE (15M)</b>\n"
+        f"• <b>15M Bar Close:</b> <code>{sig['entry']}</code>\n"
+        f"• <b>OTE Zone (50% CE):</b> <code>{sig.get('ote_entry', sig['entry'])}</code> <i>(ideal pullback entry)</i>\n"
+        f"• <b>Valid Zone:</b> <code>{sig.get('valid_zone_low', sig['entry'])} — {sig.get('valid_zone_high', sig['entry'])}</code>\n"
+        f"• <b>Max Chase:</b> <code>{sig.get('max_chase_price', sig['entry'])}</code> <i>(hard limit — skip beyond this)</i>\n\n"
+        f"<b>🎯 TARGETS & RISK</b>\n"
         f"• <b>Stop Loss:</b> <code>{sig['stop_loss']}</code> <i>({sl_sign}{sig['sl_pips']} pips)</i>\n"
         f"• <b>Take Profit:</b> <code>{sig['take_profit']}</code> <i>({tp_sign}{sig['tp_pips']} pips · {sig.get('target_type', 'Target')})</i>\n"
         f"• <b>Risk / Reward:</b> <b>1 : {sig['rr']}</b>\n"
@@ -993,7 +1246,10 @@ def format_alert_message(sig: dict) -> str:
         f"• <b>Signal Score:</b> <b>{sig['score']} / 100</b>\n\n"
         f"━━━━━━━━━━━━━━━━━━\n"
         f"🕒 <b>Confirmed Bar:</b> <code>{sig['time']}</code>\n"
-        f"🟢 <i>Confirmed bar close. Enter at market price immediately. Live floating PnL tracking active.</i>"
+        f"💡 <b>Execution Rules:</b>\n"
+        f"1️⃣ <b>Immediate (0–3 min):</b> Enter at <code>{immediate_entry}</code> — market order NOW.\n"
+        f"2️⃣ <b>Delayed (3–10 min):</b> If price is inside zone <code>{sig.get('valid_zone_low', sig['entry'])} — {sig.get('valid_zone_high', sig['entry'])}</code>, enter market.\n"
+        f"3️⃣ <b>Late / Missed:</b> Set limit at OTE <code>{sig.get('ote_entry', sig['entry'])}</code> — wait for pullback. Never chase beyond <code>{sig.get('max_chase_price', sig['entry'])}</code>."
     )
 
 
