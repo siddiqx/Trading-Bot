@@ -563,6 +563,61 @@ def send_telegram_alert(text: str):
         logger.error(f"Error sending Telegram alert: {e}")
 
 
+def get_live_price(ticker: str, pip: float, digits: int) -> float | None:
+    """
+    Fetch the true current live price for a ticker.
+    Uses the most recent bar (including in-progress) from Yahoo Finance / Binance,
+    falling back to None if unavailable.
+    For XAUUSD uses gold-api.com spot price directly.
+    """
+    try:
+        if ticker in ["PAXGUSDT", "XAUUSD", "GC=F"]:
+            # Prefer direct spot gold API — most accurate
+            try:
+                with httpx.Client(timeout=4.0) as g:
+                    r = g.get("https://api.gold-api.com/price/XAU", headers={"User-Agent": "Mozilla/5.0"})
+                    if r.status_code == 200:
+                        p = float(r.json().get("price", 0))
+                        if p > 0:
+                            return round(p, digits)
+            except Exception:
+                pass
+            # Fallback: Binance latest close
+            try:
+                url = "https://api.binance.com/api/v3/ticker/price?symbol=PAXGUSDT"
+                with httpx.Client(timeout=4.0) as g:
+                    r = g.get(url, headers={"User-Agent": "MarketScanner/2.0"})
+                    if r.status_code == 200:
+                        p = float(r.json().get("price", 0))
+                        if p > 0:
+                            # get live spot offset: apply same offset logic
+                            df_tmp = fetch_candles("PAXGUSDT", "5m", range_days="1d")
+                            if not df_tmp.empty:
+                                raw_last = df_tmp.iloc[-1]["close"]
+                                # offset = spot - raw_last (already applied inside fetch_candles)
+                                # Just return the calibrated last close
+                                return round(df_tmp.iloc[-1]["close"], digits)
+            except Exception:
+                pass
+            return None
+        else:
+            # Yahoo Finance: use 1m range to get the freshest tick
+            yf_url = f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?range=1d&interval=5m"
+            with httpx.Client(timeout=6.0) as c:
+                r = c.get(yf_url, headers={"User-Agent": "Mozilla/5.0"})
+                if r.status_code == 200:
+                    result = r.json().get("chart", {}).get("result")
+                    if result:
+                        quotes = result[0].get("indicators", {}).get("quote", [{}])[0]
+                        closes = [x for x in (quotes.get("close") or []) if x is not None]
+                        if closes:
+                            return round(closes[-1], digits)
+        return None
+    except Exception as e:
+        logger.debug(f"get_live_price notice for {ticker}: {e}")
+        return None
+
+
 def fetch_candles(ticker: str, interval: str, range_days: str = "7d") -> pd.DataFrame:
     """Fetch candles from real-time API (Calibrated MT5 Spot Gold for XAUUSD, Yahoo Finance for Forex)."""
     # 1:1 MT5 Spot Gold Feed (Calibrated directly to spot London gold / MT5 XAUUSD price)
@@ -999,12 +1054,13 @@ def scan_pair_timeframe(pair_name: str, config: dict, tf: str, state: dict) -> l
     closed_bar = closed_bars.iloc[-1]
     prev_bar = closed_bars.iloc[-2]
     
-    # Anti-lag freshness guard: Accommodate runner jitter (allows up to 60m for 15M and 3h for 1H).
-    # Deduplication is strictly guaranteed by state['alerted_signals'] so valid retest setups are never lost.
-    max_age_seconds = 3600 if tf == "15m" else 10800
+    # Freshness guard: Only fire a signal within 5 minutes of the bar closing (15M) or 20 minutes (1H).
+    # This prevents stale signals where price has already moved far from entry.
+    # Deduplication via state['alerted_signals'] ensures no double-firing.
+    max_age_seconds = 300 if tf == "15m" else 1200
     seconds_since_close = (now_utc - closed_bar["close_time"]).total_seconds()
     if seconds_since_close > max_age_seconds:
-        logger.info(f"Skipping {pair_name} ({tf}): Bar closed {int(seconds_since_close)}s ago (exceeds {max_age_seconds}s freshness limit). Move already occurred.")
+        logger.info(f"Skipping {pair_name} ({tf}): Bar closed {int(seconds_since_close)}s ago (exceeds {max_age_seconds}s freshness limit). Live price may have drifted.")
         return []
     
     bar_time_str = closed_bar["close_time"].strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -1044,27 +1100,52 @@ def scan_pair_timeframe(pair_name: str, config: dict, tf: str, state: dict) -> l
                 if c["close"] < c["open"]:
                     ob_low = c["low"]
                     break
-            
-            entry = float(closed_bar["close"])
+
+            # --- LIVE PRICE VALIDATION ---
+            # Use the current live market price instead of the stale bar close.
+            # This ensures the entry shown is always the REAL current price.
+            bar_close_price = float(closed_bar["close"])
+            live_price = get_live_price(ticker, pip, digits)
+            if live_price is None:
+                live_price = bar_close_price  # fallback to bar close if live fetch fails
+
+            # For a LONG, if live price is *below* the breakout level, setup may have failed.
+            # If live price has run more than max_chase_pips ABOVE bar close, price is extended — skip.
+            max_chase_pips = 25.0 if pair_name == "XAUUSD" else 3.5
+            max_chase_price_check = bar_close_price + (max_chase_pips * pip)
+            if live_price > max_chase_price_check:
+                logger.info(f"Skipping {pair_name} ({tf}) LONG: Live price {live_price} extended {round((live_price - bar_close_price)/pip, 1)}p above bar close. Setup overextended.")
+                state["alerted_signals"].append(sig_id)  # mark as seen to avoid re-alerting
+                return signals
+
+            # Use live price as entry — it is what the user will actually fill at
+            entry = live_price
             sl_candidate = float(ob_low - (0.50 * atr))
             sl_dist = float(max(min_sl_dist, min(max_sl_dist, entry - sl_candidate)))
             stop_loss = float(entry - sl_dist)
-            
+
             # ICT Liquidity Target: Target nearest un-swept Buy-Side Liquidity (BSL)
             take_profit, calc_rr, pool_name = find_ict_liquidity_target(df, entry, sl_dist, is_long=True)
-            
+
             # ICT Multi-Timeframe Entry Modeling (50% Consequent Encroachment / OTE Retest)
-            disp_range = entry - ob_low
-            ote_entry = round(entry - (0.50 * disp_range), digits)
-            max_chase_pips = 25.0 if pair_name == "XAUUSD" else 3.5
-            max_chase_price = round(entry + (max_chase_pips * pip), digits)
+            # OTE zone is still based on bar-close structure (the origin OB)
+            disp_range = bar_close_price - ob_low
+            ote_entry = round(bar_close_price - (0.50 * disp_range), digits)
+            max_chase_price = round(bar_close_price + (max_chase_pips * pip), digits)
             valid_zone_low = round(ote_entry, digits)
             valid_zone_high = round(max_chase_price, digits)
 
             # ICT 5M Precision Entry Trigger (lower-timeframe confirmation)
             lf_trigger = fetch_5m_entry_trigger(
-                ticker, "LONG", valid_zone_low, valid_zone_high, entry, pip, digits
+                ticker, "LONG", valid_zone_low, valid_zone_high, bar_close_price, pip, digits
             )
+            # If 5M trigger found a better price, prefer it
+            if lf_trigger and lf_trigger.get("precision_entry"):
+                entry = lf_trigger["precision_entry"]
+                sl_dist = float(max(min_sl_dist, min(max_sl_dist, entry - float(ob_low - 0.50 * atr))))
+                stop_loss = float(entry - sl_dist)
+                take_profit, calc_rr, pool_name = find_ict_liquidity_target(df, entry, sl_dist, is_long=True)
+
             # Boost signal score if 5M trigger confirms
             sig_score = 95
             if lf_trigger:
@@ -1080,6 +1161,7 @@ def scan_pair_timeframe(pair_name: str, config: dict, tf: str, state: dict) -> l
                 "direction": "LONG",
                 "time": bar_time_str,
                 "entry": round(entry, digits),
+                "bar_close_price": round(bar_close_price, digits),
                 "ote_entry": ote_entry,
                 "valid_zone_low": valid_zone_low,
                 "valid_zone_high": valid_zone_high,
@@ -1111,27 +1193,47 @@ def scan_pair_timeframe(pair_name: str, config: dict, tf: str, state: dict) -> l
                 if c["close"] > c["open"]:
                     ob_high = c["high"]
                     break
-            
-            entry = float(closed_bar["close"])
+
+            # --- LIVE PRICE VALIDATION ---
+            bar_close_price = float(closed_bar["close"])
+            live_price = get_live_price(ticker, pip, digits)
+            if live_price is None:
+                live_price = bar_close_price
+
+            # For a SHORT, if live price has dropped more than max_chase_pips BELOW bar close, extended — skip.
+            max_chase_pips = 25.0 if pair_name == "XAUUSD" else 3.5
+            max_chase_price_check = bar_close_price - (max_chase_pips * pip)
+            if live_price < max_chase_price_check:
+                logger.info(f"Skipping {pair_name} ({tf}) SHORT: Live price {live_price} extended {round((bar_close_price - live_price)/pip, 1)}p below bar close. Setup overextended.")
+                state["alerted_signals"].append(sig_id)
+                return signals
+
+            entry = live_price
             sl_candidate = float(ob_high + (0.50 * atr))
             sl_dist = float(max(min_sl_dist, min(max_sl_dist, sl_candidate - entry)))
             stop_loss = float(entry + sl_dist)
-            
+
             # ICT Liquidity Target: Target nearest un-swept Sell-Side Liquidity (SSL)
             take_profit, calc_rr, pool_name = find_ict_liquidity_target(df, entry, sl_dist, is_long=False)
-            
+
             # ICT Multi-Timeframe Entry Modeling (50% Consequent Encroachment / OTE Retest)
-            disp_range = ob_high - entry
-            ote_entry = round(entry + (0.50 * disp_range), digits)
-            max_chase_pips = 25.0 if pair_name == "XAUUSD" else 3.5
-            max_chase_price = round(entry - (max_chase_pips * pip), digits)
+            disp_range = ob_high - bar_close_price
+            ote_entry = round(bar_close_price + (0.50 * disp_range), digits)
+            max_chase_price = round(bar_close_price - (max_chase_pips * pip), digits)
             valid_zone_low = round(max_chase_price, digits)
             valid_zone_high = round(ote_entry, digits)
 
             # ICT 5M Precision Entry Trigger (lower-timeframe confirmation)
             lf_trigger = fetch_5m_entry_trigger(
-                ticker, "SHORT", valid_zone_low, valid_zone_high, entry, pip, digits
+                ticker, "SHORT", valid_zone_low, valid_zone_high, bar_close_price, pip, digits
             )
+            # If 5M trigger found a better price, prefer it
+            if lf_trigger and lf_trigger.get("precision_entry"):
+                entry = lf_trigger["precision_entry"]
+                sl_dist = float(max(min_sl_dist, min(max_sl_dist, float(ob_high + 0.50 * atr) - entry)))
+                stop_loss = float(entry + sl_dist)
+                take_profit, calc_rr, pool_name = find_ict_liquidity_target(df, entry, sl_dist, is_long=False)
+
             # Boost signal score if 5M trigger confirms
             sig_score = 95
             if lf_trigger:
@@ -1147,6 +1249,7 @@ def scan_pair_timeframe(pair_name: str, config: dict, tf: str, state: dict) -> l
                 "direction": "SHORT",
                 "time": bar_time_str,
                 "entry": round(entry, digits),
+                "bar_close_price": round(bar_close_price, digits),
                 "ote_entry": ote_entry,
                 "valid_zone_low": valid_zone_low,
                 "valid_zone_high": valid_zone_high,
