@@ -14,7 +14,7 @@ const BOT_TOKEN = "8932628751:AAFS_Z7SZMbfNAgNE9KmU6Sly32IGxDm2p0";
 const TELEGRAM_API = `https://api.telegram.org/bot${BOT_TOKEN}`;
 
 const ASSETS = [
-  { name: "GOLD",    symbol: "XAUUSD", ticker: "GC=F",     pip: 0.10,   digits: 2 },
+  { name: "GOLD",    symbol: "XAUUSD", ticker: "PAXGUSDT", pip: 0.10,   digits: 2 },
   { name: "EUR/USD", symbol: "EURUSD", ticker: "EURUSD=X", pip: 0.0001, digits: 5 },
   { name: "USD/CAD", symbol: "USDCAD", ticker: "USDCAD=X", pip: 0.0001, digits: 5 }
 ];
@@ -183,18 +183,36 @@ async function runActiveTradeChecks(env) {
       asset = { name: t.pair || symbol, symbol, ticker, pip: t.pip || 0.0001, digits: t.digits || 5 };
     }
     try {
-      const url = `https://query1.finance.yahoo.com/v8/finance/chart/${asset.ticker}?range=5d&interval=15m`;
-      const res = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0" } });
-      const json = await res.json();
-      const quote = json?.chart?.result?.[0]?.indicators?.quote?.[0];
-      const closes = quote?.close?.filter(v => v !== null && v !== undefined) || [];
-      const highs = quote?.high?.filter(v => v !== null && v !== undefined) || [];
-      const lows = quote?.low?.filter(v => v !== null && v !== undefined) || [];
+      let lastClose, lastHigh, lastLow;
+      if (symbol === "XAUUSD" || asset.ticker === "PAXGUSDT") {
+        try {
+          const bRes = await fetch("https://api.binance.com/api/v3/klines?symbol=PAXGUSDT&interval=15m&limit=10", { headers: { "User-Agent": "Mozilla/5.0" } });
+          const bData = await bRes.json();
+          if (Array.isArray(bData) && bData.length > 0) {
+            const lastBar = bData[bData.length - 1];
+            lastHigh = parseFloat(lastBar[2]);
+            lastLow = parseFloat(lastBar[3]);
+            lastClose = parseFloat(lastBar[4]);
+          }
+        } catch(be) {}
+      }
 
-      if (closes.length > 0) {
-        const lastClose = closes[closes.length - 1];
-        const lastHigh = highs[highs.length - 1] || lastClose;
-        const lastLow = lows[lows.length - 1] || lastClose;
+      if (lastClose === undefined) {
+        const url = `https://query1.finance.yahoo.com/v8/finance/chart/${asset.ticker}?range=5d&interval=15m`;
+        const res = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0" } });
+        const json = await res.json();
+        const quote = json?.chart?.result?.[0]?.indicators?.quote?.[0];
+        const closes = quote?.close?.filter(v => v !== null && v !== undefined) || [];
+        const highs = quote?.high?.filter(v => v !== null && v !== undefined) || [];
+        const lows = quote?.low?.filter(v => v !== null && v !== undefined) || [];
+        if (closes.length > 0) {
+          lastClose = closes[closes.length - 1];
+          lastHigh = highs[highs.length - 1] || lastClose;
+          lastLow = lows[lows.length - 1] || lastClose;
+        }
+      }
+
+      if (lastClose !== undefined) {
         const isLong = (t.direction || "").toUpperCase() === "LONG";
 
         let hitTP = false;
@@ -1101,6 +1119,14 @@ async function sendPricesMessage(chatId) {
     ASSETS.map(async (asset, idx) => {
       const num = idx + 1;
       try {
+        if (asset.symbol === "XAUUSD" || asset.ticker === "PAXGUSDT") {
+          try {
+            const bRes = await fetch("https://api.binance.com/api/v3/ticker/price?symbol=PAXGUSDT", { headers: { "User-Agent": "Mozilla/5.0" } });
+            const bJson = await bRes.json();
+            const p = parseFloat(bJson?.price);
+            if (!isNaN(p)) return `<b>${num}. ${asset.name}</b> · <code>${p.toFixed(asset.digits)}</code>`;
+          } catch(be) {}
+        }
         const url = `https://query1.finance.yahoo.com/v8/finance/chart/${asset.ticker}?range=5d&interval=15m`;
         const res = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0" } });
         const json = await res.json();

@@ -30,7 +30,7 @@ TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID") or "8142877259"
 # Monitored Pairs and Yahoo Finance Ticker Mapping
 # Core Alpha Asset Universe (Proven by 2-year backtest to cap portfolio drawdown at 6.0% while maximizing net return)
 SYMBOLS = {
-    "XAUUSD": {"ticker": "GC=F",     "pip": 0.10,   "digits": 2, "donchian_len": 10}, # Primary Alpha Driver: 10-bar Donchian yields PF 1.40 (+12.16R)
+    "XAUUSD": {"ticker": "PAXGUSDT", "pip": 0.10,   "digits": 2, "donchian_len": 10}, # 1:1 Physical Spot Gold (matches MT5 XAUUSD directly)
     "EURUSD": {"ticker": "EURUSD=X", "pip": 0.0001, "digits": 5, "donchian_len": 20}, # Low Drawdown Anchor: PF 1.25, max DD 6.0R
     "USDCAD": {"ticker": "USDCAD=X", "pip": 0.0001, "digits": 5, "donchian_len": 20}, # Session Momentum Mover: PF 1.11, clean 15M structure
 }
@@ -564,7 +564,37 @@ def send_telegram_alert(text: str):
 
 
 def fetch_candles(ticker: str, interval: str, range_days: str = "7d") -> pd.DataFrame:
-    """Fetch candles from Yahoo Finance chart API."""
+    """Fetch candles from real-time API (1:1 Spot Gold for XAUUSD, Yahoo Finance for Forex)."""
+    # 1:1 London Physical Spot Gold Feed (Matches MT5 XAUUSD prices directly)
+    if ticker in ["PAXGUSDT", "XAUUSD"]:
+        try:
+            b_interval = "15m" if interval == "15m" else "1h"
+            limit = 400 if interval == "15m" else 200
+            url = f"https://api.binance.com/api/v3/klines?symbol=PAXGUSDT&interval={b_interval}&limit={limit}"
+            with httpx.Client(timeout=10.0) as client:
+                resp = client.get(url, headers={"User-Agent": "MarketScanner/2.0"})
+                if resp.status_code == 200:
+                    data = resp.json()
+                    records = []
+                    for b in data:
+                        records.append({
+                            "timestamp": int(b[0] / 1000),
+                            "time": pd.to_datetime(b[0], unit="ms", utc=True),
+                            "open": float(b[1]),
+                            "high": float(b[2]),
+                            "low": float(b[3]),
+                            "close": float(b[4]),
+                            "volume": float(b[5])
+                        })
+                    df = pd.DataFrame(records)
+                    df.dropna(subset=["open", "high", "low", "close"], inplace=True)
+                    df.sort_values("time", inplace=True)
+                    df.reset_index(drop=True, inplace=True)
+                    if not df.empty:
+                        return df
+        except Exception as e:
+            logger.warning(f"Spot gold feed notice: {e}, attempting secondary source...")
+
     url = f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?range={range_days}&interval={interval}"
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
     
