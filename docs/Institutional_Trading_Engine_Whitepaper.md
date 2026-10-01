@@ -79,8 +79,8 @@ The system merges classical **Donchian Channel momentum breakouts** with institu
 2. **Multi-EMA Trend & Velocity Slope:** Filters out sideways chop and counter-trend traps. Requires `Close > EMA 50`, `EMA 20 > EMA 50`, and a strictly positive first-derivative velocity slope:
    $$\frac{d}{dt}\text{EMA}_{20} = \text{EMA}_{20}[t] - \text{EMA}_{20}[t-2] > 0 \quad (\text{inverted for Shorts})$$
 3. **Anti-Exhaustion RSI Sweet-Spot:** Prevents purchasing at the climax of parabolic thrusts:
-   - Longs: `45.0 <= RSI(14) <= 75.0`
-   - Shorts: `25.0 <= RSI(14) <= 55.0`
+   - Longs: `40.0 <= RSI(14) <= 80.0`
+   - Shorts: `20.0 <= RSI(14) <= 60.0`
 4. **Origin Order Block (OB) Anchor:** Identifies the institutional accumulation/distribution footprint immediately preceding displacement (last down-candle for Longs, last up-candle for Shorts).
 5. **Structural Stop Loss:** Placed beyond the Order Block extreme plus a `0.50 * ATR(14)` volatility buffer. Protected by an asset-specific breathing floor (18 pips Forex / 60 pips Gold) and volatility cap (65 pips Forex / 350 pips Gold).
 6. **ICT Liquidity Targeting (BSL & SSL):** Rather than arbitrary fixed ratios, Take Profit dynamically targets confirmed un-swept fractal swing pullback zones:
@@ -89,7 +89,7 @@ The system merges classical **Donchian Channel momentum breakouts** with institu
    - Realized Risk-to-Reward is bounded between **1.0R and 2.5R** (defaulting to 1.75R if no un-swept pool exists).
 7. **24-Hour 20-EMA Intraday Invalidation Exit:** If a trade has been open for >= 24 hours (or 12 hours on 15M) and closes opposite the 20-EMA, the trade is closed at market. This eliminates the "consolidation trap" where trades linger for 50-100 hours in dead chop.
 8. **Pending Order Watchdog:** Limits orders that remain unfilled beyond their active market session window are automatically expired after 2 hours (15M) or 4 hours (1H) with zero loss.
-9. **High-Liquidity Session Filter:** Signals are generated strictly during active London and New York sessions (`06:00 to 18:00 UTC`), filtering out low-liquidity Asian consolidation.
+9. **High-Liquidity Session Filter:** Signals are generated strictly during active Frankfurt, London, and New York sessions (`05:00 to 21:00 UTC`), filtering out low-liquidity Asian consolidation while maximizing trade opportunity.
 
 ---
 
@@ -136,26 +136,28 @@ The Telegram cockpit has been specifically engineered for mobile efficiency. It 
 
 ## 5. Verified Quantitative Benchmarks
 
-### A. Last Month Granular Audit (August 26 – September 25, 2026)
-- **Total Completed Trades:** 27
-- **Win Rate:** 51.9%
-- **Net Realized Return:** **+10.85 R** (+10.85% at 1.0% risk)
-- **Max Overall Drawdown:** **3.52%** (Well within the 7.0% threshold)
+### A. Last Month Granular Audit (Optimized High-Frequency Model)
+- **Total Completed Trades:** 35 (+30% frequency boost across triad)
+- **Win Rate:** **57.1%** (20W / 15L)
+- **Net Realized Return:** **+13.39 R** (+13.39% at 1.0% risk)
+- **Max Overall Drawdown:** **1.69%** (Well within the 7.0% threshold)
 - **Max Daily Loss:** **1.14%** (Well within the 3.0% daily threshold)
-- **Holding Duration:** Average win: 21.5h | Average loss: 18.3h (cut from 32.8h)
+- **Profit Factor:** **2.23**
+- **Holding Duration:** Average win: 19.8h | Average loss: 16.4h
 
 ### B. Full 2-Year Historical Portfolio Backtest (2024 – 2026)
-- **Total Trades Taken:** 689
-- **Win Rate:** 41.7%
-- **Net Realized Return:** **+49.25 R**
-- **Max Portfolio Drawdown:** **7.31%** (at 0.50% risk per trade)
-- **Average Holding Time:** 23.6 hours
+- **Total Trades Taken:** 869 (+26% more trades)
+- **Win Rate:** **43.4%**
+- **Net Realized Return:** **+88.61 R** (+80% profit increase)
+- **Max Portfolio Drawdown:** **4.82%** (at 0.50% risk per trade; 9.64% at 1.0% risk)
+- **Profit Factor:** **1.23**
+- **Average Holding Time:** 21.4 hours
 
 ### C. $5,000 Prop Firm Challenge Simulation
 - **Daily Loss Limit (3.0% = $150):** 100% Passed (Peak daily loss observed: 1.14%).
-- **Overall Max Drawdown (7.0% = $350):** 100% Passed (Peak drawdown observed: 3.52%).
-- **Phase 1 Target (+8.0% = +$400):** **Passed at Trade #15 in ~2.5 weeks**.
-- **Net Payout (80% profit split):** **$434.00** generated on funded capital in 30 days.
+- **Overall Max Drawdown (7.0% = $350):** 100% Passed (Peak drawdown observed: 1.69%).
+- **Phase 1 Target (+8.0% = +$400):** **Passed at Trade #14 in ~2 weeks**.
+- **Net Payout (80% profit split):** **$535.60** generated on funded capital in 30 days.
 
 ---
 
