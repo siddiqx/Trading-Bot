@@ -240,9 +240,10 @@ async function runActiveTradeChecks(env) {
       }
 
       if (lastClose === undefined) {
+        // Use 5m interval for freshest available tick (not 15m which can be 15min stale)
         for (const host of ["query1.finance.yahoo.com", "query2.finance.yahoo.com"]) {
           try {
-            const url = `https://${host}/v8/finance/chart/${asset.ticker}?range=5d&interval=15m`;
+            const url = `https://${host}/v8/finance/chart/${asset.ticker}?range=1d&interval=5m`;
             const res = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36" } });
             if (res.ok) {
               const json = await res.json();
@@ -252,8 +253,11 @@ async function runActiveTradeChecks(env) {
               const lows = quote?.low?.filter(v => v !== null && v !== undefined) || [];
               if (closes.length > 0) {
                 lastClose = closes[closes.length - 1];
-                lastHigh = highs[highs.length - 1] || lastClose;
-                lastLow = lows[lows.length - 1] || lastClose;
+                // Use recent session high/low (last 4 bars ~20min) for accurate TP/SL sweep detection
+                const recentHighs = highs.slice(-4);
+                const recentLows = lows.slice(-4);
+                lastHigh = recentHighs.length > 0 ? Math.max(...recentHighs) : lastClose;
+                lastLow = recentLows.length > 0 ? Math.min(...recentLows) : lastClose;
                 break;
               }
             }
@@ -264,6 +268,8 @@ async function runActiveTradeChecks(env) {
       if (lastClose !== undefined) {
         const isLong = (t.direction || "").toUpperCase() === "LONG";
 
+        // Use high/low range for TP/SL evaluation (not just close price)
+        // This correctly catches cases where price ticked through a level intra-bar
         let hitTP = false;
         let hitSL = false;
         if (isLong) {
@@ -377,15 +383,58 @@ export default {
       try { payload = JSON.parse(rawText); } catch (e) { payload = { text: rawText }; }
 
       // Handle Sync from Market Scanner Engine
+      // IMPORTANT: Merge strategy — never blindly overwrite KV active trades.
+      // The worker may have resolved a trade (auto-resolved TP/SL) between scanner runs.
+      // We always let KV be the source of truth for active trades; scanner only ADDS new ones.
       if (payload.event === "sync_trades") {
-        if (payload.active_trades) STORED_ACTIVE_TRADES = payload.active_trades;
-        if (payload.completed_trades) STORED_COMPLETED_TRADES = payload.completed_trades;
-
         const kv = env && (env.TRADE_LEDGER || env.TRADES_KV || env.KV);
+
+        // Get current KV state so we can merge
+        let kvActive = payload.active_trades || {};
+        let kvCompleted = payload.completed_trades || [];
+
         if (kv) {
           try {
-            await kv.put("active_trades", JSON.stringify(STORED_ACTIVE_TRADES));
-            await kv.put("completed_trades", JSON.stringify(STORED_COMPLETED_TRADES));
+            const existingActive = await kv.get("active_trades", "json") || {};
+            const existingCompleted = await kv.get("completed_trades", "json") || [];
+
+            // Merge: KV wins for pairs already tracked (could be worker-resolved)
+            // Scanner wins for new pairs it just opened
+            const resolvedPairs = new Set(existingCompleted.map(t => t.symbol || t.pair));
+            const mergedActive = { ...kvActive };
+            for (const [symbol, trade] of Object.entries(existingActive)) {
+              // Keep KV active trade if scanner didn't send anything for this pair,
+              // OR if scanner sent it too (scanner is authoritative for its own new opens)
+              if (!(symbol in kvActive) || trade.status === "OPEN") {
+                mergedActive[symbol] = mergedActive[symbol] || trade;
+              }
+            }
+            // Remove any active trades KV already closed
+            for (const ct of existingCompleted) {
+              const sym = ct.symbol || ct.pair;
+              if (sym && mergedActive[sym] && mergedActive[sym].trade_id === ct.trade_id) {
+                delete mergedActive[sym];
+              }
+            }
+
+            // Merge completed: deduplicate by trade_id
+            const seenIds = new Set(existingCompleted.map(t => t.trade_id));
+            for (const ct of kvCompleted) {
+              if (!seenIds.has(ct.trade_id)) {
+                existingCompleted.push(ct);
+                seenIds.add(ct.trade_id);
+              }
+            }
+
+            kvActive = mergedActive;
+            kvCompleted = existingCompleted;
+          } catch (e) {
+            console.error("KV merge error:", e);
+          }
+
+          try {
+            await kv.put("active_trades", JSON.stringify(kvActive));
+            await kv.put("completed_trades", JSON.stringify(kvCompleted));
             if (payload.volume_summary) {
               await kv.put("volume_summary", JSON.stringify(payload.volume_summary));
             }
@@ -393,6 +442,9 @@ export default {
             console.error("KV save error:", e);
           }
         }
+
+        STORED_ACTIVE_TRADES = kvActive;
+        STORED_COMPLETED_TRADES = kvCompleted;
         return new Response("Trades Synced", { status: 200 });
       }
 
@@ -503,6 +555,37 @@ async function handleTelegramUpdate(update, env) {
       await sendStrategyMessage(chatId);
     } else if (cmd === "/clear" || cmd === "/clean" || cmd === "/reset") {
       await sendClearInstructions(chatId);
+    } else if (cmd === "/close" || cmd === "/resolve") {
+      // Admin: force-resolve a stuck active trade
+      // Usage: /close EURUSD WIN | /close EURUSD LOSS | /close EURUSD CANCEL
+      const symbol = parts[1] ? parts[1].toUpperCase().replace("/", "") : null;
+      const outcomeArg = parts[2] ? parts[2].toUpperCase() : null;
+      if (symbol && outcomeArg) {
+        const outcome = outcomeArg === "WIN" ? "WIN" : outcomeArg === "LOSS" ? "LOSS" : "CANCELLED";
+        const { active } = await getLedger(env);
+        const trade = active[symbol];
+        if (trade) {
+          const exitPrice = outcome === "WIN" ? trade.take_profit : outcome === "LOSS" ? trade.stop_loss : trade.entry;
+          await autoResolveTrade(symbol, trade, outcome, exitPrice, env);
+          await sendTelegramMessage(chatId,
+            `✅ <b>ADMIN FORCE-CLOSE · ${symbol} ${outcome}</b>\n` +
+            `━━━━━━━━━━━━━━━━━━\n` +
+            `• Trade ID: <code>${trade.trade_id}</code>\n` +
+            `• Closed at: <code>${exitPrice}</code>\n` +
+            `• Pair unlocked. Surveillance resumed.`
+          );
+        } else {
+          await sendTelegramMessage(chatId, `⚠️ No active trade found for <code>${symbol}</code>. Use /active to see current positions.`);
+        }
+      } else {
+        await sendTelegramMessage(chatId,
+          `ℹ️ <b>Force-Close Usage:</b>\n` +
+          `<code>/close EURUSD WIN</code>\n` +
+          `<code>/close EURUSD LOSS</code>\n` +
+          `<code>/close XAUUSD CANCEL</code>\n\n` +
+          `Available pairs: EURUSD · USDCAD · XAUUSD`
+        );
+      }
     } else {
       await sendMenuMessage(chatId, env);
     }
@@ -876,9 +959,10 @@ async function sendActiveMessage(chatId, env) {
       }
 
       if (currentPrice === null) {
+        // Use 5m interval for freshest price tick (not 15m which lags by up to 15 minutes)
         for (const host of ["query1.finance.yahoo.com", "query2.finance.yahoo.com"]) {
           try {
-            const url = `https://${host}/v8/finance/chart/${asset.ticker}?range=5d&interval=15m`;
+            const url = `https://${host}/v8/finance/chart/${asset.ticker}?range=1d&interval=5m`;
             const res = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36" } });
             if (res.ok) {
               const json = await res.json();
@@ -1349,7 +1433,8 @@ async function sendPricesMessage(chatId) {
         }
         for (const host of ["query1.finance.yahoo.com", "query2.finance.yahoo.com"]) {
           try {
-            const url = `https://${host}/v8/finance/chart/${asset.ticker}?range=5d&interval=15m`;
+            // Use 5m interval for freshest price (not 15m which can be 15min stale)
+            const url = `https://${host}/v8/finance/chart/${asset.ticker}?range=1d&interval=5m`;
             const res = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36" } });
             if (res.ok) {
               const json = await res.json();
@@ -1426,29 +1511,39 @@ async function sendStatusMessage(chatId, env) {
 }
 
 /**
- * /strategy - Institutional Execution Specifications
+ * /strategy - ICT Multi-Timeframe Execution Specifications
  */
 async function sendStrategyMessage(chatId) {
   const text = 
     `🎯 <b>STRATEGY SPECIFICATIONS</b>\n` +
     `━━━━━━━━━━━━━━━━━━\n` +
-    `<b>INSTITUTIONAL ICT ORDER BLOCK & LIQUIDITY MODEL</b>\n\n` +
-    `<b>1. Structural Breakout & Order Block Entry</b>\n` +
-    `• Gold (XAUUSD): High-Frequency 10-period Donchian (PF 1.40)\n` +
-    `• Forex (EURUSD, USDCAD): Responsive 15-period Donchian (PF 1.25)\n` +
+    `<b>INSTITUTIONAL ICT ORDER BLOCK &amp; LIQUIDITY MODEL</b>\n\n` +
+    `<b>1. Multi-Timeframe Hierarchy (ICT)</b>\n` +
+    `• 1H: Macro trend bias (EMA20 vs EMA50 + RSI zone check)\n` +
+    `• 15M: Setup — Donchian structural breakout + Order Block detection\n` +
+    `• 5M: Precision entry trigger — Rejection Wick / Engulf / FVG at OTE\n\n` +
+    `<b>2. Entry: Live Price + 5M Trigger</b>\n` +
+    `• Gold: 10-period Donchian (Profit Factor 1.40 backtested)\n` +
+    `• Forex: 15-period Donchian (Profit Factor 1.25 backtested)\n` +
     `• RSI Filter: Longs 40–80, Shorts 20–60 (Anti-exhaustion)\n` +
+    `• Entry: Live 5M price at signal time (not stale bar close)\n` +
     `• Stop Loss: Origin Order Block Invalidation (+0.5 ATR buffer)\n\n` +
-    `<b>2. Institutional Target: BSL & SSL Liquidity Pools</b>\n` +
-    `• Longs: Targets Buy-Side Liquidity (BSL) above previous swing highs\n` +
-    `• Shorts: Targets Sell-Side Liquidity (SSL) below previous swing lows\n` +
-    `• Liquidity Calibration: Dynamic 1.0R – 2.5R to nearest un-swept pool\n\n` +
-    `<b>3. Session Liquidity & Invalidation Rules</b>\n` +
-    `• Session Window: 05:00 – 21:00 UTC (Frankfurt, London, New York)\n` +
-    `• 24h Time-Stop: 20-EMA counter-trend exit cuts stagnant chop early\n` +
-    `• Pending Order Timeout: 2h (15M) / 4h (1H) to release pair lock\n` +
-    `• Recommended Risk: <b>0.5% - 1.0% Equity</b> (Max DD capped at ≤6.0%)\n\n` +
+    `<b>3. ICT Execution Protocol (3 Tiers)</b>\n` +
+    `• 0–3 min: Enter at 5M trigger price or current market\n` +
+    `• 3–10 min delayed: Enter if inside OTE Valid Zone only\n` +
+    `• Late / Missed: Limit at 50% CE (OTE pullback) — never chase beyond Max Chase\n\n` +
+    `<b>4. Institutional Targets: BSL &amp; SSL Liquidity Pools</b>\n` +
+    `• Longs: Buy-Side Liquidity (BSL) above previous swing highs\n` +
+    `• Shorts: Sell-Side Liquidity (SSL) below previous swing lows\n` +
+    `• Calibration: Dynamic 1.5R – 2.5R to nearest un-swept pool\n\n` +
+    `<b>5. Trade Management &amp; Session Rules</b>\n` +
+    `• Active Window: 05:00 – 21:00 UTC (Frankfurt, London, New York)\n` +
+    `• Freshness Guard: Signal only fires within 5 min of bar close\n` +
+    `• EMA20 Time-Stop: Exit if counter-trend close after 12h (15M) / 24h (1H)\n` +
+    `• Suggested Risk: <b>0.5% Equity per trade</b> (Portfolio DD ≤ 6.0%)\n` +
+    `• Admin: /close PAIR WIN|LOSS to force-resolve stuck trades\n\n` +
     `━━━━━━━━━━━━━━━━━━\n` +
-    `🛡 <i>Systematic, rule-based execution.</i>`;
+    `🛡 <i>Systematic, rule-based. One trade per pair at all times.</i>`;
 
   const keyboard = {
     inline_keyboard: [
@@ -1505,17 +1600,18 @@ async function sendMenuMessage(chatId, env) {
   const text = 
     `🏛 <b>INSTITUTIONAL SIGNAL TERMINAL</b>\n` +
     `━━━━━━━━━━━━━━━━━━\n` +
-    `Automated 24/7 Algorithmic Trading & Forward Verification\n` +
-    `Coverage: <b>EURUSD · USDJPY · USDCAD · USDCHF · AUDUSD · GOLD</b>\n\n` +
+    `Automated 24/7 Algorithmic Trading &amp; Forward Verification\n` +
+    `Coverage: <b>EURUSD · USDCAD · GOLD</b> (Core Alpha Triad)\n\n` +
     `<b>SYSTEM MODULES</b>\n` +
-    `1. /active ── Running trades & live float pips\n` +
-    `2. /radar ── Market surveillance & live scan\n` +
-    `3. /prices ── Live quotes across all 6 pairs\n` +
+    `1. /active ── Running trades &amp; live float pips\n` +
+    `2. /radar ── Market surveillance &amp; imminent breakouts\n` +
+    `3. /prices ── Live quotes (5M fresh tick)\n` +
     `4. /history ── Completed trade history ledger\n` +
-    `5. /performance ── Win rate & return metrics\n` +
-    `6. /patterns ── Volume post-mortems & pattern stats\n` +
-    `7. /strategy ── Systematic entry/exit rules\n` +
-    `8. /status ── 24/7 serverless engine health\n\n` +
+    `5. /performance ── Win rate &amp; net return metrics\n` +
+    `6. /patterns ── Volume post-mortems &amp; failure analysis\n` +
+    `7. /strategy ── ICT multi-timeframe entry rules\n` +
+    `8. /status ── 24/7 serverless engine health\n` +
+    `9. /close PAIR WIN|LOSS ── Admin force-close\n\n` +
     `Select a dashboard module below:`;
 
   const keyboard = {
