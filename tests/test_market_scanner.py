@@ -357,5 +357,67 @@ def test_find_ict_liquidity_target_fallback():
     assert "Structural Expansion" in pool_name
 
 
+def test_check_active_trades_ema20_invalidation_exit(monkeypatch):
+    """Ensure check_active_trades triggers EMA20 invalidation exit when trade holds > 24h and closes opposite 20-EMA."""
+    from market_scanner import check_active_trades
+
+    # Entry was 26 hours ago
+    t_open = datetime(2026, 9, 27, 10, 0, tzinfo=timezone.utc)
+    t_now = datetime(2026, 9, 28, 12, 0, tzinfo=timezone.utc)
+
+    # Mock candle closed at 1.1350, with ema20 at 1.1360 (below EMA for LONG -> invalidation)
+    mock_df = pd.DataFrame({
+        "timestamp": [int(t_now.timestamp())],
+        "time": [t_now],
+        "open": [1.1355],
+        "high": [1.1365], # does not reach TP (1.1400)
+        "low": [1.1340],  # does not breach SL (1.1300)
+        "close": [1.1350],
+        "volume": [500],
+        "ema20": [1.1360]
+    })
+
+    monkeypatch.setattr("market_scanner.fetch_candles", lambda *args, **kwargs: mock_df)
+    monkeypatch.setattr("market_scanner.send_telegram_alert", lambda *args, **kwargs: None)
+    monkeypatch.setattr("market_scanner.sync_worker", lambda *args, **kwargs: None)
+    monkeypatch.setattr("market_scanner.save_trade_records", lambda *args, **kwargs: None)
+    monkeypatch.setattr("market_scanner.compute_indicators", lambda df, **kwargs: df)
+
+    records = {
+        "active_trades": {
+            "EURUSD": {
+                "trade_id": "EURUSD_1H_TEST",
+                "pair": "EURUSD",
+                "symbol": "EURUSD",
+                "ticker": "EURUSD=X",
+                "direction": "LONG",
+                "timeframe": "1H",
+                "entry": 1.1360,
+                "stop_loss": 1.1300,
+                "take_profit": 1.1460,
+                "sl_pips": 60.0,
+                "tp_pips": 100.0,
+                "rr": 1.67,
+                "pip": 0.0001,
+                "digits": 5,
+                "opened_at": t_open.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "status": "OPEN"
+            }
+        },
+        "completed_trades": []
+    }
+
+    check_active_trades(records)
+
+    # EURUSD should have exited via EMA invalidation
+    assert "EURUSD" not in records["active_trades"]
+    assert len(records["completed_trades"]) == 1
+    completed = records["completed_trades"][0]
+    assert completed["exit_reason"] == "EMA20_INVALIDATION"
+    assert completed["exit_price"] == 1.1350
+    assert completed["status"] == "CLOSED"
+
+
+
 
 

@@ -180,6 +180,8 @@ def check_active_trades(records: dict):
         df = fetch_candles(ticker, "15m", range_days="7d")
         if df.empty:
             continue
+        if len(df) >= 30:
+            df = compute_indicators(df, donchian_len=SYMBOLS.get(pair, {}).get("donchian_len", 20))
 
         opened_at_str = trade.get("opened_at")
         if opened_at_str:
@@ -238,6 +240,8 @@ def check_active_trades(records: dict):
 
         hit_tp = False
         hit_sl = False
+        hit_ema_exit = False
+        ema_exit_price = None
         cancelled_before_fill = False
 
         # Chronological bar-by-bar evaluation to accurately determine order fill and exit triggers
@@ -329,6 +333,27 @@ def check_active_trades(records: dict):
                     elif b_low <= tp:
                         hit_tp = True
                         break
+
+                # Intraday Trend Invalidation Rule:
+                # If trade held >= 24h (or 12h for 15M) and closes opposite to 20-EMA, exit early to protect capital
+                if hasattr(row, 'ema20') and hasattr(row, 'time') and opened_at_str:
+                    try:
+                        fill_ref_ts = pd.to_datetime(trade.get("filled_at") or opened_at_str)
+                        if fill_ref_ts.tzinfo is None:
+                            fill_ref_ts = fill_ref_ts.replace(tzinfo=timezone.utc)
+                        h_held = (row.time - fill_ref_ts).total_seconds() / 3600.0
+                        inval_thresh = 12.0 if trade.get("timeframe") == "15M" else 24.0
+                        if h_held >= inval_thresh:
+                            if is_long and row.close < row.ema20:
+                                hit_ema_exit = True
+                                ema_exit_price = float(row.close)
+                                break
+                            elif (not is_long) and row.close > row.ema20:
+                                hit_ema_exit = True
+                                ema_exit_price = float(row.close)
+                                break
+                    except Exception:
+                        pass
 
         # Check if setup remained PENDING beyond session timeout
         is_still_pending = (trade.get("status") == "PENDING")
@@ -458,6 +483,58 @@ def check_active_trades(records: dict):
 
             msg = format_exit_message(trade, outcome, exit_price, realized_pips, realized_r, pm_record)
             send_telegram_alert(msg)
+
+            records.setdefault("completed_trades", []).append(completed_record)
+            del records["active_trades"][pair]
+            resolved_pairs.append(pair)
+
+        elif hit_ema_exit:
+            exit_price = float(ema_exit_price)
+            pip = trade.get("pip", 0.0001)
+            sl_dist = trade.get("sl_pips", 20.0) * pip
+            if is_long:
+                realized_pips = (exit_price - entry) / pip
+                realized_r = (exit_price - entry) / (sl_dist + 1e-9)
+            else:
+                realized_pips = (entry - exit_price) / pip
+                realized_r = (entry - exit_price) / (sl_dist + 1e-9)
+
+            outcome = "WIN" if realized_r > 0 else "LOSS"
+            logger.info(f"==> TRADE RESOLVED (EMA INVALIDATION): {pair} {trade.get('direction')} ({realized_pips:+.1f} pips, {realized_r:+.2f}R)")
+
+            completed_record = {
+                **trade,
+                "exit_price": float(exit_price),
+                "outcome": outcome,
+                "realized_pips": float(round(realized_pips, 1)),
+                "realized_r": float(round(realized_r, 2)),
+                "closed_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "status": "CLOSED",
+                "exit_reason": "EMA20_INVALIDATION"
+            }
+
+            pm_record = None
+            try:
+                pm_record = record_trade_post_mortem(completed_record, df_trade)
+            except Exception as e:
+                logger.error(f"Error recording post-mortem for {pair}: {e}")
+
+            icon = "🎯" if realized_r > 0 else "🛑"
+            sign = "+" if realized_pips >= 0 else ""
+            r_sign = "+" if realized_r >= 0 else ""
+            thresh_h = 12 if trade.get("timeframe") == "15M" else 24
+            inval_msg = (
+                f"{icon} <b>TREND INVALIDATION EXIT · {pair} {trade.get('direction')}</b>\n"
+                f"━━━━━━━━━━━━━━━━━━\n"
+                f"• <b>Entry Price:</b> <code>{entry}</code>\n"
+                f"• <b>Exit Price:</b> <code>{exit_price}</code>\n"
+                f"• <b>Net Realized:</b> <b>{sign}{realized_pips:.1f} pips ({r_sign}{realized_r:.2f} R)</b>\n"
+                f"• <b>Reason:</b> Position held > {thresh_h}h with 20-EMA counter-trend close.\n"
+                f"• <b>Action:</b> Position closed early to protect capital and prevent multi-day chop.\n"
+                f"━━━━━━━━━━━━━━━━━━\n"
+                f"🔓 <i>Pair unlocked. Capital freed for fresh high-probability setups.</i>"
+            )
+            send_telegram_alert(inval_msg)
 
             records.setdefault("completed_trades", []).append(completed_record)
             del records["active_trades"][pair]
