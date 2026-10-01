@@ -155,3 +155,28 @@
 
 ---
 
+### #7 · XAUUSD (15M) — 🛑 LOSS (-1.00R)
+
+- **Global Sequence**: Trade `#7`
+- **Direction**: `SHORT` | **Outcome**: `LOSS` (`-112.0 pips` / `-0.35R`)
+- **Execution Range**: Entry ` 4187.9 ` ➔ Exit ` 4199.10009765625 `
+- **Targets**: Stop Loss ` 4220.28 ` | Take Profit ` 4131.23 `
+- **Holding Time**: `14.4 hours` (58 bars)
+- **Window**: `2026-09-30 15:30:00 UTC` ➔ `2026-10-01 05:54:18 UTC`
+
+#### 📊 Excursion & Market Regime
+| Metric | Value | Detail |
+| :--- | :--- | :--- |
+| **Max Favorable Excursion (MFE)** | `+185.0 pips` | Reached `+0.57R` (32.6% of TP) |
+| **Max Adverse Excursion (MAE)** | `-349.0 pips` | Deepest drawdown `-1.08R` |
+| **Session** | `London/New York Overlap` | Institutional Market Timing |
+| **Entry RSI (14)** | `50.0` | Momentum Baseline |
+| **EMA Alignment** | `BEARISH_EXPANDING` | Structural Trend Bias |
+
+#### 🔬 Post-Mortem Diagnosis: `STRUCTURAL_INVALIDATION`
+> **Analysis**: Order block level was invalidated by institutional flow after 1 bar(s). Stop-loss executed disciplined capital preservation.
+>
+> **Actionable Takeaway**: Trade adhered strictly to risk geometry. Invalidation was clean and preserved capital.
+
+---
+
