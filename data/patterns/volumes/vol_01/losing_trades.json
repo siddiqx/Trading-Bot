@@ -313,5 +313,50 @@
       "summary": "Signal triggered during Asian/Tokyo Session. Lower institutional volume led to whipsaw without sustainable directional continuation.",
       "actionable_insight": "Restrict or weight signal scoring lower during off-peak liquidity windows."
     }
+  },
+  {
+    "tracking": {
+      "global_trade_no": 10,
+      "volume_no": 1,
+      "volume_trade_no": 10,
+      "volume_id": "VOL_01",
+      "volume_label": "Volume 1 (Trades 1\u2013100)"
+    },
+    "trade_id": "USDCAD_15M_2026-10-01T19:45:00Z_SHORT",
+    "pair": "USDCAD",
+    "symbol": "USDCAD",
+    "timeframe": "15M",
+    "direction": "SHORT",
+    "entry_price": 1.42258,
+    "exit_price": 1.4226100444793701,
+    "stop_loss": 1.42438,
+    "take_profit": 1.4191,
+    "opened_at": "2026-10-01T19:45:00Z",
+    "closed_at": "2026-10-02T07:46:30Z",
+    "duration_hours": 12.03,
+    "duration_bars": 48,
+    "outcome": "LOSS",
+    "realized_pips": -0.3,
+    "realized_r": -0.02,
+    "excursion_metrics": {
+      "mfe_pips": 20.8,
+      "mfe_r": 1.16,
+      "mae_pips": -9.7,
+      "mae_r": -0.54,
+      "tp_distance_pct_reached": 59.8
+    },
+    "market_regime": {
+      "trading_session": "New York Afternoon",
+      "rsi_at_entry": 50.0,
+      "atr_14": 0.0015,
+      "volatility_regime": "NORMAL",
+      "ema_alignment": "BEARISH_EXPANDING",
+      "breakout_candle_wick_ratio": 0.28
+    },
+    "diagnostic": {
+      "primary_factor": "PREMATURE_REVERSAL",
+      "summary": "Position reached +20.8 pips (+1.16R / 59.8% of TP) before aggressive counter-trend reversal hit stop-loss.",
+      "actionable_insight": "Incorporate a Breakeven Protection rule once position reaches +0.8R or 50% TP distance."
+    }
   }
 ]

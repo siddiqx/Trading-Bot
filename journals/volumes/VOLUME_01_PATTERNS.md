@@ -230,3 +230,28 @@
 
 ---
 
+### #10 · USDCAD (15M) — 🛑 LOSS (-1.00R)
+
+- **Global Sequence**: Trade `#10`
+- **Direction**: `SHORT` | **Outcome**: `LOSS` (`-0.3 pips` / `-0.02R`)
+- **Execution Range**: Entry ` 1.42258 ` ➔ Exit ` 1.4226100444793701 `
+- **Targets**: Stop Loss ` 1.42438 ` | Take Profit ` 1.4191 `
+- **Holding Time**: `12.03 hours` (48 bars)
+- **Window**: `2026-10-01 19:45:00 UTC` ➔ `2026-10-02 07:46:30 UTC`
+
+#### 📊 Excursion & Market Regime
+| Metric | Value | Detail |
+| :--- | :--- | :--- |
+| **Max Favorable Excursion (MFE)** | `+20.8 pips` | Reached `+1.16R` (59.8% of TP) |
+| **Max Adverse Excursion (MAE)** | `-9.7 pips` | Deepest drawdown `-0.54R` |
+| **Session** | `New York Afternoon` | Institutional Market Timing |
+| **Entry RSI (14)** | `50.0` | Momentum Baseline |
+| **EMA Alignment** | `BEARISH_EXPANDING` | Structural Trend Bias |
+
+#### 🔬 Post-Mortem Diagnosis: `PREMATURE_REVERSAL`
+> **Analysis**: Position reached +20.8 pips (+1.16R / 59.8% of TP) before aggressive counter-trend reversal hit stop-loss.
+>
+> **Actionable Takeaway**: Incorporate a Breakeven Protection rule once position reaches +0.8R or 50% TP distance.
+
+---
+
