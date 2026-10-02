@@ -1717,35 +1717,59 @@ def run_scan_cycle():
 
 if __name__ == "__main__":
     if len(sys.argv) > 1 and sys.argv[1] == "--test":
+        # Developer test: fire a sample alert to verify Telegram formatting
         df = fetch_candles("EURUSD=X", "15m", range_days="2d")
         if not df.empty:
-            df = compute_indicators(df, 20)
+            df = compute_indicators(df, donchian_len=15)  # 15-bar Forex Donchian
             c = df.iloc[-1]
             live_price = round(c["close"], 5)
             atr = c["atr"]
-            sl = round(live_price - (1.5 * atr), 5)
-            tp = round(live_price + (1.5 * atr * 1.75), 5)
+            sl_dist = round(max(18 * 0.0001, min(65 * 0.0001, 1.5 * atr)), 5)
+            sl = round(live_price - sl_dist, 5)
+            tp = round(live_price + (sl_dist * 1.75), 5)  # 1.75R placeholder for test display
             test_sig = {
+                "id": "EURUSD_15M_TEST_LONG",
                 "pair": "EURUSD",
                 "timeframe": "15M",
                 "direction": "LONG",
+                "time": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
                 "entry": live_price,
+                "bar_close_price": live_price,
+                "ote_entry": round(live_price - 0.5 * sl_dist, 5),
+                "valid_zone_low": round(live_price - 0.5 * sl_dist, 5),
+                "valid_zone_high": round(live_price + 3.5 * 0.0001, 5),
+                "max_chase_price": round(live_price + 3.5 * 0.0001, 5),
+                "max_chase_pips": 3.5,
                 "stop_loss": sl,
                 "take_profit": tp,
-                "sl_pips": round((live_price - sl) / 0.0001, 1),
+                "sl_pips": round(sl_dist / 0.0001, 1),
                 "tp_pips": round((tp - live_price) / 0.0001, 1),
                 "rr": 1.75,
-                "rsi": round(c["rsi"], 1),
+                "target_type": "BSL Pool (Buy-Side Liquidity)",
+                "donchian_len": 15,
+                "rsi": round(float(c["rsi"]), 1),
                 "atr": round(atr / 0.0001, 1),
-                "score": 95,
-                "time": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+                "adx": round(float(c["adx"]), 1) if "adx" in c.index else 15.0,
+                "adx_regime": "Low ADX / Range (Optimal)",
+                "session": "London Session",
+                "session_icon": "\U0001f1ec\U0001f1e7",
+                "score": 96,
+                "lf_trigger": None
             }
         else:
             test_sig = {
+                "id": "EURUSD_15M_TEST_LONG",
                 "pair": "EURUSD", "timeframe": "15M", "direction": "LONG",
-                "entry": 1.1382, "stop_loss": 1.1350, "take_profit": 1.1438,
-                "sl_pips": 32.0, "tp_pips": 56.0, "rr": 1.75, "rsi": 54.0,
-                "atr": 12.0, "score": 95, "time": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+                "time": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "entry": 1.08250, "bar_close_price": 1.08250,
+                "ote_entry": 1.08195, "valid_zone_low": 1.08195, "valid_zone_high": 1.08285,
+                "max_chase_price": 1.08285, "max_chase_pips": 3.5,
+                "stop_loss": 1.08030, "take_profit": 1.08640,
+                "sl_pips": 22.0, "tp_pips": 39.0, "rr": 1.77,
+                "target_type": "BSL Pool (Buy-Side Liquidity)", "donchian_len": 15,
+                "rsi": 54.0, "atr": 14.5, "adx": 14.2, "adx_regime": "Low ADX / Range (Optimal)",
+                "session": "London Session", "session_icon": "\U0001f1ec\U0001f1e7",
+                "score": 96, "lf_trigger": None
             }
         msg = format_alert_message(test_sig)
         send_telegram_alert(msg)
