@@ -20,25 +20,6 @@
       "status": "OPEN",
       "filled_at": "2026-10-01T15:00:00Z"
     },
-    "XAUUSD": {
-      "trade_id": "XAUUSD_15M_2026-10-01T17:30:00Z_LONG",
-      "pair": "XAUUSD",
-      "symbol": "XAUUSD",
-      "ticker": "PAXGUSDT",
-      "direction": "LONG",
-      "timeframe": "15M",
-      "entry": 4181.5,
-      "stop_loss": 4160.33,
-      "take_profit": 4226.9,
-      "sl_pips": 211.7,
-      "tp_pips": 454.0,
-      "rr": 2.14,
-      "pip": 0.1,
-      "digits": 2,
-      "opened_at": "2026-10-01T17:30:00Z",
-      "status": "OPEN",
-      "filled_at": "2026-10-01T17:30:00Z"
-    },
     "USDCAD": {
       "trade_id": "USDCAD_15M_2026-10-01T19:45:00Z_SHORT",
       "pair": "USDCAD",
@@ -221,6 +202,30 @@
       "realized_r": -0.35,
       "closed_at": "2026-10-01T05:54:18Z",
       "exit_reason": "EMA20_INVALIDATION"
+    },
+    {
+      "trade_id": "XAUUSD_15M_2026-10-01T17:30:00Z_LONG",
+      "pair": "XAUUSD",
+      "symbol": "XAUUSD",
+      "ticker": "PAXGUSDT",
+      "direction": "LONG",
+      "timeframe": "15M",
+      "entry": 4181.5,
+      "stop_loss": 4160.33,
+      "take_profit": 4226.9,
+      "sl_pips": 211.7,
+      "tp_pips": 454.0,
+      "rr": 2.14,
+      "pip": 0.1,
+      "digits": 2,
+      "opened_at": "2026-10-01T17:30:00Z",
+      "status": "CLOSED",
+      "filled_at": "2026-10-01T17:30:00Z",
+      "exit_price": 4160.33,
+      "outcome": "LOSS",
+      "realized_pips": -211.7,
+      "realized_r": -1.0,
+      "closed_at": "2026-10-02T00:16:18Z"
     }
   ]
 }
