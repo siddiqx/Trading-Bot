@@ -403,5 +403,50 @@
       "summary": "Order block level was invalidated by institutional flow after 1 bar(s). Stop-loss executed disciplined capital preservation.",
       "actionable_insight": "Trade adhered strictly to risk geometry. Invalidation was clean and preserved capital."
     }
+  },
+  {
+    "tracking": {
+      "global_trade_no": 12,
+      "volume_no": 1,
+      "volume_trade_no": 12,
+      "volume_id": "VOL_01",
+      "volume_label": "Volume 1 (Trades 1\u2013100)"
+    },
+    "trade_id": "XAUUSD_15M_2026-10-02T12:45:00Z_LONG",
+    "pair": "XAUUSD",
+    "symbol": "XAUUSD",
+    "timeframe": "15M",
+    "direction": "LONG",
+    "entry_price": 4210.2,
+    "exit_price": 4175.2,
+    "stop_loss": 4175.2,
+    "take_profit": 4271.45,
+    "opened_at": "2026-10-02T12:45:00Z",
+    "closed_at": "2026-10-02T14:31:39Z",
+    "duration_hours": 1.78,
+    "duration_bars": 7,
+    "outcome": "LOSS",
+    "realized_pips": -350.0,
+    "realized_r": -1.0,
+    "excursion_metrics": {
+      "mfe_pips": 20.0,
+      "mfe_r": 0.06,
+      "mae_pips": -462.0,
+      "mae_r": -1.32,
+      "tp_distance_pct_reached": 3.3
+    },
+    "market_regime": {
+      "trading_session": "London/New York Overlap",
+      "rsi_at_entry": 50.0,
+      "atr_14": 0.0015,
+      "volatility_regime": "NORMAL",
+      "ema_alignment": "BULLISH_EXPANDING",
+      "breakout_candle_wick_ratio": 0.28
+    },
+    "diagnostic": {
+      "primary_factor": "STRUCTURAL_INVALIDATION",
+      "summary": "Order block level was invalidated by institutional flow after 1 bar(s). Stop-loss executed disciplined capital preservation.",
+      "actionable_insight": "Trade adhered strictly to risk geometry. Invalidation was clean and preserved capital."
+    }
   }
 ]
