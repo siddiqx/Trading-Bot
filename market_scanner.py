@@ -1151,8 +1151,8 @@ def find_ict_liquidity_target(
                 rr = max_rr
                 tp = entry + (sl_dist * max_rr)
             return float(tp), float(round(rr, 2)), "BSL Pool (Buy-Side Liquidity)"
-        # No clear structural BSL: use default_rr but flag it as expansion
-        return float(entry + (sl_dist * default_rr)), float(default_rr), "Structural Expansion (1.75R)"
+        # No clear structural BSL meeting minimum R:R: reject setup (do not force arbitrary 1.75R)
+        return None, 0.0, None
     else:
         ssl_candidates = []
         # Search backwards for confirmed 5-bar fractal swing lows
@@ -1169,7 +1169,45 @@ def find_ict_liquidity_target(
                 rr = max_rr
                 tp = entry - (sl_dist * max_rr)
             return float(tp), float(round(rr, 2)), "SSL Pool (Sell-Side Liquidity)"
-        return float(entry - (sl_dist * default_rr)), float(default_rr), "Structural Expansion (1.75R)"
+        # No clear structural SSL meeting minimum R:R: reject setup (do not force arbitrary 1.75R)
+        return None, 0.0, None
+
+
+def check_htf_alignment(ticker: str, tf: str, is_long: bool) -> tuple[bool, str]:
+    """
+    Higher-Timeframe (HTF) Trend Agreement Verification:
+      - 15M setups require 1H EMA20 > EMA50 alignment.
+      - 1H setups require Daily (1D) EMA20 > EMA50 alignment.
+    Returns (is_aligned: bool, htf_description: str).
+    """
+    htf = "1h" if tf == "15m" else "1d"
+    range_days = "7d" if htf == "1h" else "60d"
+    try:
+        df_htf = fetch_candles(ticker, htf, range_days=range_days)
+        if df_htf.empty or len(df_htf) < 20:
+            logger.warning(f"HTF data sparse for {ticker} ({htf}), allowing setup with local trend.")
+            return True, f"{htf.upper()} Trend Unverified (Sparse Data)"
+
+        df_htf = compute_indicators(df_htf, donchian_len=20)
+        now_utc = datetime.now(timezone.utc)
+        delta = pd.Timedelta(hours=1) if htf == "1h" else pd.Timedelta(days=1)
+        df_htf["close_time"] = df_htf["time"] + delta
+        closed_htf = df_htf[df_htf["close_time"] <= now_utc]
+        if len(closed_htf) < 5:
+            return True, f"{htf.upper()} Trend Unverified"
+
+        c = closed_htf.iloc[-1]
+        if is_long:
+            aligned = bool((c["close"] > c["ema50"]) and (c["ema20"] >= c["ema50"]))
+            desc = f"{htf.upper()} Bullish Aligned (EMA20 > EMA50)" if aligned else f"{htf.upper()} Trend Conflict (Bearish/Neutral)"
+            return aligned, desc
+        else:
+            aligned = bool((c["close"] < c["ema50"]) and (c["ema20"] <= c["ema50"]))
+            desc = f"{htf.upper()} Bearish Aligned (EMA20 < EMA50)" if aligned else f"{htf.upper()} Trend Conflict (Bullish/Neutral)"
+            return aligned, desc
+    except Exception as e:
+        logger.warning(f"Error checking HTF alignment for {ticker} ({htf}): {e}")
+        return True, f"{htf.upper()} Trend Fallback"
 
 
 def scan_pair_timeframe(pair_name: str, config: dict, tf: str, state: dict) -> list:
@@ -1184,10 +1222,11 @@ def scan_pair_timeframe(pair_name: str, config: dict, tf: str, state: dict) -> l
     
     now_utc = datetime.now(timezone.utc)
 
-    # High-liquidity Session Guard: Restrict new signal generation to Frankfurt/London/NY hours (05:00 to 21:00 UTC).
-    # Captures European open momentum through late NY session while protecting against overnight Asian chop.
-    if not (5 <= now_utc.hour <= 21):
-        logger.info(f"Skipping {pair_name} ({tf}): Current time {now_utc.strftime('%H:%M')} UTC outside active liquidity hours (05:00 - 21:00 UTC).")
+    # Forex Market Hours Guard: Skip weekends (markets closed Friday 21:00 UTC to Sunday 21:00 UTC)
+    weekday = now_utc.weekday()
+    hour = now_utc.hour
+    if (weekday == 4 and hour >= 21) or (weekday == 5) or (weekday == 6 and hour < 21):
+        logger.info(f"Skipping {pair_name} ({tf}): Forex market closed for the weekend.")
         return []
 
     # London/New York Overlap Whipsaw Guard: Restrict new breakout signal generation between 12:00 and 16:00 UTC.
@@ -1216,10 +1255,9 @@ def scan_pair_timeframe(pair_name: str, config: dict, tf: str, state: dict) -> l
     closed_bar = closed_bars.iloc[-1]
     prev_bar = closed_bars.iloc[-2]
     
-    # Freshness guard: Only fire a signal within 5 minutes of the bar closing (15M) or 20 minutes (1H).
-    # This prevents stale signals where price has already moved far from entry.
-    # Deduplication via state['alerted_signals'] ensures no double-firing.
-    max_age_seconds = 300 if tf == "15m" else 1200
+    # Freshness guard: 12 minutes for 15M (720s) and 30 minutes for 1H (1800s).
+    # Accommodates cloud runner scheduling jitter while max_chase_pips strictly prevents price drift.
+    max_age_seconds = 720 if tf == "15m" else 1800
     seconds_since_close = (now_utc - closed_bar["close_time"]).total_seconds()
     if seconds_since_close > max_age_seconds:
         logger.info(f"Skipping {pair_name} ({tf}): Bar closed {int(seconds_since_close)}s ago (exceeds {max_age_seconds}s freshness limit). Live price may have drifted.")
@@ -1251,8 +1289,12 @@ def scan_pair_timeframe(pair_name: str, config: dict, tf: str, state: dict) -> l
     # ADX <20  (Low ADX / Choppy) = 54.5% WR, +0.32R expectancy, 1.88 PF (paradoxically best).
     # ADX >30  (Strong Trend)     = 45.9% WR, +0.092R expectancy, 1.19 PF (acceptable).
     # ACTION: Block new signals when ADX is in the 20-30 killing zone.
-    adx = closed_bar.get("adx", 0) if hasattr(closed_bar, 'get') else getattr(closed_bar, 'adx', 0)
-    adx_val = float(adx) if adx and not np.isnan(float(adx)) else 0.0
+    # ADX: closed_bar is a pandas Series (iloc[-1]); use bracket access, not .get()
+    try:
+        adx_raw = closed_bar["adx"]
+        adx_val = float(adx_raw) if (adx_raw is not None and not np.isnan(float(adx_raw))) else 0.0
+    except (KeyError, TypeError, ValueError):
+        adx_val = 0.0
     if 20.0 < adx_val < 30.0:
         logger.info(
             f"Skipping {pair_name} ({tf}): ADX={adx_val:.1f} is in the moderate-trend killing zone (20-30). "
@@ -1271,7 +1313,6 @@ def scan_pair_timeframe(pair_name: str, config: dict, tf: str, state: dict) -> l
     else:
         min_sl_dist = 18.0 * pip
         max_sl_dist = 65.0 * pip
-    rr_ratio = 1.75
 
     # ADX regime label for signal metadata
     if adx_val < 20.0:
@@ -1285,6 +1326,12 @@ def scan_pair_timeframe(pair_name: str, config: dict, tf: str, state: dict) -> l
     if long_breakout and bullish_trend and rsi_bullish_ok:
         sig_id = f"{pair_name}_{tf.upper()}_{bar_time_str}_LONG"
         if sig_id not in state["alerted_signals"]:
+            # Higher-Timeframe Alignment Gate (Forensic Audit Improvement #3)
+            htf_aligned, htf_desc = check_htf_alignment(ticker, tf, is_long=True)
+            if not htf_aligned:
+                logger.info(f"Skipping {pair_name} ({tf}) LONG: HTF trend conflict — {htf_desc}")
+                return signals
+
             # Find Origin Order Block: last down-close candle prior to displacement
             ob_low = closed_bar["low"]
             closed_idx = closed_bars.index[-1]
@@ -1302,8 +1349,7 @@ def scan_pair_timeframe(pair_name: str, config: dict, tf: str, state: dict) -> l
             if live_price is None:
                 live_price = bar_close_price  # fallback to bar close if live fetch fails
 
-            # For a LONG, if live price is *below* the breakout level, setup may have failed.
-            # If live price has run more than max_chase_pips ABOVE bar close, price is extended — skip.
+            # For a LONG, if live price has run more than max_chase_pips ABOVE bar close, price is extended — skip.
             max_chase_pips = 25.0 if pair_name == "XAUUSD" else 3.5
             max_chase_price_check = bar_close_price + (max_chase_pips * pip)
             if live_price > max_chase_price_check:
@@ -1319,6 +1365,11 @@ def scan_pair_timeframe(pair_name: str, config: dict, tf: str, state: dict) -> l
 
             # ICT Liquidity Target: Target nearest un-swept Buy-Side Liquidity (BSL)
             take_profit, calc_rr, pool_name = find_ict_liquidity_target(df, entry, sl_dist, is_long=True)
+
+            # Structural TP guard: if no qualifying BSL pool found, reject setup entirely
+            if take_profit is None:
+                logger.info(f"Skipping {pair_name} ({tf}) LONG: No qualifying BSL liquidity pool found (min 1.5R). Setup structurally weak.")
+                return signals
 
             # ICT Multi-Timeframe Entry Modeling (50% Consequent Encroachment / OTE Retest)
             # OTE zone is still based on bar-close structure (the origin OB)
@@ -1338,6 +1389,10 @@ def scan_pair_timeframe(pair_name: str, config: dict, tf: str, state: dict) -> l
                 sl_dist = float(max(min_sl_dist, min(max_sl_dist, entry - float(ob_low - 0.50 * atr))))
                 stop_loss = float(entry - sl_dist)
                 take_profit, calc_rr, pool_name = find_ict_liquidity_target(df, entry, sl_dist, is_long=True)
+                # Re-check structural TP after precision entry adjustment
+                if take_profit is None:
+                    logger.info(f"Skipping {pair_name} ({tf}) LONG: No BSL pool after 5M precision entry adjustment.")
+                    return signals
 
             # --- Signal Score Calculation (0-100) ---
             # Base score for a clean structural breakout with trend + RSI confluence
@@ -1396,6 +1451,12 @@ def scan_pair_timeframe(pair_name: str, config: dict, tf: str, state: dict) -> l
     if short_breakout and bearish_trend and rsi_bearish_ok:
         sig_id = f"{pair_name}_{tf.upper()}_{bar_time_str}_SHORT"
         if sig_id not in state["alerted_signals"]:
+            # Higher-Timeframe Alignment Gate (Forensic Audit Improvement #3)
+            htf_aligned, htf_desc = check_htf_alignment(ticker, tf, is_long=False)
+            if not htf_aligned:
+                logger.info(f"Skipping {pair_name} ({tf}) SHORT: HTF trend conflict — {htf_desc}")
+                return signals
+
             # Find Origin Order Block: last up-close candle prior to displacement
             ob_high = closed_bar["high"]
             closed_idx = closed_bars.index[-1]
@@ -1427,6 +1488,11 @@ def scan_pair_timeframe(pair_name: str, config: dict, tf: str, state: dict) -> l
             # ICT Liquidity Target: Target nearest un-swept Sell-Side Liquidity (SSL)
             take_profit, calc_rr, pool_name = find_ict_liquidity_target(df, entry, sl_dist, is_long=False)
 
+            # Structural TP guard: if no qualifying SSL pool found, reject setup entirely
+            if take_profit is None:
+                logger.info(f"Skipping {pair_name} ({tf}) SHORT: No qualifying SSL liquidity pool found (min 1.5R). Setup structurally weak.")
+                return signals
+
             # ICT Multi-Timeframe Entry Modeling (50% Consequent Encroachment / OTE Retest)
             disp_range = ob_high - bar_close_price
             ote_entry = round(bar_close_price + (0.50 * disp_range), digits)
@@ -1444,6 +1510,10 @@ def scan_pair_timeframe(pair_name: str, config: dict, tf: str, state: dict) -> l
                 sl_dist = float(max(min_sl_dist, min(max_sl_dist, float(ob_high + 0.50 * atr) - entry)))
                 stop_loss = float(entry + sl_dist)
                 take_profit, calc_rr, pool_name = find_ict_liquidity_target(df, entry, sl_dist, is_long=False)
+                # Re-check structural TP after precision entry adjustment
+                if take_profit is None:
+                    logger.info(f"Skipping {pair_name} ({tf}) SHORT: No SSL pool after 5M precision entry adjustment.")
+                    return signals
 
             # --- Signal Score Calculation (0-100) ---
             sig_score = 92

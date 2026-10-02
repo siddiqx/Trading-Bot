@@ -337,24 +337,23 @@ def test_find_ict_liquidity_target_short_ssl():
     assert "SSL Pool" in pool_name
 
 
-def test_find_ict_liquidity_target_fallback():
-    """Ensure find_ict_liquidity_target falls back to 1.75R expansion when no qualifying pool exists."""
+def test_find_ict_liquidity_target_no_qualifying_pool():
+    # v2 behavior: no 1.75R fallback. Returns (None, None, None) when no BSL pool qualifies.
     from market_scanner import find_ict_liquidity_target
 
-    # Monotonically increasing bars (no overhead swing high)
+    # Monotonically increasing bars: no overhead swing high exists to target
     highs = [1.1000 + (0.0010 * i) for i in range(15)]
     lows = [h - 0.0010 for h in highs]
-    df = pd.DataFrame({"high": highs, "low": lows})
+    df = pd.DataFrame(dict(high=highs, low=lows))
 
     entry = highs[-1]
     sl_dist = 0.0020
 
     tp, rr, pool_name = find_ict_liquidity_target(df, entry=entry, sl_dist=sl_dist, is_long=True)
 
-    expected_tp = entry + (sl_dist * 1.75)
-    assert round(tp, 5) == round(expected_tp, 5)
-    assert rr == 1.75
-    assert "Structural Expansion" in pool_name
+    assert tp is None
+    assert rr == 0.0  # function returns 0.0 (not None) when no pool found
+    assert pool_name is None
 
 
 def test_check_active_trades_ema20_invalidation_exit(monkeypatch):
