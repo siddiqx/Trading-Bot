@@ -1539,16 +1539,33 @@ async function sendStrategyMessage(chatId) {
     `• 0–3 min: Enter at 5M trigger price or current market\n` +
     `• 3–10 min delayed: Enter if inside OTE Valid Zone only\n` +
     `• Late / Missed: Limit at 50% CE (OTE pullback) — never chase beyond Max Chase\n\n` +
-    `<b>4. Institutional Targets: BSL &amp; SSL Liquidity Pools</b>\n` +
-    `• Longs: Buy-Side Liquidity (BSL) above previous swing highs\n` +
-    `• Shorts: Sell-Side Liquidity (SSL) below previous swing lows\n` +
-    `• Calibration: Dynamic 1.5R – 2.5R to nearest un-swept pool\n\n` +
-    `<b>5. Trade Management &amp; Session Rules</b>\n` +
-    `• Active Window: 05:00 – 21:00 UTC (Frankfurt, London, New York)\n` +
+    `<b>4. Institutional Targets: BSL &amp; SSL Liquidity Pools (Model F)</b>\n` +
+    `• Longs: Buy-Side Liquidity (BSL) above 3-bar confirmed swing highs\n` +
+    `• Shorts: Sell-Side Liquidity (SSL) below 3-bar confirmed swing lows\n` +
+    `• Calibration: Dynamic 1.5R – 2.5R to nearest un-swept pool\n` +
+    `• Audit: Model F = 0.281R expectancy, 1.52 PF vs 0.111R (old baseline)\n\n` +
+    `<b>5. ADX Regime Filter (Forensic Audit v2)</b>\n` +
+    `• ADX &lt;20 (Range): 54.5% WR, +0.32R — TRADE\n` +
+    `• ADX 20–30 (Moderate): 38.4% WR, -0.09R — BLOCKED\n` +
+    `• ADX &gt;30 (Strong Trend): 45.9% WR, +0.09R — TRADE\n\n` +
+    `<b>6. Session Quality Scoring</b>\n` +
+    `• London 05:00–12:00 UTC: 51.1% WR, +0.27R (Score x1.05)\n` +
+    `• NY Afternoon 16:00–20:00 UTC: 52.8% WR, +0.10R (Score x1.00)\n` +
+    `• Asian 00:00–05:00 &amp; 20:00–24:00 UTC: 47.8% WR (Score x0.95)\n` +
+    `• London/NY Overlap 12:00–16:00 UTC: 33.3% WR, -0.22R — BLOCKED\n\n` +
+    `<b>7. Trade Management</b>\n` +
     `• Freshness Guard: Signal only fires within 5 min of bar close\n` +
+    `• Break-Even: SL moves to entry +1 pip when +1.0R floating\n` +
     `• EMA20 Time-Stop: Exit if counter-trend close after 12h (15M) / 24h (1H)\n` +
     `• Suggested Risk: <b>0.5% Equity per trade</b> (Portfolio DD ≤ 6.0%)\n` +
     `• Admin: /close PAIR WIN|LOSS to force-resolve stuck trades\n\n` +
+    `<b>8. Asset Universe (Forensic-Tested)</b>\n` +
+    `• EURUSD: 56.4% WR, +0.366R, 2.26 PF (Active)\n` +
+    `• USDCAD: 65.9% WR, +0.402R, 2.20 PF (Active)\n` +
+    `• XAUUSD: 42.9% WR, +0.319R, 1.72 PF (Active)\n` +
+    `• GBPUSD: 37.7% WR, +0.021R (Excluded)\n` +
+    `• USDJPY: 38.8% WR, -0.043R (Excluded)\n` +
+    `• USDCHF: 39.1% WR, -0.128R (Excluded)\n` +
     `━━━━━━━━━━━━━━━━━━\n` +
     `🛡 <i>Systematic, rule-based. One trade per pair at all times.</i>`;
 

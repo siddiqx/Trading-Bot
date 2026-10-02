@@ -2,9 +2,14 @@ name: 24/7 Cloud Market Scanner
 
 on:
   schedule:
-    # Run every 15 minutes during Forex market hours (Mon-Fri)
-    - cron: '*/15 * * * 1-5'
-  workflow_dispatch: # Allows manual trigger from GitHub web UI at any time
+    # Run every 15 minutes during Forex market hours (Mon-Fri, 05:00-21:00 UTC)
+    - cron: '*/15 5-21 * * 1-5'
+  workflow_dispatch: # Manual trigger from GitHub web UI at any time
+
+# Prevent concurrent runs from racing each other and double-firing signals
+concurrency:
+  group: market-scanner
+  cancel-in-progress: false  # Never cancel a running scan — let it finish
 
 permissions:
   contents: write
@@ -12,9 +17,13 @@ permissions:
 jobs:
   scan-markets:
     runs-on: ubuntu-latest
+    timeout-minutes: 8  # Hard cap: scanner must complete within 8 min or be killed
+
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -24,16 +33,25 @@ jobs:
 
       - name: Install Dependencies
         run: |
-          pip install httpx pandas numpy
+          pip install --quiet httpx pandas numpy
 
       - name: Restore Signal State Cache
+        id: cache-restore
         uses: actions/cache@v4
         with:
-          path: |
-            market_scanner_state.json
+          path: market_scanner_state.json
           key: market-state-${{ github.run_id }}
           restore-keys: |
             market-state-
+
+      - name: Verify State Restored
+        run: |
+          if [ -f market_scanner_state.json ]; then
+            echo "State file restored: $(cat market_scanner_state.json | python3 -c 'import sys,json; d=json.load(sys.stdin); print(f\"{len(d.get(\"alerted_signals\",[]))} signals in state\")')"
+          else
+            echo "No state cache found — starting fresh (first run or cache expired)"
+            echo '{"alerted_signals":[]}' > market_scanner_state.json
+          fi
 
       - name: Execute Market Scan
         env:
@@ -47,17 +65,18 @@ jobs:
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git pull --rebase origin main || true
           if [ -n "$(git status --porcelain trade_records.json data/ journals/)" ]; then
             git add trade_records.json data/ journals/
-            git commit -m "chore(ledger): update trade records and post-mortem journals"
-            git pull --rebase origin main || true
+            git commit -m "chore(ledger): update trade records and post-mortem journals [skip ci]"
             git push origin main
+          else
+            echo "No trade record changes to commit."
           fi
 
       - name: Save Signal State Cache
         uses: actions/cache@v4
         if: always()
         with:
-          path: |
-            market_scanner_state.json
+          path: market_scanner_state.json
           key: market-state-${{ github.run_id }}

@@ -130,14 +130,65 @@
 
 ---
 
-### #6 · EURUSD (1H) — 🛑 LOSS (-1.00R)
+### #6 · XAUUSD (15M) — 🛑 LOSS (-0.35R)
 
 - **Global Sequence**: Trade `#6`
+- **Direction**: `SHORT` | **Outcome**: `LOSS` (`-112.0 pips` / `-0.35R`)
+- **Execution Range**: Entry ` 4187.9 ` ➔ Exit ` 4199.1 `
+- **Targets**: Stop Loss ` 4220.28 ` | Take Profit ` 4131.23 `
+- **Holding Time**: `14.4 hours` (58 bars)
+- **Window**: `2026-09-30 15:30:00 UTC` ➔ `2026-10-01 05:54:18 UTC`
+- **Exit Reason**: `EMA20_INVALIDATION`
+
+#### 📊 Excursion & Market Regime
+| Metric | Value | Detail |
+| :--- | :--- | :--- |
+| **Max Favorable Excursion (MFE)** | `+402.5 pips` | Reached `+1.24R` (71.0% of TP) |
+| **Max Adverse Excursion (MAE)** | `-86.8 pips` | Deepest drawdown `-0.27R` |
+| **Session** | `London/New York Overlap` | Institutional Market Timing |
+| **Entry RSI (14)** | `50.0` | Momentum Baseline |
+| **EMA Alignment** | `BEARISH_EXPANDING` | Structural Trend Bias |
+
+#### 🔬 Post-Mortem Diagnosis: `PREMATURE_REVERSAL`
+> **Analysis**: Position moved aggressively in favor (+402.5 pips / +1.24R) before multi-session counter-trend retracement triggered dynamic EMA20 invalidation.
+>
+> **Actionable Takeaway**: Model H Break-Even protection rule locks in risk-free status once +1.0R is achieved.
+
+---
+
+### #7 · EURUSD (15M) — 🎯 WIN (+1.75R)
+
+- **Global Sequence**: Trade `#7`
+- **Direction**: `SHORT` | **Outcome**: `WIN` (`+44.7 pips` / `+1.75R`)
+- **Execution Range**: Entry ` 1.12778 ` ➔ Exit ` 1.12330 `
+- **Targets**: Stop Loss ` 1.13033 ` | Take Profit ` 1.12330 `
+- **Holding Time**: `0.83 hours` (3 bars)
+- **Window**: `2026-10-01 14:45:00 UTC` ➔ `2026-10-01 15:35:00 UTC`
+
+#### 📊 Excursion & Market Regime
+| Metric | Value | Detail |
+| :--- | :--- | :--- |
+| **Max Favorable Excursion (MFE)** | `+53.2 pips` | Reached `+2.09R` (118.7% of TP) |
+| **Max Adverse Excursion (MAE)** | `-11.4 pips` | Deepest drawdown `-0.45R` |
+| **Session** | `London/New York Overlap` | Institutional Market Timing |
+| **Entry RSI (14)** | `50.0` | Momentum Baseline |
+| **EMA Alignment** | `BEARISH_EXPANDING` | Structural Trend Bias |
+
+#### 🔬 Post-Mortem Diagnosis: `CLEAN_MOMENTUM_EXPANSION`
+> **Analysis**: Clean displacement bar triggered rapid 3-bar expansion directly to target with minimal drawdown.
+>
+> **Actionable Takeaway**: Validates 15M breakout trigger when accompanied by solid candle body displacement.
+
+---
+
+### #8 · EURUSD (1H) — 🛑 LOSS (-1.00R)
+
+- **Global Sequence**: Trade `#8`
 - **Direction**: `LONG` | **Outcome**: `LOSS` (`-10.0 pips` / `-0.17R`)
 - **Execution Range**: Entry ` 1.136 ` ➔ Exit ` 1.135 `
 - **Targets**: Stop Loss ` 1.13 ` | Take Profit ` 1.146 `
-- **Holding Time**: `86.59 hours` (87 bars)
-- **Window**: `2026-09-27 10:00:00 UTC` ➔ `2026-10-01 00:35:33 UTC`
+- **Holding Time**: `120.48 hours` (120 bars)
+- **Window**: `2026-09-27 10:00:00 UTC` ➔ `2026-10-02 10:28:52 UTC`
 
 #### 📊 Excursion & Market Regime
 | Metric | Value | Detail |

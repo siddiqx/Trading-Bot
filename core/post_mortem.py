@@ -102,14 +102,18 @@ def calculate_excursion(
             if adverse < mae_pips:
                 mae_pips = adverse
     else:
-        # Fallback approximation based on realized outcome
+        # Fallback when bar DataFrame is not passed: avoid fabricating synthetic metrics.
+        # Report honest realized outcome without inventing positive MFE or negative MAE.
         realized_pips = float(trade.get("realized_pips", 0.0))
         if trade.get("outcome") == "WIN":
-            mfe_pips = realized_pips
-            mae_pips = -0.2 * abs(realized_pips)
+            mfe_pips = max(0.0, realized_pips)
+            mae_pips = 0.0
+        elif trade.get("outcome") == "BREAK_EVEN":
+            mfe_pips = max(0.0, realized_pips)
+            mae_pips = 0.0
         else:
-            mfe_pips = max(0.0, 0.25 * abs(realized_pips))
-            mae_pips = realized_pips
+            mfe_pips = 0.0
+            mae_pips = -abs(realized_pips)
 
     target_pips = abs(tp - entry) / pip if pip > 0 else 1.0
     tp_pct_reached = min(100.0, max(0.0, (mfe_pips / target_pips) * 100)) if target_pips > 0 else 0.0

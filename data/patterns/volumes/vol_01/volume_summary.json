@@ -17,7 +17,8 @@
     "LOW_LIQUIDITY_CHOP": 2
   },
   "top_win_factors": {
-    "HIGH_VELOCITY_BREAKOUT": 2
+    "HIGH_VELOCITY_BREAKOUT": 2,
+    "CLEAN_MOMENTUM_EXPANSION": 1
   },
   "last_updated": "2026-10-02T15:01:35Z"
 }
