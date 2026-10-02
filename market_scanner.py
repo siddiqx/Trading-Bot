@@ -1121,8 +1121,8 @@ def find_ict_liquidity_target(
       - Model F: 0.281R expectancy, 1.52 PF, 8.11R max drawdown
       - Model A (current): 0.111R expectancy, 1.24 PF, 15.96R max drawdown
     
-    Key change: Multi-fractal validation — a swing high/low must be confirmed by
-    TWO neighbouring bars on each side (3-bar minimum strength) rather than one.
+    Key change: 5-bar fractal swing validation — a swing high/low must be confirmed by
+    two neighbouring bars on each side (5-bar structural swing: k-2, k-1, center, k+1, k+2).
     This eliminates noisy micro-swings that get swept before our TP is hit.
     
     - Longs target un-swept Buy-Side Liquidity (BSL) above previous swing highs.
@@ -1136,9 +1136,9 @@ def find_ict_liquidity_target(
 
     if is_long:
         bsl_candidates = []
-        # Search backwards for confirmed 3-bar fractal swing highs (stronger validation)
+        # Search backwards for confirmed 5-bar fractal swing highs (stronger validation)
         for k in range(closed_idx - 3, max(3, closed_idx - lookback_bars), -1):
-            # Strong fractal: higher than both neighbours on each side
+            # 5-bar fractal: higher than both neighbours on each side
             if (highs[k] >= highs[k-1] and highs[k] >= highs[k-2] and
                     highs[k] >= highs[k+1] and highs[k] >= highs[k+2]):
                 if highs[k] >= entry + (sl_dist * min_rr):
@@ -1155,7 +1155,7 @@ def find_ict_liquidity_target(
         return float(entry + (sl_dist * default_rr)), float(default_rr), "Structural Expansion (1.75R)"
     else:
         ssl_candidates = []
-        # Search backwards for confirmed 3-bar fractal swing lows
+        # Search backwards for confirmed 5-bar fractal swing lows
         for k in range(closed_idx - 3, max(3, closed_idx - lookback_bars), -1):
             if (lows[k] <= lows[k-1] and lows[k] <= lows[k-2] and
                     lows[k] <= lows[k+1] and lows[k] <= lows[k+2]):

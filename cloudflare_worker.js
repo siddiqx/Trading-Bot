@@ -1540,8 +1540,8 @@ async function sendStrategyMessage(chatId) {
     `• 3–10 min delayed: Enter if inside OTE Valid Zone only\n` +
     `• Late / Missed: Limit at 50% CE (OTE pullback) — never chase beyond Max Chase\n\n` +
     `<b>4. Institutional Targets: BSL &amp; SSL Liquidity Pools (Model F)</b>\n` +
-    `• Longs: Buy-Side Liquidity (BSL) above 3-bar confirmed swing highs\n` +
-    `• Shorts: Sell-Side Liquidity (SSL) below 3-bar confirmed swing lows\n` +
+    `• Longs: Buy-Side Liquidity (BSL) above 5-bar fractal confirmed swing highs\n` +
+    `• Shorts: Sell-Side Liquidity (SSL) below 5-bar fractal confirmed swing lows\n` +
     `• Calibration: Dynamic 1.5R – 2.5R to nearest un-swept pool\n` +
     `• Audit: Model F = 0.281R expectancy, 1.52 PF vs 0.111R (old baseline)\n\n` +
     `<b>5. ADX Regime Filter (Forensic Audit v2)</b>\n` +
