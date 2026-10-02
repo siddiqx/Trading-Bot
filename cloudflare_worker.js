@@ -1,12 +1,14 @@
 /**
  * 24/7 Institutional Cloudflare Worker for Telegram Trading Bot
+ * System Version: v2.0-Frozen (Forensic Audit Release)
+ * Strategy Freeze Date: 2026-10-02
  * 
  * Features:
- * - Active Trade Tracking & Floating PnL
- * - Market Radar differentiating live trades vs surveillance
+ * - Active Trade Tracking & Floating PnL with Break-Even state display
+ * - Market Radar differentiating live trades vs surveillance (ADX-aware)
  * - /history command with pair and date range filtering
- * - /performance command calculated strictly from live trades taken from 2026-09-28 onwards
- * - /strategy command explaining institutional breakout execution rules
+ * - /performance command calculated strictly from live trades taken from 2026-10-02 onwards
+ * - /strategy command: full v2 rulebook incl. ADX filter, Model F TP, BE rule, session overlap block
  * - Modern, aesthetic, executive terminal formatting
  */
 
@@ -754,7 +756,7 @@ async function sendRadarMessage(chatId, env) {
             autoResolveTrade(asset.symbol, activeTrade, "WIN", activeTrade.take_profit, env, radarLedger);
             return (
               `<b>${num}. ${asset.name}</b> · <code>${price.toFixed(asset.digits)}</code>\n` +
-              `🎯 <b>TAKE PROFIT ACHIEVED (+${activeTrade.tp_pips || "31.5"} pips | +1.75R)</b>\n` +
+              `🎯 <b>TAKE PROFIT ACHIEVED (+${activeTrade.tp_pips || "31.5"} pips | +${activeTrade.rr || "1.75"}R)</b>\n` +
               `• Target <code>${activeTrade.take_profit}</code> Booked · Surveillance Resumed`
             );
           } else if (hitSL) {
@@ -770,13 +772,14 @@ async function sendRadarMessage(chatId, env) {
           const pnlPips = ((price - activeTrade.entry) / asset.pip) * (isLong ? 1 : -1);
           const pnlSign = pnlPips >= 0 ? "+" : "";
           const icon = isLong ? "🟢" : "🔴";
+          const beStatus = activeTrade.be_active ? " 🛡<b>BE</b>" : "";
 
           return (
             `<b>${num}. ${asset.name}</b> · <code>${price.toFixed(asset.digits)}</code>\n` +
-            `${icon} <b>LIVE ${activeTrade.direction}</b> (${activeTrade.timeframe})\n` +
+            `${icon} <b>LIVE ${activeTrade.direction}</b> (${activeTrade.timeframe})${beStatus}\n` +
             `• Float: <code>${pnlSign}${pnlPips.toFixed(1)} pips</code>\n` +
             `• Entry: <code>${activeTrade.entry}</code>\n` +
-            `• SL: <code>${activeTrade.stop_loss}</code> | TP: <code>${activeTrade.take_profit}</code>`
+            `• SL: <code>${activeTrade.stop_loss}</code> | TP: <code>${activeTrade.take_profit}</code> (1:${activeTrade.rr || "~"}R)`
           );
         }
 
@@ -911,7 +914,7 @@ async function sendActiveMessage(chatId, env) {
       `⚡ <b>ACTIVE LIVE TRADES (0)</b>\n` +
       `━━━━━━━━━━━━━━━━━━\n` +
       `<i>No active positions currently running.</i>\n\n` +
-      `All 6 asset pairs are under automated surveillance.\n` +
+      `Core Alpha Triad (EURUSD · USDCAD · XAUUSD) under surveillance.\n` +
       `Signals trigger strictly on confirmed candle closes.\n` +
       `━━━━━━━━━━━━━━━━━━\n` +
       `🕒 <code>${utcNow}</code>`;
@@ -1004,7 +1007,7 @@ async function sendActiveMessage(chatId, env) {
 
             if (hitTP) {
               autoResolveTrade(symbol, t, "WIN", t.take_profit, env, { active: currentActive, completed: currentCompleted });
-              floatText = `• Status: 🎯 <b>TARGET REACHED · TAKE PROFIT HIT (+${t.tp_pips || "31.5"} pips | +1.75R)</b>\n• Live Price: <code>${currentPrice.toFixed(asset.digits)}</code> (Target Booked)\n`;
+              floatText = `• Status: 🎯 <b>TARGET REACHED · TAKE PROFIT HIT (+${t.tp_pips || "31.5"} pips | +${t.rr || "1.75"}R)</b>\n• Live Price: <code>${currentPrice.toFixed(asset.digits)}</code> (Target Booked)\n`;
             } else if (hitSLAfterFill) {
               autoResolveTrade(symbol, t, "LOSS", t.stop_loss, env, { active: currentActive, completed: currentCompleted });
               floatText = `• Status: 🛑 <b>STOP LOSS HIT (-${t.sl_pips || "18.0"} pips | -1.00R)</b>\n• Live Price: <code>${currentPrice.toFixed(asset.digits)}</code> (SL Booked)\n`;
@@ -1034,7 +1037,7 @@ async function sendActiveMessage(chatId, env) {
 
           if (hitTP) {
             autoResolveTrade(symbol, t, "WIN", t.take_profit, env, { active: currentActive, completed: currentCompleted });
-            floatText = `• Status: 🎯 <b>TARGET REACHED · TAKE PROFIT HIT (+${t.tp_pips || "31.5"} pips | +1.75R)</b>\n• Live Price: <code>${currentPrice.toFixed(asset.digits)}</code> (Target Booked)\n`;
+            floatText = `• Status: 🎯 <b>TARGET REACHED · TAKE PROFIT HIT (+${t.tp_pips || "31.5"} pips | +${t.rr || "1.75"}R)</b>\n• Live Price: <code>${currentPrice.toFixed(asset.digits)}</code> (Target Booked)\n`;
           } else if (hitSL) {
             autoResolveTrade(symbol, t, "LOSS", t.stop_loss, env, { active: currentActive, completed: currentCompleted });
             floatText = `• Status: 🛑 <b>STOP LOSS HIT (-${t.sl_pips || "18.0"} pips | -1.00R)</b>\n• Live Price: <code>${currentPrice.toFixed(asset.digits)}</code> (SL Booked)\n`;
@@ -1045,7 +1048,8 @@ async function sendActiveMessage(chatId, env) {
             const floatR = riskDist > 0 ? (pnlPips / riskDist).toFixed(2) : "0.00";
             const rSign = parseFloat(floatR) >= 0 ? "+" : "";
             const floatEmoji = pnlPips >= 0 ? "🟢" : "🔻";
-            floatText = `• Live Price: <code>${currentPrice.toFixed(asset.digits)}</code> (${floatEmoji} <b>${pnlSign}${pnlPips.toFixed(1)} pips</b> | <b>${rSign}${floatR}R</b>)\n`;
+            const beFlag = t.be_active ? " 🛡<b>Break-Even Active</b>" : "";
+            floatText = `• Live Price: <code>${currentPrice.toFixed(asset.digits)}</code> (${floatEmoji} <b>${pnlSign}${pnlPips.toFixed(1)} pips</b> | <b>${rSign}${floatR}R</b>)${beFlag}\n`;
           }
         }
       } else {
@@ -1241,24 +1245,30 @@ async function sendPerformanceMessage(chatId, filterPair = "ALL", env) {
   const rSign = netR >= 0 ? "+" : "";
   const scopeLabel = filterPair === "ALL" ? "PORTFOLIO (ALL PAIRS)" : filterPair;
 
+  const breakEvenCount = closed.filter(t => t.outcome === "BREAK_EVEN").length;
+  const beLabel = breakEvenCount > 0 ? ` · <b>${breakEvenCount} BE</b>` : "";
+  const expectancy = decided > 0 ? (netR / (decided + breakEvenCount)).toFixed(3) : "N/A";
+  const expSign = parseFloat(expectancy) >= 0 ? "+" : "";
+
   const text = 
-    `📈 <b>STRATEGY PERFORMANCE</b>\n` +
+    `📈 <b>STRATEGY PERFORMANCE (v2.0-Frozen)</b>\n` +
     `━━━━━━━━━━━━━━━━━━\n` +
     `Scope: <b>${scopeLabel}</b>\n` +
-    `Baseline: <code>2026-09-28</code> (Live Only)\n` +
+    `Baseline: <code>2026-10-02</code> (Out-of-Sample Forward Only)\n` +
     `━━━━━━━━━━━━━━━━━━\n\n` +
     `<b>1. TRADE EXECUTION</b>\n` +
     `• Total Closed: <code>${totalClosed}</code>\n` +
     `• Active Live: <code>${active.length} positions</code>\n` +
-    `• Win / Loss: <b>${wins}W</b> · <b>${losses}L</b>${cancelled > 0 ? ` <i>(${cancelled} cancelled)</i>` : ""}\n` +
+    `• Win / Loss / BE: <b>${wins}W</b> · <b>${losses}L</b>${beLabel}${cancelled > 0 ? ` <i>(${cancelled} cancelled)</i>` : ""}\n` +
     `• Win Rate: <b>${winRate}${decided > 0 ? "%" : ""}</b>\n\n` +
     `<b>2. RETURNS & PROFITABILITY</b>\n` +
     `• Net Realized Pips: <b>${pipsSign}${netPips.toFixed(1)} pips</b>\n` +
     `• Net Realized Return: <b>${rSign}${netR.toFixed(2)} R</b>\n` +
+    `• Expectancy / Trade: <b>${expSign}${expectancy} R</b>\n` +
     `• Profit Factor: <code>${profitFactor}</code>\n` +
-    `• Target R:R: <code>1 : 1.75</code>\n\n` +
+    `• Target R:R: <code>1.5R – 2.5R (Model F Structural)</code>\n\n` +
     `━━━━━━━━━━━━━━━━━━\n` +
-    `⚡ <i>Zero backtest data. Live forward verified.</i>\n` +
+    `⚡ <i>100% out-of-sample. Strategy frozen 2026-10-02.</i>\n` +
     `🕒 <code>${utcNow}</code>`;
 
   const keyboard = {
@@ -1492,12 +1502,14 @@ async function sendStatusMessage(chatId, env) {
     `⚡ <b>SYSTEM ARCHITECTURE STATUS</b>\n` +
     `━━━━━━━━━━━━━━━━━━\n` +
     `1. Engine Core: 🟢 <b>OPERATIONAL (24/7)</b>\n` +
-    `2. Cloud Edge: Cloudflare Global Edge\n` +
-    `3. Scanner Host: GitHub Actions Cron\n` +
-    `4. Monitored Assets: <code>Core Alpha Triad (XAUUSD, EURUSD, USDCAD)</code>\n` +
-    `5. Active Positions: <code>${activeCount} locked</code>\n` +
-    `6. Recorded Trades: <code>${closedCount} closed</code>\n` +
-    `7. PC Dependency: Zero (100% Serverless)\n` +
+    `2. Strategy Version: <code>v2.0-Frozen (2026-10-02)</code>\n` +
+    `3. Cloud Edge: Cloudflare Global Edge\n` +
+    `4. Scanner Host: GitHub Actions Cron (*/15 5-21 UTC)\n` +
+    `5. Monitored Assets: <code>Core Alpha Triad (XAUUSD, EURUSD, USDCAD)</code>\n` +
+    `6. Active Positions: <code>${activeCount} locked</code>\n` +
+    `7. Recorded Trades: <code>${closedCount} closed</code>\n` +
+    `8. ADX Regime Gate: <code>20–30 Blocked (v2 Filter)</code>\n` +
+    `9. PC Dependency: Zero (100% Serverless)\n` +
     `━━━━━━━━━━━━━━━━━━\n` +
     `🕒 <code>${utcNow}</code>`;
 
@@ -1554,7 +1566,7 @@ async function sendStrategyMessage(chatId) {
     `• Asian 00:00–05:00 &amp; 20:00–24:00 UTC: 47.8% WR (Score x0.95)\n` +
     `• London/NY Overlap 12:00–16:00 UTC: 33.3% WR, -0.22R — BLOCKED\n\n` +
     `<b>7. Trade Management</b>\n` +
-    `• Freshness Guard: Signal only fires within 5 min of bar close\n` +
+    `• Freshness Guard: 15M signals fire within 12 min of bar close; 1H within 30 min\n` +
     `• Break-Even: SL moves to entry +1 pip when +1.0R floating\n` +
     `• EMA20 Time-Stop: Exit if counter-trend close after 12h (15M) / 24h (1H)\n` +
     `• Suggested Risk: <b>0.5% Equity per trade</b> (Portfolio DD ≤ 6.0%)\n` +
@@ -1590,13 +1602,14 @@ async function sendClearInstructions(chatId) {
     `━━━━━━━━━━━━━━━━━━\n` +
     `<b>1. Live Ledger Baseline</b>\n` +
     `• All legacy test/backtest data has been <b>completely wiped</b>.\n` +
-    `• The ledger tracks strictly live confirmed signals from <code>2026-09-28</code> onwards.\n\n` +
+    `• The ledger tracks strictly live confirmed signals from <code>2026-10-02</code> onwards.\n` +
+    `• Strategy is frozen at v2.0 — no parameter changes during forward test.\n\n` +
     `<b>2. To Clear Telegram Chat History</b>\n` +
     `• On Mobile / Desktop: Tap the <b>⋮ (Three Dots)</b> menu at the top right of this chat.\n` +
     `• Select <b>Clear History</b> (or <b>Delete Chat</b>).\n` +
     `• Type <code>/start</code> to resume with a 100% clean, fresh terminal!\n` +
     `━━━━━━━━━━━━━━━━━━\n` +
-    `✨ <i>Fresh institutional session active.</i>`;
+    `✨ <i>v2.0-Frozen institutional session active.</i>`;
 
   const keyboard = {
     inline_keyboard: [
