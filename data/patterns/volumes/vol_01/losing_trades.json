@@ -448,5 +448,50 @@
       "summary": "Order block level was invalidated by institutional flow after 1 bar(s). Stop-loss executed disciplined capital preservation.",
       "actionable_insight": "Trade adhered strictly to risk geometry. Invalidation was clean and preserved capital."
     }
+  },
+  {
+    "tracking": {
+      "global_trade_no": 13,
+      "volume_no": 1,
+      "volume_trade_no": 13,
+      "volume_id": "VOL_01",
+      "volume_label": "Volume 1 (Trades 1\u2013100)"
+    },
+    "trade_id": "EURUSD_1H_2026-10-01T15:00:00Z_SHORT",
+    "pair": "EURUSD",
+    "symbol": "EURUSD",
+    "timeframe": "1H",
+    "direction": "SHORT",
+    "entry_price": 1.12689,
+    "exit_price": 1.1281588077545166,
+    "stop_loss": 1.13076,
+    "take_profit": 1.12011,
+    "opened_at": "2026-10-01T15:00:00Z",
+    "closed_at": "2026-10-02T15:01:35Z",
+    "duration_hours": 24.03,
+    "duration_bars": 24,
+    "outcome": "LOSS",
+    "realized_pips": -12.7,
+    "realized_r": -0.33,
+    "excursion_metrics": {
+      "mfe_pips": 49.3,
+      "mfe_r": 1.27,
+      "mae_pips": -19.1,
+      "mae_r": -0.49,
+      "tp_distance_pct_reached": 72.8
+    },
+    "market_regime": {
+      "trading_session": "London/New York Overlap",
+      "rsi_at_entry": 50.0,
+      "atr_14": 0.0015,
+      "volatility_regime": "NORMAL",
+      "ema_alignment": "BEARISH_EXPANDING",
+      "breakout_candle_wick_ratio": 0.28
+    },
+    "diagnostic": {
+      "primary_factor": "PREMATURE_REVERSAL",
+      "summary": "Position reached +49.3 pips (+1.27R / 72.8% of TP) before aggressive counter-trend reversal hit stop-loss.",
+      "actionable_insight": "Incorporate a Breakeven Protection rule once position reaches +0.8R or 50% TP distance."
+    }
   }
 ]
