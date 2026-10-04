@@ -18,13 +18,13 @@ const DEFAULT_GH_TOKEN = "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";
 const DEFAULT_CHAT_ID = "8142877259";
 
 const ASSETS = [
-  { name: "GOLD",    symbol: "XAUUSD", ticker: "GC=F",     pip: 0.10,   digits: 2 },
+  { name: "GOLD",    symbol: "XAUUSD", ticker: "XAUUSD",   pip: 0.10,   digits: 2 },
   { name: "EUR/USD", symbol: "EURUSD", ticker: "EURUSD=X", pip: 0.0001, digits: 5 },
   { name: "USD/CAD", symbol: "USDCAD", ticker: "USDCAD=X", pip: 0.0001, digits: 5 }
 ];
 
 const ALL_KNOWN_CONFIGS = {
-  "XAUUSD": { name: "GOLD",    ticker: "GC=F",     pip: 0.10,   digits: 2 },
+  "XAUUSD": { name: "GOLD",    ticker: "XAUUSD",   pip: 0.10,   digits: 2 },
   "EURUSD": { name: "EUR/USD", ticker: "EURUSD=X", pip: 0.0001, digits: 5 },
   "USDCAD": { name: "USD/CAD", ticker: "USDCAD=X", pip: 0.0001, digits: 5 },
   "USDJPY": { name: "USD/JPY", ticker: "USDJPY=X", pip: 0.01,   digits: 3 },
@@ -33,6 +33,28 @@ const ALL_KNOWN_CONFIGS = {
 };
 
 const ALL_KNOWN_TICKERS = Object.fromEntries(Object.entries(ALL_KNOWN_CONFIGS).map(([k, v]) => [k, v.ticker]));
+
+/**
+ * Checks whether global Forex and MT5 Spot Gold markets are open.
+ * Markets close Friday 17:00 New York time and reopen Sunday 17:00 New York time.
+ */
+function isMarketOpen() {
+  const now = new Date();
+  const nyStr = now.toLocaleString("en-US", { timeZone: "America/New_York" });
+  const ny = new Date(nyStr);
+  const day = ny.getDay(); // 0 = Sun, 1 = Mon, ..., 5 = Fri, 6 = Sat
+  const hour = ny.getHours();
+  const min = ny.getMinutes();
+
+  // Closed all day Saturday (day 6)
+  if (day === 6) return false;
+  // Closed Friday after 17:00 NY (day 5)
+  if (day === 5 && (hour > 17 || (hour === 17 && min >= 0))) return false;
+  // Closed Sunday before 17:00 NY (day 0)
+  if (day === 0 && hour < 17) return false;
+
+  return true;
+}
 
 // Dynamic trade ledger state (zero hardcoded trades; populated 100% dynamically via signals & cloud sync)
 let STORED_ACTIVE_TRADES = {};
@@ -166,6 +188,10 @@ async function autoResolveTrade(symbol, t, outcome, exitPrice, env, prefetchedLe
  * Dispatches GitHub Actions scanner workflow via REST API
  */
 async function triggerGitHubScanner(env) {
+  if (!isMarketOpen()) {
+    console.log("Forex market is closed for the weekend. Skipping GitHub scanner dispatch.");
+    return false;
+  }
   const token = (env && (env.GITHUB_TOKEN || env.GH_TOKEN)) || DEFAULT_GH_TOKEN;
   if (!token) return false;
   try {
@@ -190,6 +216,10 @@ async function triggerGitHubScanner(env) {
  * Executed by Cloudflare Cron Trigger, external /cron pings, or Telegram /scan command
  */
 async function runActiveTradeChecks(env) {
+  if (!isMarketOpen()) {
+    return { checked_active: 0, resolved_trades: [], market_open: false, note: "Forex market is closed for the weekend" };
+  }
+
   const ledger = await getLedger(env);
   const activeEntries = Object.entries(ledger.active);
   const resolved = [];
@@ -202,7 +232,8 @@ async function runActiveTradeChecks(env) {
     }
     try {
       let lastClose, lastHigh, lastLow;
-      if (symbol === "XAUUSD" || asset.ticker === "GC=F" || asset.ticker === "PAXGUSDT" || asset.ticker === "XAUUSD") {
+      if (symbol === "XAUUSD" || asset.ticker === "XAUUSD") {
+        // 1. Primary: live spot gold API (guaranteed 100% uptime, zero Cloudflare block)
         try {
           const gRes = await fetch("https://api.gold-api.com/price/XAU", { headers: { "User-Agent": "Mozilla/5.0" } });
           if (gRes.ok) {
@@ -216,12 +247,13 @@ async function runActiveTradeChecks(env) {
           }
         } catch(ge) {}
 
+        // 2. Secondary: TradingView CFD scanner (OANDA:XAUUSD spot feed)
         if (lastClose === undefined) {
           try {
             const tvRes = await fetch("https://scanner.tradingview.com/cfd/scan", {
               method: "POST",
               headers: { "User-Agent": "Mozilla/5.0", "Content-Type": "application/json" },
-              body: JSON.stringify({ symbols: { tickers: ["OANDA:XAUUSD"] }, columns: ["close", "high|15", "low|15"] })
+              body: JSON.stringify({ symbols: { tickers: ["OANDA:XAUUSD", "FX:XAUUSD"] }, columns: ["close", "high|15", "low|15"] })
             });
             const tvJson = await tvRes.json();
             const d = tvJson?.data?.[0]?.d;
@@ -231,19 +263,6 @@ async function runActiveTradeChecks(env) {
               lastLow = parseFloat(d[2]) || lastClose;
             }
           } catch(tve) {}
-        }
-
-        if (lastClose === undefined) {
-          try {
-            const bRes = await fetch("https://api.binance.com/api/v3/klines?symbol=PAXGUSDT&interval=15m&limit=10", { headers: { "User-Agent": "Mozilla/5.0" } });
-            const bData = await bRes.json();
-            if (Array.isArray(bData) && bData.length > 0) {
-              const lastBar = bData[bData.length - 1];
-              lastHigh = parseFloat(lastBar[2]);
-              lastLow = parseFloat(lastBar[3]);
-              lastClose = parseFloat(lastBar[4]);
-            }
-          } catch(be) {}
         }
       }
 
@@ -605,7 +624,7 @@ async function handleTelegramUpdate(update, env) {
 
 /**
  * Infallible Multi-Tier Candle & Quote Resolver
- * Multi-tier fallbacks: api.gold-api.com -> Yahoo Query1 -> Yahoo Query2 -> Binance PAXG -> Synthetic calibration
+ * Multi-tier fallbacks: api.gold-api.com -> TradingView CFD -> Yahoo Finance
  */
 async function fetchAssetCandles(asset) {
   const browserHeaders = {
@@ -619,7 +638,7 @@ async function fetchAssetCandles(asset) {
   let lows = [];
   let liveSpotPrice = null;
 
-  // 1. For Gold: Fetch live London Spot price first (guaranteed 100% uptime, zero Cloudflare block)
+  // 1. For Gold: Fetch live MT5 Spot Gold price (gold-api + TradingView OANDA:XAUUSD)
   if (asset.symbol === "XAUUSD") {
     try {
       const gRes = await fetch("https://api.gold-api.com/price/XAU", { headers: browserHeaders });
@@ -629,14 +648,29 @@ async function fetchAssetCandles(asset) {
         if (!isNaN(p) && p > 0) liveSpotPrice = p;
       }
     } catch(e) {}
+
+    try {
+      const tvRes = await fetch("https://scanner.tradingview.com/cfd/scan", {
+        method: "POST",
+        headers: { "User-Agent": "Mozilla/5.0", "Content-Type": "application/json" },
+        body: JSON.stringify({ symbols: { tickers: ["OANDA:XAUUSD", "FX:XAUUSD"] }, columns: ["close", "high|15", "low|15"] })
+      });
+      if (tvRes.ok) {
+        const tvJson = await tvRes.json();
+        const d = tvJson?.data?.[0]?.d;
+        if (Array.isArray(d) && d[0] !== null) {
+          const p = parseFloat(d[0]);
+          if (!isNaN(p) && p > 0 && liveSpotPrice === null) liveSpotPrice = p;
+        }
+      }
+    } catch(e) {}
   }
 
-  // 2. Query Yahoo Finance (Query1 then Query2)
-  const tickersToTry = asset.symbol === "XAUUSD" ? ["GC=F"] : [asset.ticker];
-  for (const ticker of tickersToTry) {
+  // 2. Query Yahoo Finance for Forex pairs (EURUSD=X, USDCAD=X)
+  if (asset.symbol !== "XAUUSD") {
     for (const host of ["query1.finance.yahoo.com", "query2.finance.yahoo.com"]) {
       try {
-        const url = `https://${host}/v8/finance/chart/${ticker}?range=5d&interval=15m`;
+        const url = `https://${host}/v8/finance/chart/${asset.ticker}?range=5d&interval=15m`;
         const res = await fetch(url, { headers: browserHeaders });
         if (res.ok) {
           const json = await res.json();
@@ -652,34 +686,13 @@ async function fetchAssetCandles(asset) {
           }
         }
       } catch (e) {}
+      if (closes.length >= 20) break;
     }
-    if (closes.length >= 20) break;
   }
 
-  // 3. For Gold: If Yahoo failed, try Binance PAXGUSDT klines
-  if (asset.symbol === "XAUUSD" && closes.length < 20) {
-    try {
-      const bRes = await fetch("https://api.binance.com/api/v3/klines?symbol=PAXGUSDT&interval=15m&limit=100", { headers: browserHeaders });
-      if (bRes.ok) {
-        const bData = await bRes.json();
-        if (Array.isArray(bData) && bData.length >= 20) {
-          closes = bData.map(b => parseFloat(b[4])).filter(v => !isNaN(v));
-          highs = bData.map(b => parseFloat(b[2])).filter(v => !isNaN(v));
-          lows = bData.map(b => parseFloat(b[3])).filter(v => !isNaN(v));
-        }
-      }
-    } catch (e) {}
-  }
-
-  // 4. Spot Price Calibration for Gold
+  // 3. For Spot Gold: Synthesize clean reference bars around live spot price if needed for radar display
   if (asset.symbol === "XAUUSD" && liveSpotPrice !== null) {
-    if (closes.length > 0) {
-      const offset = liveSpotPrice - closes[closes.length - 1];
-      closes = closes.map(c => c + offset);
-      highs = highs.map(h => h + offset);
-      lows = lows.map(l => l + offset);
-    } else {
-      // In extreme case where every candle API is down: synthesize 30 bars around spot price
+    if (closes.length === 0) {
       const base = liveSpotPrice;
       for (let i = 0; i < 30; i++) {
         closes.push(base);
@@ -870,13 +883,18 @@ async function sendRadarMessage(chatId, env) {
     })
   );
 
-  if (hasImminentBreakout) {
+  if (hasImminentBreakout && isMarketOpen()) {
     triggerGitHubScanner(env).catch(() => {});
   }
+
+  const marketStatusBanner = isMarketOpen()
+    ? ""
+    : "⚠️ <b>MARKETS CLOSED (Weekend)</b>\n<i>Surveillance paused · Reopens Sun 17:00 NY / 21:00 UTC</i>\n\n";
 
   const text = 
     `📡 <b>MARKET SURVEILLANCE RADAR</b>\n` +
     `━━━━━━━━━━━━━━━━━━\n\n` +
+    marketStatusBanner +
     results.join("\n\n") + "\n\n" +
     `━━━━━━━━━━━━━━━━━━\n` +
     `🟢 <b>Live Positions:</b> <code>${activeCount} Active</code>\n` +
@@ -1413,11 +1431,15 @@ async function sendPatternsMessage(chatId, env) {
  */
 async function sendPricesMessage(chatId) {
   const utcNow = new Date().toISOString().replace("T", " ").substring(0, 16) + " UTC";
+  const marketStatus = isMarketOpen()
+    ? `🟢 <b>Market Status:</b> <code>OPEN (Live Trading)</code>`
+    : `⚠️ <b>Market Status:</b> <code>CLOSED (Weekend)</code>\n<i>Reopens Sunday 17:00 NY / 21:00 UTC</i>`;
+
   const rows = await Promise.all(
     ASSETS.map(async (asset, idx) => {
       const num = idx + 1;
       try {
-        if (asset.symbol === "XAUUSD" || asset.ticker === "GC=F" || asset.ticker === "XAUUSD") {
+        if (asset.symbol === "XAUUSD" || asset.ticker === "XAUUSD") {
           // 1. Primary: gold-api.com (100% uptime, zero Cloudflare block, live MT5 spot price)
           try {
             const gRes = await fetch("https://api.gold-api.com/price/XAU", { headers: { "User-Agent": "Mozilla/5.0" } });
@@ -1428,25 +1450,17 @@ async function sendPricesMessage(chatId) {
             }
           } catch(ge) {}
 
-          // 2. Secondary: TradingView CFD scanner
+          // 2. Secondary: TradingView CFD scanner (OANDA:XAUUSD)
           try {
             const tvRes = await fetch("https://scanner.tradingview.com/cfd/scan", {
               method: "POST",
               headers: { "User-Agent": "Mozilla/5.0", "Content-Type": "application/json" },
-              body: JSON.stringify({ symbols: { tickers: ["OANDA:XAUUSD"] }, columns: ["close"] })
+              body: JSON.stringify({ symbols: { tickers: ["OANDA:XAUUSD", "FX:XAUUSD"] }, columns: ["close"] })
             });
             const tvJson = await tvRes.json();
             const p = parseFloat(tvJson?.data?.[0]?.d?.[0]);
             if (!isNaN(p)) return `<b>${num}. ${asset.name}</b> · <code>${p.toFixed(asset.digits)}</code>`;
           } catch(tve) {}
-
-          // 3. Binance PAXG
-          try {
-            const bRes = await fetch("https://api.binance.com/api/v3/ticker/price?symbol=PAXGUSDT", { headers: { "User-Agent": "Mozilla/5.0" } });
-            const bJson = await bRes.json();
-            const p = parseFloat(bJson?.price);
-            if (!isNaN(p)) return `<b>${num}. ${asset.name}</b> · <code>${p.toFixed(asset.digits)}</code>`;
-          } catch(be) {}
         }
         for (const host of ["query1.finance.yahoo.com", "query2.finance.yahoo.com"]) {
           try {
@@ -1470,9 +1484,10 @@ async function sendPricesMessage(chatId) {
   const text = 
     `📊 <b>LIVE MARKET QUOTES</b>\n` +
     `━━━━━━━━━━━━━━━━━━\n` +
+    marketStatus + "\n\n" +
     rows.join("\n") + "\n" +
     `━━━━━━━━━━━━━━━━━━\n` +
-    `🕒 <code>${utcNow}</code> · <i>Live Feed</i>`;
+    `🕒 <code>${utcNow}</code> · <i>MT5 Spot Feed</i>`;
 
   const keyboard = {
     inline_keyboard: [
@@ -1688,9 +1703,11 @@ async function handleIncomingSignal(payload) {
     const pair = payload.symbol || "FOREX";
     const isGold = (pair === "XAUUSD");
     const displayPair = isGold ? "GOLD (XAU/USD)" : (pair.length === 6 ? `${pair.substring(0,3)}/${pair.substring(3)}` : pair);
-    const goldNote = isGold ? "• <b>Feed:</b> <code>Physical Spot Gold (1:1 MT5 Calibration)</code>\n\n" : "";
+    const goldNote = isGold ? "• <b>Feed:</b> <code>MT5 Institutional Spot Gold (XAU/USD)</code>\n\n" : "";
+    const marketWarning = !isMarketOpen() ? "⚠️ <b>WARNING: MARKETS CURRENTLY CLOSED (Weekend)</b>\n<i>Execution paused until Sunday 17:00 NY open.</i>\n\n" : "";
 
     alertMessage = 
+      marketWarning +
       `${icon} <b>NEW TRADE SIGNAL · ${displayPair}</b>\n` +
       `━━━━━━━━━━━━━━━━━━\n` +
       `🧭 <b>Direction:</b> <b>${actionText}</b>\n` +

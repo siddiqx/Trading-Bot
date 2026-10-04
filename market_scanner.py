@@ -8,12 +8,15 @@ import sys
 import os
 import time
 import json
+import re
 import logging
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 from pathlib import Path
 import httpx
 import numpy as np
 import pandas as pd
+import websocket
 from core.post_mortem import record_trade_post_mortem
 
 logging.basicConfig(
@@ -32,15 +35,48 @@ if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
     # We allow the scanner to run without them (signals logged only, not sent).
     logger.warning("TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID not set. Alerts will be logged only.")
 
-# Monitored Pairs and Yahoo Finance Ticker Mapping
+
+def is_forex_market_open(dt: datetime | None = None) -> bool:
+    """
+    Checks whether global institutional Forex and MT5 Spot Gold markets are open.
+    Forex and Spot Gold (XAUUSD) markets close:
+      - Every Friday at 17:00 New York time (21:00 UTC during EDT / 22:00 UTC during EST).
+    Markets reopen:
+      - Every Sunday at 17:00 New York time (21:00 UTC during EDT / 22:00 UTC during EST).
+    Saturday and Sunday morning/afternoon are 100% CLOSED.
+    """
+    if dt is None:
+        dt = datetime.now(timezone.utc)
+    elif dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+
+    ny_tz = ZoneInfo("America/New_York")
+    ny_time = dt.astimezone(ny_tz)
+
+    day = ny_time.weekday()  # 0=Mon, 1=Tue, 2=Wed, 3=Thu, 4=Fri, 5=Sat, 6=Sun
+    hour = ny_time.hour
+    minute = ny_time.minute
+
+    # Closed all day Saturday (day 5)
+    if day == 5:
+        return False
+    # Closed Friday after 17:00 NY (day 4)
+    if day == 4 and (hour > 17 or (hour == 17 and minute >= 0)):
+        return False
+    # Closed Sunday before 17:00 NY (day 6)
+    if day == 6 and hour < 17:
+        return False
+
+    return True
+
+
+# Monitored Pairs and Ticker Mapping
 # Core Alpha Asset Universe (Proven by 2-year backtest to cap portfolio drawdown at 6.0% while maximizing net return)
-# Asset universe trimmed to top-performers by forensic audit:
+# XAUUSD: MT5 Institutional Spot Gold (OANDA:XAUUSD feed, zero futures basis gap, zero crypto noise)
 # EURUSD: 56.4% WR, 0.366R expectancy, 2.26 PF
 # USDCAD: 65.9% WR, 0.402R expectancy, 2.20 PF
-# XAUUSD: 42.9% WR, 0.319R expectancy, 1.72 PF
-# GBPUSD (37.7% WR, 0.021R), USDJPY (-0.043R), USDCHF (-0.128R) — permanently excluded
 SYMBOLS = {
-    "XAUUSD": {"ticker": "PAXGUSDT", "pip": 0.10,   "digits": 2, "donchian_len": 10}, # 1:1 Physical Spot Gold (matches MT5 XAUUSD directly)
+    "XAUUSD": {"ticker": "XAUUSD", "pip": 0.10,   "digits": 2, "donchian_len": 20}, # MT5 Spot Gold (Institutional OANDA feed, 20-bar Donchian)
     "EURUSD": {"ticker": "EURUSD=X", "pip": 0.0001, "digits": 5, "donchian_len": 15}, # Best performer: 56.4% WR, 2.26 PF
     "USDCAD": {"ticker": "USDCAD=X", "pip": 0.0001, "digits": 5, "donchian_len": 15}, # Best performer: 65.9% WR, 2.20 PF
 }
@@ -186,6 +222,10 @@ def format_exit_message(
 
 def check_active_trades(records: dict):
     """Monitors live market prices against active trades for Take Profit and Stop Loss."""
+    if not is_forex_market_open():
+        logger.info("Forex & Spot Gold markets are CLOSED for the weekend. Skipping active trade exit checks.")
+        return
+
     active = records.get("active_trades", {})
     if not active:
         return
@@ -195,6 +235,8 @@ def check_active_trades(records: dict):
 
     for pair, trade in list(active.items()):
         ticker = trade.get("ticker")
+        if pair == "XAUUSD" or ticker in ["PAXGUSDT", "GC=F", "XAUUSD"]:
+            ticker = "XAUUSD"
         if not ticker:
             continue
 
@@ -658,13 +700,12 @@ def send_telegram_alert(text: str, max_retries: int = 3):
 def get_live_price(ticker: str, pip: float, digits: int) -> float | None:
     """
     Fetch the true current live price for a ticker.
-    Uses the most recent bar (including in-progress) from Yahoo Finance / Binance,
-    falling back to None if unavailable.
-    For XAUUSD uses gold-api.com spot price directly.
+    For XAUUSD uses gold-api.com spot price and TradingView CFD scan directly.
+    Zero COMEX futures. Zero crypto tokens.
     """
     try:
-        if ticker in ["PAXGUSDT", "XAUUSD", "GC=F"]:
-            # Prefer direct spot gold API — most accurate
+        if ticker in ["XAUUSD", "GOLD"]:
+            # 1. Primary: direct London/MT5 spot gold API
             try:
                 with httpx.Client(timeout=4.0) as g:
                     r = g.get("https://api.gold-api.com/price/XAU", headers={"User-Agent": "Mozilla/5.0"})
@@ -674,21 +715,18 @@ def get_live_price(ticker: str, pip: float, digits: int) -> float | None:
                             return round(p, digits)
             except Exception:
                 pass
-            # Fallback: Binance latest close
+            # 2. Secondary: TradingView CFD scanner for OANDA:XAUUSD
             try:
-                url = "https://api.binance.com/api/v3/ticker/price?symbol=PAXGUSDT"
-                with httpx.Client(timeout=4.0) as g:
-                    r = g.get(url, headers={"User-Agent": "MarketScanner/2.0"})
+                url_tv = "https://scanner.tradingview.com/cfd/scan"
+                payload = {"symbols": {"tickers": ["OANDA:XAUUSD", "FX:XAUUSD"]}, "columns": ["close"]}
+                with httpx.Client(timeout=4.0) as tv:
+                    r = tv.post(url_tv, json=payload, headers={"User-Agent": "Mozilla/5.0"})
                     if r.status_code == 200:
-                        p = float(r.json().get("price", 0))
-                        if p > 0:
-                            # get live spot offset: apply same offset logic
-                            df_tmp = fetch_candles("PAXGUSDT", "5m", range_days="1d")
-                            if not df_tmp.empty:
-                                raw_last = df_tmp.iloc[-1]["close"]
-                                # offset = spot - raw_last (already applied inside fetch_candles)
-                                # Just return the calibrated last close
-                                return round(df_tmp.iloc[-1]["close"], digits)
+                        d = r.json().get("data", [])
+                        if d and d[0].get("d"):
+                            p = float(d[0]["d"][0])
+                            if p > 0:
+                                return round(p, digits)
             except Exception:
                 pass
             return None
@@ -710,105 +748,108 @@ def get_live_price(ticker: str, pip: float, digits: int) -> float | None:
         return None
 
 
+def fetch_spot_gold_candles(interval: str, n_bars: int = 100) -> pd.DataFrame:
+    """
+    Fetch genuine MT5 institutional Spot Gold (XAUUSD) candles via TradingView WebSocket (OANDA:XAUUSD).
+    Falls back to TradingView CFD scanner.
+    Zero COMEX futures. Zero crypto tokens. Zero weekend fake bars.
+    """
+    resolution = "15" if interval == "15m" else ("60" if interval == "1h" else "5")
+    try:
+        headers = {
+            "Origin": "https://www.tradingview.com",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+        }
+        ws = websocket.create_connection(
+            "wss://data.tradingview.com/socket.io/websocket?from=chart%2F",
+            header=headers,
+            timeout=8.0
+        )
+        def send_msg(m, p):
+            content = json.dumps({"m": m, "p": p})
+            ws.send(f"~m~{len(content)}~m~{content}")
+
+        send_msg("set_auth_token", ["unauthorized_user_token"])
+        session_id = f"cs_{int(time.time())}"
+        send_msg("chart_create_session", [session_id, ""])
+        send_msg("resolve_symbol", [session_id, "sds_sym_1", f'={json.dumps({"adjustment":"splits","symbol":"OANDA:XAUUSD"})}'])
+        send_msg("create_series", [session_id, "sds_1", "s1", "sds_sym_1", str(resolution), n_bars, ""])
+
+        bars = []
+        for _ in range(15):
+            msg = ws.recv()
+            if "~h~" in msg:
+                ws.send(msg)
+                continue
+            if "timescale_update" in msg:
+                for part in re.split(r"~m~\d+~m~", msg):
+                    if not part.strip():
+                        continue
+                    try:
+                        data = json.loads(part)
+                        if data.get("m") == "timescale_update":
+                            raw_bars = data["p"][1]["sds_1"]["s"]
+                            for b in raw_bars:
+                                v = b["v"]
+                                bars.append({
+                                    "timestamp": int(v[0]),
+                                    "time": pd.to_datetime(v[0], unit="s", utc=True),
+                                    "open": float(v[1]),
+                                    "high": float(v[2]),
+                                    "low": float(v[3]),
+                                    "close": float(v[4]),
+                                    "volume": float(v[5]) if len(v) > 5 else 0.0
+                                })
+                    except Exception:
+                        pass
+                if bars:
+                    break
+        ws.close()
+        if bars:
+            df = pd.DataFrame(bars)
+            df.sort_values("time", inplace=True)
+            df.reset_index(drop=True, inplace=True)
+            return df
+    except Exception as e:
+        logger.warning(f"TradingView WS Spot Gold notice: {e}, attempting HTTP fallback...")
+
+    # HTTP Fallback: TradingView CFD scanner
+    try:
+        url_tv = "https://scanner.tradingview.com/cfd/scan"
+        cols = [
+            f"open|{resolution}", f"high|{resolution}", f"low|{resolution}", f"close|{resolution}",
+            f"open[1]|{resolution}", f"high[1]|{resolution}", f"low[1]|{resolution}", f"close[1]|{resolution}"
+        ]
+        with httpx.Client(timeout=5.0) as client:
+            resp = client.post(url_tv, json={"symbols": {"tickers": ["OANDA:XAUUSD"]}, "columns": cols}, headers={"User-Agent": "Mozilla/5.0"})
+            if resp.status_code == 200:
+                data = resp.json().get("data", [])
+                if data and data[0].get("d"):
+                    d = data[0]["d"]
+                    now_ts = int(time.time())
+                    step_sec = 900 if resolution == "15" else (3600 if resolution == "60" else 300)
+                    prev_ts = now_ts - step_sec
+                    records = [
+                        {"timestamp": prev_ts, "time": pd.to_datetime(prev_ts, unit="s", utc=True), "open": float(d[4]), "high": float(d[5]), "low": float(d[6]), "close": float(d[7]), "volume": 1000.0},
+                        {"timestamp": now_ts, "time": pd.to_datetime(now_ts, unit="s", utc=True), "open": float(d[0]), "high": float(d[1]), "low": float(d[2]), "close": float(d[3]), "volume": 1000.0},
+                    ]
+                    df_fallback = pd.DataFrame(records)
+                    return df_fallback
+    except Exception as he:
+        logger.error(f"Spot gold fallback error: {he}")
+
+    return pd.DataFrame()
+
+
 def fetch_candles(ticker: str, interval: str, range_days: str = "7d") -> pd.DataFrame:
-    """Fetch candles from real-time API (Calibrated MT5 Spot Gold for XAUUSD, Yahoo Finance for Forex)."""
-    # 1:1 MT5 Spot Gold Feed (Calibrated directly to spot London gold / MT5 XAUUSD price)
-    if ticker in ["PAXGUSDT", "XAUUSD", "GC=F"]:
-        try:
-            # 1. Query live MT5/Spot Gold price with instant fallback
-            live_spot = None
-            try:
-                # Primary: gold-api.com (100% uptime, zero Cloudflare/IP blocking, spot London/MT5 gold)
-                with httpx.Client(timeout=4.0) as g_client:
-                    g_resp = g_client.get("https://api.gold-api.com/price/XAU", headers={"User-Agent": "Mozilla/5.0"})
-                    if g_resp.status_code == 200:
-                        g_data = g_resp.json()
-                        p = float(g_data.get("price", 0))
-                        if p > 0:
-                            live_spot = p
-            except Exception as ge:
-                logger.debug(f"gold-api query notice: {ge}")
-
-            if live_spot is None:
-                try:
-                    # Secondary: TradingView CFD scanner
-                    url_tv = "https://scanner.tradingview.com/cfd/scan"
-                    payload = {"symbols": {"tickers": ["OANDA:XAUUSD", "FX:XAUUSD"]}, "columns": ["close"]}
-                    with httpx.Client(timeout=4.0) as tv_client:
-                        tv_resp = tv_client.post(url_tv, json=payload, headers={"User-Agent": "Mozilla/5.0"})
-                        if tv_resp.status_code == 200:
-                            tv_data = tv_resp.json()
-                            prices = [row["d"][0] for row in tv_data.get("data", []) if row.get("d")]
-                            if prices:
-                                live_spot = float(prices[0])
-                except Exception as tve:
-                    logger.debug(f"TradingView spot query notice: {tve}")
-
-            # 2. Fetch candle series: Try Binance PAXG first, if blocked or fails, use Yahoo Finance GC=F
-            df_gold = pd.DataFrame()
-            try:
-                b_interval = "15m" if interval == "15m" else "1h"
-                limit = 400 if interval == "15m" else 200
-                url = f"https://api.binance.com/api/v3/klines?symbol=PAXGUSDT&interval={b_interval}&limit={limit}"
-                with httpx.Client(timeout=6.0) as client:
-                    resp = client.get(url, headers={"User-Agent": "MarketScanner/2.0"})
-                    if resp.status_code == 200:
-                        data = resp.json()
-                        records = []
-                        for b in data:
-                            records.append({
-                                "timestamp": int(b[0] / 1000),
-                                "time": pd.to_datetime(b[0], unit="ms", utc=True),
-                                "open": float(b[1]),
-                                "high": float(b[2]),
-                                "low": float(b[3]),
-                                "close": float(b[4]),
-                                "volume": float(b[5])
-                            })
-                        df_gold = pd.DataFrame(records)
-            except Exception:
-                pass
-
-            # If Binance was blocked (e.g., HTTP 451 in US / Cloud environments), fall back to Yahoo GC=F
-            if df_gold.empty or len(df_gold) < 30:
-                try:
-                    yf_url = f"https://query1.finance.yahoo.com/v8/finance/chart/GC=F?range={range_days}&interval={interval}"
-                    with httpx.Client(timeout=10.0) as client:
-                        resp = client.get(yf_url, headers={"User-Agent": "Mozilla/5.0"})
-                        if resp.status_code == 200:
-                            data = resp.json()
-                            result = data.get("chart", {}).get("result")
-                            if result:
-                                timestamps = result[0].get("timestamp", [])
-                                quotes = result[0].get("indicators", {}).get("quote", [{}])[0]
-                                if timestamps and "close" in quotes:
-                                    df_gold = pd.DataFrame({
-                                        "timestamp": timestamps,
-                                        "open": quotes.get("open", []),
-                                        "high": quotes.get("high", []),
-                                        "low": quotes.get("low", []),
-                                        "close": quotes.get("close", []),
-                                        "volume": quotes.get("volume", [0] * len(timestamps))
-                                    })
-                except Exception as yfe:
-                    logger.warning(f"Yahoo Gold fallback notice: {yfe}")
-
-            if not df_gold.empty:
-                df_gold.dropna(subset=["open", "high", "low", "close"], inplace=True)
-                if "time" not in df_gold.columns:
-                    df_gold["time"] = pd.to_datetime(df_gold["timestamp"], unit="s", utc=True)
-                df_gold.sort_values("time", inplace=True)
-                df_gold.reset_index(drop=True, inplace=True)
-
-                # 3. Calibrate offset so all candle prices match MT5 XAUUSD spot directly
-                if live_spot is not None and not df_gold.empty:
-                    offset = live_spot - df_gold.iloc[-1]["close"]
-                    for col in ["open", "high", "low", "close"]:
-                        df_gold[col] = (df_gold[col] + offset).round(2)
-
-                return df_gold
-        except Exception as e:
-            logger.warning(f"Spot gold feed notice: {e}, attempting secondary source...")
+    """Fetch candles from real-time API (MT5 Institutional Spot Gold for XAUUSD, Yahoo Finance for Forex)."""
+    if ticker in ["XAUUSD", "GOLD"]:
+        n_bars = 120 if interval == "15m" else 80
+        df_gold = fetch_spot_gold_candles(interval, n_bars=n_bars)
+        if not df_gold.empty:
+            return df_gold
+        logger.warning(f"Spot gold feed returned empty candles for {ticker} ({interval}).")
+        return pd.DataFrame()
 
     url = f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?range={range_days}&interval={interval}"
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
@@ -1212,21 +1253,11 @@ def check_htf_alignment(ticker: str, tf: str, is_long: bool) -> tuple[bool, str]
 
 def scan_pair_timeframe(pair_name: str, config: dict, tf: str, state: dict) -> list:
     """Scans a single pair and timeframe for confirmed structural breakout setups."""
-    ticker = config["ticker"]
-    pip = config["pip"]
-    digits = config["digits"]
-    
-    df = fetch_candles(ticker, tf, range_days="7d")
-    if df.empty or len(df) < 50:
-        return []
-    
     now_utc = datetime.now(timezone.utc)
 
-    # Forex Market Hours Guard: Skip weekends (markets closed Friday 21:00 UTC to Sunday 21:00 UTC)
-    weekday = now_utc.weekday()
-    hour = now_utc.hour
-    if (weekday == 4 and hour >= 21) or (weekday == 5) or (weekday == 6 and hour < 21):
-        logger.info(f"Skipping {pair_name} ({tf}): Forex market closed for the weekend.")
+    # Forex & Spot Gold Market Hours Guard: Skip weekends (markets closed Friday 17:00 NY to Sunday 17:00 NY)
+    if not is_forex_market_open(now_utc):
+        logger.info(f"Skipping {pair_name} ({tf}): Forex & Spot Gold market is closed for the weekend.")
         return []
 
     # London/New York Overlap Whipsaw Guard: Restrict new breakout signal generation between 12:00 and 16:00 UTC.
@@ -1234,6 +1265,14 @@ def scan_pair_timeframe(pair_name: str, config: dict, tf: str, state: dict) -> l
     # Active floating positions remain fully monitored and protected with break-even stops.
     if 12 <= now_utc.hour < 16:
         logger.info(f"Skipping {pair_name} ({tf}): Current time {now_utc.strftime('%H:%M')} UTC inside London/NY Overlap news volatility window (12:00 - 16:00 UTC).")
+        return []
+
+    ticker = config["ticker"]
+    pip = config["pip"]
+    digits = config["digits"]
+    
+    df = fetch_candles(ticker, tf, range_days="7d")
+    if df.empty or len(df) < 50:
         return []
 
     # Determine session quality context (used for signal scoring below)
@@ -1276,11 +1315,12 @@ def scan_pair_timeframe(pair_name: str, config: dict, tf: str, state: dict) -> l
     rsi_bearish_ok = 20.0 <= closed_bar["rsi"] <= 60.0
     
     # Candle Body Quality Guard:
-    # On 15M, prevent entering on breakout candles with large rejection wicks (>45% wick / <55% body)
+    # On 15M, prevent entering on breakout candles with large rejection wicks (>40% wick / <60% body for Gold)
     bar_range = closed_bar["high"] - closed_bar["low"]
     bar_body = abs(closed_bar["close"] - closed_bar["open"])
     body_ratio = bar_body / (bar_range + 1e-9)
-    if tf == "15m" and body_ratio < 0.55:
+    min_body = 0.60 if pair_name == "XAUUSD" else 0.55
+    if tf == "15m" and body_ratio < min_body:
         logger.info(f"Skipping {pair_name} ({tf}): Breakout candle body ratio too low ({body_ratio:.1%}). Rejection wick risk.")
         return []
 
@@ -1289,7 +1329,6 @@ def scan_pair_timeframe(pair_name: str, config: dict, tf: str, state: dict) -> l
     # ADX <20  (Low ADX / Choppy) = 54.5% WR, +0.32R expectancy, 1.88 PF (paradoxically best).
     # ADX >30  (Strong Trend)     = 45.9% WR, +0.092R expectancy, 1.19 PF (acceptable).
     # ACTION: Block new signals when ADX is in the 20-30 killing zone.
-    # ADX: closed_bar is a pandas Series (iloc[-1]); use bracket access, not .get()
     try:
         adx_raw = closed_bar["adx"]
         adx_val = float(adx_raw) if (adx_raw is not None and not np.isnan(float(adx_raw))) else 0.0
@@ -1305,11 +1344,21 @@ def scan_pair_timeframe(pair_name: str, config: dict, tf: str, state: dict) -> l
     # Donchian Breakout on completed bar
     long_breakout = (closed_bar["close"] > closed_bar["donch_high"]) and (prev_bar["close"] <= prev_bar["donch_high"])
     short_breakout = (closed_bar["close"] < closed_bar["donch_low"]) and (prev_bar["close"] >= prev_bar["donch_low"])
+
+    # Gold Structural Confirmation Guard:
+    # Breakout candles must close near extremes (no large rejection wick reversing against breakout)
+    if pair_name == "XAUUSD" and bar_range > 0:
+        if long_breakout and ((closed_bar["high"] - closed_bar["close"]) > 0.35 * bar_range):
+            logger.info(f"Skipping XAUUSD ({tf}) LONG: Rejection wick at high ({((closed_bar['high'] - closed_bar['close'])/bar_range):.1%}). Risk of sweep reversal.")
+            return []
+        if short_breakout and ((closed_bar["close"] - closed_bar["low"]) > 0.35 * bar_range):
+            logger.info(f"Skipping XAUUSD ({tf}) SHORT: Rejection wick at low ({((closed_bar['close'] - closed_bar['low'])/bar_range):.1%}). Risk of sweep reversal.")
+            return []
     
     atr = closed_bar["atr"]
     if pair_name == "XAUUSD":
-        min_sl_dist = 60.0 * pip   # $6.00 minimum
-        max_sl_dist = 350.0 * pip  # $35.00 maximum
+        min_sl_dist = 15.0 * pip   # $1.50 minimum
+        max_sl_dist = 150.0 * pip  # $15.00 maximum cap
     else:
         min_sl_dist = 18.0 * pip
         max_sl_dist = 65.0 * pip
@@ -1342,15 +1391,13 @@ def scan_pair_timeframe(pair_name: str, config: dict, tf: str, state: dict) -> l
                     break
 
             # --- LIVE PRICE VALIDATION ---
-            # Use the current live market price instead of the stale bar close.
-            # This ensures the entry shown is always the REAL current price.
             bar_close_price = float(closed_bar["close"])
             live_price = get_live_price(ticker, pip, digits)
             if live_price is None:
                 live_price = bar_close_price  # fallback to bar close if live fetch fails
 
             # For a LONG, if live price has run more than max_chase_pips ABOVE bar close, price is extended — skip.
-            max_chase_pips = 25.0 if pair_name == "XAUUSD" else 3.5
+            max_chase_pips = 15.0 if pair_name == "XAUUSD" else 3.5
             max_chase_price_check = bar_close_price + (max_chase_pips * pip)
             if live_price > max_chase_price_check:
                 logger.info(f"Skipping {pair_name} ({tf}) LONG: Live price {live_price} extended {round((live_price - bar_close_price)/pip, 1)}p above bar close. Setup overextended.")
@@ -1473,7 +1520,7 @@ def scan_pair_timeframe(pair_name: str, config: dict, tf: str, state: dict) -> l
                 live_price = bar_close_price
 
             # For a SHORT, if live price has dropped more than max_chase_pips BELOW bar close, extended — skip.
-            max_chase_pips = 25.0 if pair_name == "XAUUSD" else 3.5
+            max_chase_pips = 15.0 if pair_name == "XAUUSD" else 3.5
             max_chase_price_check = bar_close_price - (max_chase_pips * pip)
             if live_price < max_chase_price_check:
                 logger.info(f"Skipping {pair_name} ({tf}) SHORT: Live price {live_price} extended {round((bar_close_price - live_price)/pip, 1)}p below bar close. Setup overextended.")
@@ -1573,7 +1620,7 @@ def format_alert_message(sig: dict) -> str:
     if pair == "XAUUSD":
         display_pair = "GOLD (XAU/USD)"
         gold_basis_note = (
-            f"• <b>Market Feed:</b> <code>Spot Gold (XAU/USD) — Calibrated Live Institutional Feed</code>\n"
+            f"• <b>Market Feed:</b> <code>MT5 Institutional Spot Gold (XAU/USD)</code>\n"
             f"• <b>Pip Scale:</b> <code>$0.10 / pip ($1.00 move = 10 pips)</code>\n\n"
         )
     elif len(pair) == 6:
@@ -1653,6 +1700,10 @@ def format_alert_message(sig: dict) -> str:
 
 def run_scan_cycle():
     """Performs one full scan cycle across all pairs and timeframes."""
+    if not is_forex_market_open():
+        logger.info("Forex & Spot Gold markets are CLOSED for the weekend (Friday 17:00 NY to Sunday 17:00 NY). Standing down.")
+        return
+
     state = load_state()
     records = load_trade_records()
     total_signals = 0

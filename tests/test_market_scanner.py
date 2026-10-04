@@ -86,6 +86,7 @@ def test_check_active_trades_skips_pre_entry_bars(monkeypatch):
         "volume": [100, 100, 100, 100]
     })
 
+    monkeypatch.setattr("market_scanner.is_forex_market_open", lambda *args, **kwargs: True)
     monkeypatch.setattr("market_scanner.fetch_candles", lambda *args, **kwargs: mock_df)
     monkeypatch.setattr("market_scanner.send_telegram_alert", lambda *args, **kwargs: None)
     monkeypatch.setattr("market_scanner.sync_worker", lambda *args, **kwargs: None)
@@ -139,6 +140,7 @@ def test_check_active_trades_pending_order_fill(monkeypatch):
     })
 
     alerts = []
+    monkeypatch.setattr("market_scanner.is_forex_market_open", lambda *args, **kwargs: True)
     monkeypatch.setattr("market_scanner.fetch_candles", lambda *args, **kwargs: mock_df)
     monkeypatch.setattr("market_scanner.send_telegram_alert", lambda msg: alerts.append(msg))
     monkeypatch.setattr("market_scanner.sync_worker", lambda *args, **kwargs: None)
@@ -150,7 +152,7 @@ def test_check_active_trades_pending_order_fill(monkeypatch):
                 "trade_id": "XAUUSD_TEST_1",
                 "pair": "XAUUSD",
                 "symbol": "XAUUSD",
-                "ticker": "GC=F",
+                "ticker": "XAUUSD",
                 "direction": "SHORT",
                 "entry": 4187.90,
                 "stop_loss": 4220.28,
@@ -193,6 +195,7 @@ def test_check_active_trades_pending_order_cancellation(monkeypatch):
     })
 
     alerts = []
+    monkeypatch.setattr("market_scanner.is_forex_market_open", lambda *args, **kwargs: True)
     monkeypatch.setattr("market_scanner.fetch_candles", lambda *args, **kwargs: mock_df)
     monkeypatch.setattr("market_scanner.send_telegram_alert", lambda msg: alerts.append(msg))
     monkeypatch.setattr("market_scanner.sync_worker", lambda *args, **kwargs: None)
@@ -204,7 +207,7 @@ def test_check_active_trades_pending_order_cancellation(monkeypatch):
                 "trade_id": "XAUUSD_TEST_2",
                 "pair": "XAUUSD",
                 "symbol": "XAUUSD",
-                "ticker": "GC=F",
+                "ticker": "XAUUSD",
                 "direction": "SHORT",
                 "entry": 4187.90,
                 "stop_loss": 4220.28,
@@ -254,6 +257,7 @@ def test_check_active_trades_pending_order_timeout(monkeypatch):
     })
 
     alerts = []
+    monkeypatch.setattr("market_scanner.is_forex_market_open", lambda *args, **kwargs: True)
     monkeypatch.setattr("market_scanner.fetch_candles", lambda *args, **kwargs: mock_df)
     monkeypatch.setattr("market_scanner.send_telegram_alert", lambda msg: alerts.append(msg))
     monkeypatch.setattr("market_scanner.sync_worker", lambda *args, **kwargs: None)
@@ -265,7 +269,7 @@ def test_check_active_trades_pending_order_timeout(monkeypatch):
                 "trade_id": "XAUUSD_TIMEOUT_TEST",
                 "pair": "XAUUSD",
                 "symbol": "XAUUSD",
-                "ticker": "GC=F",
+                "ticker": "XAUUSD",
                 "direction": "SHORT",
                 "timeframe": "15M",
                 "entry": 4187.90,
@@ -376,11 +380,13 @@ def test_check_active_trades_ema20_invalidation_exit(monkeypatch):
         "ema20": [1.1360]
     })
 
+    monkeypatch.setattr("market_scanner.is_forex_market_open", lambda *args, **kwargs: True)
     monkeypatch.setattr("market_scanner.fetch_candles", lambda *args, **kwargs: mock_df)
     monkeypatch.setattr("market_scanner.send_telegram_alert", lambda *args, **kwargs: None)
     monkeypatch.setattr("market_scanner.sync_worker", lambda *args, **kwargs: None)
     monkeypatch.setattr("market_scanner.save_trade_records", lambda *args, **kwargs: None)
     monkeypatch.setattr("market_scanner.compute_indicators", lambda df, **kwargs: df)
+    monkeypatch.setattr("market_scanner.record_trade_post_mortem", lambda *args, **kwargs: None)
 
     records = {
         "active_trades": {
@@ -415,6 +421,70 @@ def test_check_active_trades_ema20_invalidation_exit(monkeypatch):
     assert completed["exit_reason"] == "EMA20_INVALIDATION"
     assert completed["exit_price"] == 1.1350
     assert completed["status"] == "CLOSED"
+
+
+def test_is_forex_market_open_cases():
+    """Verify that is_forex_market_open strictly closes from Friday 17:00 NY to Sunday 17:00 NY."""
+    from zoneinfo import ZoneInfo
+    from market_scanner import is_forex_market_open
+
+    ny_tz = ZoneInfo("America/New_York")
+
+    # Wednesday 10:00 NY -> Open
+    wed_open = datetime(2026, 9, 30, 10, 0, tzinfo=ny_tz)
+    assert is_forex_market_open(wed_open) is True
+
+    # Friday 16:59 NY -> Open
+    fri_open = datetime(2026, 10, 2, 16, 59, tzinfo=ny_tz)
+    assert is_forex_market_open(fri_open) is True
+
+    # Friday 17:00 NY -> Closed
+    fri_close = datetime(2026, 10, 2, 17, 0, tzinfo=ny_tz)
+    assert is_forex_market_open(fri_close) is False
+
+    # Saturday 12:00 NY -> Closed
+    sat_noon = datetime(2026, 10, 3, 12, 0, tzinfo=ny_tz)
+    assert is_forex_market_open(sat_noon) is False
+
+    # Sunday 16:59 NY -> Closed
+    sun_before_open = datetime(2026, 10, 4, 16, 59, tzinfo=ny_tz)
+    assert is_forex_market_open(sun_before_open) is False
+
+    # Sunday 17:00 NY -> Open
+    sun_open = datetime(2026, 10, 4, 17, 0, tzinfo=ny_tz)
+    assert is_forex_market_open(sun_open) is True
+
+
+def test_gold_config_uses_mt5_spot_pair():
+    """Ensure Gold configuration strictly uses MT5 spot XAUUSD (no GC=F COMEX futures, no PAXG)."""
+    from market_scanner import SYMBOLS
+
+    assert "XAUUSD" in SYMBOLS
+    gold_cfg = SYMBOLS["XAUUSD"]
+    assert gold_cfg["ticker"] == "XAUUSD"
+    assert gold_cfg["pip"] == 0.10
+    assert gold_cfg["digits"] == 2
+    assert gold_cfg["donchian_len"] == 20
+
+    # Ensure no futures or crypto symbols exist in SYMBOLS
+    for sym, cfg in SYMBOLS.items():
+        assert "GC=F" not in cfg["ticker"], f"Found COMEX futures GC=F in {sym}"
+        assert "PAXG" not in cfg["ticker"], f"Found crypto PAXG in {sym}"
+
+
+def test_run_scan_cycle_skips_when_market_closed(monkeypatch, caplog):
+    """Ensure run_scan_cycle immediately halts and stands down when forex market is closed."""
+    import logging
+    from market_scanner import run_scan_cycle
+
+    monkeypatch.setattr("market_scanner.is_forex_market_open", lambda *args, **kwargs: False)
+    
+    with caplog.at_level(logging.INFO):
+        run_scan_cycle()
+
+    assert "markets are CLOSED for the weekend" in caplog.text
+
+
 
 
 
