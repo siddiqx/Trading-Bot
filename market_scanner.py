@@ -1484,21 +1484,21 @@ def scan_pair_timeframe(pair_name: str, config: dict, tf: str, state: dict) -> l
             f"Entered HUNTING state (awaiting pullback to 20-EMA / 50% Fib equilibrium & confirmed rejection candle)."
         )
 
-    # Phase 2: Check for confirmed Two-Phase Pullback & Rejection Bounce
+    # Phase 2: Check for confirmed Two-Phase Pullback & Rejection Bounce (max 12 bars lookback for deep pullback)
     long_confirmed, bo_time_l, ob_low, fib_50_l, hunt_lvl_l = detect_pullback_confirmation(
-        closed_bars, donch_len, is_long=True, max_lookback=8
+        closed_bars, donch_len, is_long=True, max_lookback=12
     )
     short_confirmed, bo_time_s, ob_high, fib_50_s, hunt_lvl_s = detect_pullback_confirmation(
-        closed_bars, donch_len, is_long=False, max_lookback=8
+        closed_bars, donch_len, is_long=False, max_lookback=12
     )
 
     atr = closed_bar["atr"]
     if pair_name == "XAUUSD":
-        min_sl_dist = 15.0 * pip   # $1.50 minimum
-        max_sl_dist = 250.0 * pip  # $25.00 maximum cap
+        min_sl_dist = 100.0 * pip  # $10.00 minimum stop loss (structural protection against intraday noise)
+        max_sl_dist = 250.0 * pip  # $25.00 maximum cap (~1.5x ATR)
     else:
-        min_sl_dist = 12.0 * pip
-        max_sl_dist = 35.0 * pip
+        min_sl_dist = 16.0 * pip   # 16 pips minimum
+        max_sl_dist = 40.0 * pip   # 40 pips maximum cap
 
     # ADX regime label for signal metadata
     if adx_val < 20.0:
