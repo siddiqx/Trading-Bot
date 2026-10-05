@@ -33,7 +33,7 @@ jobs:
 
       - name: Install Dependencies
         run: |
-          pip install --quiet httpx pandas numpy
+          pip install --quiet httpx pandas numpy websocket-client
 
       - name: Restore Signal State Cache
         id: cache-restore

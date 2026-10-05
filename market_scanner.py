@@ -16,7 +16,10 @@ from pathlib import Path
 import httpx
 import numpy as np
 import pandas as pd
-import websocket
+try:
+    import websocket
+except ImportError:
+    websocket = None
 from core.post_mortem import record_trade_post_mortem
 
 logging.basicConfig(

@@ -1,26 +1,6 @@
 {
   "tracking_started": "2026-09-28",
-  "active_trades": {
-    "USDCAD": {
-      "trade_id": "USDCAD_15M_2026-10-02T15:15:00Z_LONG",
-      "pair": "USDCAD",
-      "symbol": "USDCAD",
-      "ticker": "USDCAD=X",
-      "direction": "LONG",
-      "timeframe": "15M",
-      "entry": 1.42463,
-      "stop_loss": 1.42133,
-      "take_profit": 1.4304,
-      "sl_pips": 33.0,
-      "tp_pips": 57.7,
-      "rr": 1.75,
-      "pip": 0.0001,
-      "digits": 5,
-      "opened_at": "2026-10-02T15:15:00Z",
-      "status": "OPEN",
-      "filled_at": "2026-10-02T15:15:00Z"
-    }
-  },
+  "active_trades": {},
   "completed_trades": [
     {
       "trade_id": "EURUSD_15M_2026-10-01T14:45:00Z_SHORT",
@@ -328,6 +308,35 @@
       "realized_pips": -12.7,
       "realized_r": -0.33,
       "closed_at": "2026-10-02T15:01:35Z",
+      "exit_reason": "EMA20_INVALIDATION"
+    },
+    {
+      "trade_id": "USDCAD_15M_2026-10-02T15:15:00Z_LONG",
+      "pair": "USDCAD",
+      "symbol": "USDCAD",
+      "ticker": "USDCAD=X",
+      "direction": "LONG",
+      "timeframe": "15M",
+      "entry": 1.42463,
+      "stop_loss": 1.42473,
+      "take_profit": 1.4304,
+      "sl_pips": 33.0,
+      "tp_pips": 57.7,
+      "rr": 1.75,
+      "pip": 0.0001,
+      "digits": 5,
+      "opened_at": "2026-10-02T15:15:00Z",
+      "status": "CLOSED",
+      "filled_at": "2026-10-02T15:15:00Z",
+      "partial_taken": true,
+      "partial_banked_r": 0.5,
+      "partial_banked_pips": 16.5,
+      "be_active": true,
+      "exit_price": 1.4277000427246094,
+      "outcome": "WIN",
+      "realized_pips": 31.9,
+      "realized_r": 0.97,
+      "closed_at": "2026-10-05T14:31:42Z",
       "exit_reason": "EMA20_INVALIDATION"
     }
   ]

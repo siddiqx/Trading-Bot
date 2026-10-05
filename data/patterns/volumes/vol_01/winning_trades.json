@@ -178,5 +178,50 @@
       "summary": "Take-profit hit within 1 bar(s). High momentum impulse confirmed structural breakout conviction.",
       "actionable_insight": "Validates the 20-period Donchian channel breakout trigger."
     }
+  },
+  {
+    "tracking": {
+      "global_trade_no": 15,
+      "volume_no": 1,
+      "volume_trade_no": 15,
+      "volume_id": "VOL_01",
+      "volume_label": "Volume 1 (Trades 1\u2013100)"
+    },
+    "trade_id": "USDCAD_15M_2026-10-02T15:15:00Z_LONG",
+    "pair": "USDCAD",
+    "symbol": "USDCAD",
+    "timeframe": "15M",
+    "direction": "LONG",
+    "entry_price": 1.42463,
+    "exit_price": 1.4277000427246094,
+    "stop_loss": 1.42473,
+    "take_profit": 1.4304,
+    "opened_at": "2026-10-02T15:15:00Z",
+    "closed_at": "2026-10-05T14:31:42Z",
+    "duration_hours": 71.28,
+    "duration_bars": 285,
+    "outcome": "WIN",
+    "realized_pips": 31.9,
+    "realized_r": 0.97,
+    "excursion_metrics": {
+      "mfe_pips": 47.3,
+      "mfe_r": 47.3,
+      "mae_pips": -12.3,
+      "mae_r": -12.3,
+      "tp_distance_pct_reached": 82.0
+    },
+    "market_regime": {
+      "trading_session": "London/New York Overlap",
+      "rsi_at_entry": 50.0,
+      "atr_14": 0.0015,
+      "volatility_regime": "NORMAL",
+      "ema_alignment": "BULLISH_EXPANDING",
+      "breakout_candle_wick_ratio": 0.28
+    },
+    "diagnostic": {
+      "primary_factor": "HIGH_VELOCITY_BREAKOUT",
+      "summary": "Take-profit hit within 1 bar(s). High momentum impulse confirmed structural breakout conviction.",
+      "actionable_insight": "Validates the 20-period Donchian channel breakout trigger."
+    }
   }
 ]
