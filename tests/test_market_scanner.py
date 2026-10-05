@@ -456,7 +456,7 @@ def test_is_forex_market_open_cases():
 
 
 def test_gold_config_uses_mt5_spot_pair():
-    """Ensure Gold configuration strictly uses MT5 spot XAUUSD (no GC=F COMEX futures, no PAXG)."""
+    """Ensure Gold configuration strictly uses MT5 spot XAUUSD with calibrated 8-bar Donchian."""
     from market_scanner import SYMBOLS
 
     assert "XAUUSD" in SYMBOLS
@@ -464,7 +464,7 @@ def test_gold_config_uses_mt5_spot_pair():
     assert gold_cfg["ticker"] == "XAUUSD"
     assert gold_cfg["pip"] == 0.10
     assert gold_cfg["digits"] == 2
-    assert gold_cfg["donchian_len"] == 20
+    assert gold_cfg["donchian_len"] == 8
 
     # Ensure no futures or crypto symbols exist in SYMBOLS
     for sym, cfg in SYMBOLS.items():
@@ -483,6 +483,112 @@ def test_run_scan_cycle_skips_when_market_closed(monkeypatch, caplog):
         run_scan_cycle()
 
     assert "markets are CLOSED for the weekend" in caplog.text
+
+
+def test_detect_pullback_confirmation():
+    """Verify that detect_pullback_confirmation detects Phase 1 breakout and confirms Phase 2 rejection."""
+    from market_scanner import detect_pullback_confirmation
+
+    # Construct synthetic bars:
+    # Bars 0-20: flat base at 100.0 (high 101.0, low 99.0)
+    # Bar 21: Donchian high breakout at 103.0 (impulse)
+    # Bar 22: Pullback bar down to 101.5 (touches value zone)
+    # Bar 23: Rejection bounce bar closing higher (close > open: 102.0 -> 102.8)
+    times = [datetime(2026, 9, 28, 0, 0, tzinfo=timezone.utc) + timedelta(hours=i) for i in range(25)]
+    
+    closes = [100.0] * 21 + [103.0, 101.8, 102.8, 102.8]
+    opens = [100.0] * 21 + [100.5, 103.0, 101.8, 102.0]
+    highs = [101.0] * 21 + [103.5, 103.0, 103.0, 103.0]
+    lows = [99.0] * 21 + [100.2, 101.2, 101.6, 101.8]
+    
+    df = pd.DataFrame({
+        "time": times,
+        "close_time": [t + timedelta(hours=1) for t in times],
+        "open": opens,
+        "high": highs,
+        "low": lows,
+        "close": closes,
+        "volume": [1000] * 25,
+        "ema20": [99.5] * 21 + [100.5, 101.0, 101.4, 101.4],
+        "ema50": [98.0] * 25,
+        "ema20_slope": [0.05] * 25,
+        "donch_high": [101.0] * 21 + [101.0, 103.5, 103.5, 103.5],
+        "donch_low": [98.5] * 25,
+        "rsi": [55.0] * 25,
+        "atr": [1.0] * 25
+    })
+    
+    # Evaluate at bar 23 (index 23)
+    bars_subset = df.iloc[:24]
+    confirmed, bo_time, ob_l, fib_50, hunt_lvl = detect_pullback_confirmation(
+        bars_subset, donch_len=8, is_long=True, max_lookback=8
+    )
+    assert confirmed is True
+    assert hunt_lvl == 101.0
+    assert ob_l <= 101.0
+
+
+def test_model_j_partial_tp_and_breakeven_lock(monkeypatch):
+    """Verify that reaching +1.0R banks 50% profit (+0.50R) and moves SL to Breakeven."""
+    from market_scanner import check_active_trades
+
+    t_entry = datetime(2026, 9, 28, 10, 0, tzinfo=timezone.utc)
+    mock_df = pd.DataFrame({
+        "time": [t_entry + timedelta(hours=i) for i in range(5)],
+        "open": [2650.0, 2652.0, 2660.0, 2655.0, 2652.0],
+        "high": [2652.0, 2662.0, 2665.0, 2658.0, 2654.0],  # Bar 1 high is 2662 (+12.0 above entry, exceeds 1.0R = 10.0)
+        "low": [2649.0, 2651.0, 2653.0, 2649.0, 2648.0],
+        "close": [2651.0, 2661.0, 2657.0, 2650.0, 2649.0],
+        "volume": [100] * 5,
+        "ema20": [2645.0] * 5,
+        "ema50": [2640.0] * 5
+    })
+
+    monkeypatch.setattr("market_scanner.is_forex_market_open", lambda *args, **kwargs: True)
+    monkeypatch.setattr("market_scanner.fetch_candles", lambda *args, **kwargs: mock_df)
+    monkeypatch.setattr("market_scanner.send_telegram_alert", lambda *args, **kwargs: None)
+    monkeypatch.setattr("market_scanner.sync_worker", lambda *args, **kwargs: None)
+    monkeypatch.setattr("market_scanner.save_trade_records", lambda *args, **kwargs: None)
+
+    records = {
+        "active_trades": {
+            "XAUUSD": {
+                "trade_id": "XAUUSD_TEST",
+                "pair": "XAUUSD",
+                "symbol": "XAUUSD",
+                "ticker": "XAUUSD",
+                "direction": "LONG",
+                "timeframe": "1H",
+                "entry": 2650.00,
+                "stop_loss": 2640.00,  # 1.0R = $10.00 (100 pips)
+                "take_profit": 2667.50, # 1.75R
+                "sl_pips": 100.0,
+                "tp_pips": 175.0,
+                "rr": 1.75,
+                "pip": 0.10,
+                "digits": 2,
+                "opened_at": t_entry.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "status": "OPEN",
+                "be_active": False,
+                "partial_taken": False
+            }
+        },
+        "completed_trades": []
+    }
+
+    check_active_trades(records)
+
+    # In bar 1, high reached 2662.0 (+12.0 > 10.0 initial SL dist), so partial TP must be taken
+    # and SL moved to Breakeven (+1 pip = 2650.10).
+    # Then in bar 3, low dipped to 2649.0, hitting the Breakeven stop loss!
+    # Because Model J locked BE with 50% booked, trade must resolve as WIN (+0.50R banked).
+    assert "XAUUSD" not in records["active_trades"]
+    assert len(records["completed_trades"]) == 1
+    completed = records["completed_trades"][0]
+    assert completed["status"] == "CLOSED"
+    assert completed["outcome"] == "WIN"
+    assert completed["realized_r"] == 0.50
+    assert completed["realized_pips"] == 50.5
 
 
 
