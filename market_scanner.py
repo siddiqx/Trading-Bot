@@ -1803,7 +1803,7 @@ def format_alert_message(sig: dict) -> str:
         f"• <b>Take Profit:</b> <code>{sig['take_profit']}</code> <i>({tp_sign}{sig['tp_pips']} pips · {sig.get('target_type', 'Target')})</i>\n"
         f"• <b>Risk / Reward:</b> <b>1 : {sig['rr']}</b>\n"
         f"• <b>Profit Banking:</b> <b>Model J (50% Banked at +1.0R + Zero-Risk BE Lock)</b>\n"
-        f"• <b>Suggested Risk:</b> <b>0.5% Equity (Max DD Guard: &lt;6.0% Cap)</b>\n\n"
+        f"• <b>Suggested Risk:</b> <b>$45.00 / trade (0.90% on $5,000 Prop Account · Max DD Guard: &lt;6.8% Cap)</b>\n\n"
         f"{gold_basis_note}"
         f"<b>🔬 CONFLUENCE MODEL</b>\n"
         f"• <b>Engine:</b> Two-Phase Pullback & Rejection Engine (Guaranteed ≥50% WR)\n"
@@ -1827,8 +1827,8 @@ def format_alert_message(sig: dict) -> str:
 
 
 def check_daily_circuit_breaker(records: dict) -> tuple[bool, str]:
-    """Prop Firm Risk Safeguard: Checks if Daily Profit Lock or Daily Loss Limit has been triggered
-    for the current UTC trading day.
+    """Prop Firm Risk Safeguard (5K Standard 2-Step Optimized):
+    Monitors daily drawdown and halts execution if the daily loss circuit breaker is triggered.
     Returns: (is_tripped: bool, reason: str)
     """
     today_utc = datetime.now(timezone.utc).strftime("%Y-%m-%d")
@@ -1841,15 +1841,12 @@ def check_daily_circuit_breaker(records: dict) -> tuple[bool, str]:
     today_r = sum(float(t.get("realized_r", 0.0)) for t in today_trades)
     loss_count = sum(1 for t in today_trades if t.get("outcome") == "LOSS")
     
-    # 1. Daily Profit Lock: If today's closed profit reaches >= +1.25R, stand down!
-    # This guarantees compliance with prop firm consistency rules and secures intraday gains.
-    if today_r >= 1.25:
-        return True, f"Daily Profit Lock Triggered (+{today_r:.2f}R secured today). Standing down to enforce Consistency Rule."
-        
-    # 2. Daily Loss Limit: If today's closed loss <= -1.80R or >= 2 losses, stand down!
-    # This guarantees the 3.0% / 5.0% maximum daily drawdown is never breached.
-    if today_r <= -1.80 or loss_count >= 2:
-        return True, f"Daily Loss Circuit Breaker Triggered ({today_r:+.2f}R, {loss_count} losses today). Standing down until next UTC session."
+    # Daily Loss Circuit Breaker: Halt if daily loss <= -2.50R or >= 3 losses in a single day.
+    # On a $5,000 account risking $45.00 (0.90%), this caps maximum daily drawdown at <= $135.00 (2.70%),
+    # providing an ironclad $115.00 (46%) safety buffer before the 5.0% ($250.00) prop firm limit is ever threatened.
+    # (Note: Artificial profit cap removed — 5K 2-Step has NO consistency rule, allowing winning days to run freely).
+    if today_r <= -2.50 or loss_count >= 3:
+        return True, f"Daily Loss Circuit Breaker Triggered ({today_r:+.2f}R, {loss_count} losses today). Standing down until next UTC session to protect 5.0% daily drawdown limit."
         
     return False, ""
 

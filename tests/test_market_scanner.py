@@ -591,22 +591,24 @@ def test_model_j_partial_tp_and_breakeven_lock(monkeypatch):
     assert completed["realized_pips"] == 50.5
 
 
-def test_check_daily_circuit_breaker_profit_lock():
+def test_check_daily_circuit_breaker_profit_unlimited():
+    """Ensure 5K account does NOT artificially cap winning days, allowing profits to compound."""
     from market_scanner import check_daily_circuit_breaker
     from datetime import datetime, timezone
     today_utc = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
     records = {
         "completed_trades": [
-            {"closed_at": f"{today_utc}T10:00:00Z", "outcome": "WIN", "realized_r": 1.35}
+            {"closed_at": f"{today_utc}T10:00:00Z", "outcome": "WIN", "realized_r": 3.50}
         ]
     }
     tripped, reason = check_daily_circuit_breaker(records)
-    assert tripped is True
-    assert "Daily Profit Lock" in reason
+    assert tripped is False
+    assert reason == ""
 
 
 def test_check_daily_circuit_breaker_loss_limit():
+    """Ensure circuit breaker trips if daily loss hits <= -2.50R or >= 3 losses."""
     from market_scanner import check_daily_circuit_breaker
     from datetime import datetime, timezone
     today_utc = datetime.now(timezone.utc).strftime("%Y-%m-%d")
@@ -614,7 +616,8 @@ def test_check_daily_circuit_breaker_loss_limit():
     records = {
         "completed_trades": [
             {"closed_at": f"{today_utc}T08:00:00Z", "outcome": "LOSS", "realized_r": -1.0},
-            {"closed_at": f"{today_utc}T12:00:00Z", "outcome": "LOSS", "realized_r": -1.0}
+            {"closed_at": f"{today_utc}T12:00:00Z", "outcome": "LOSS", "realized_r": -1.0},
+            {"closed_at": f"{today_utc}T14:00:00Z", "outcome": "LOSS", "realized_r": -0.8}
         ]
     }
     tripped, reason = check_daily_circuit_breaker(records)
