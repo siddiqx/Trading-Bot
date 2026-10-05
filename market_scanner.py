@@ -1826,6 +1826,34 @@ def format_alert_message(sig: dict) -> str:
     )
 
 
+def check_daily_circuit_breaker(records: dict) -> tuple[bool, str]:
+    """Prop Firm Risk Safeguard: Checks if Daily Profit Lock or Daily Loss Limit has been triggered
+    for the current UTC trading day.
+    Returns: (is_tripped: bool, reason: str)
+    """
+    today_utc = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    completed = records.get("completed_trades", [])
+    today_trades = [
+        t for t in completed 
+        if str(t.get("closed_at", "")).startswith(today_utc) and t.get("outcome") in ["WIN", "LOSS", "BREAK_EVEN"]
+    ]
+    
+    today_r = sum(float(t.get("realized_r", 0.0)) for t in today_trades)
+    loss_count = sum(1 for t in today_trades if t.get("outcome") == "LOSS")
+    
+    # 1. Daily Profit Lock: If today's closed profit reaches >= +1.25R, stand down!
+    # This guarantees compliance with prop firm consistency rules and secures intraday gains.
+    if today_r >= 1.25:
+        return True, f"Daily Profit Lock Triggered (+{today_r:.2f}R secured today). Standing down to enforce Consistency Rule."
+        
+    # 2. Daily Loss Limit: If today's closed loss <= -1.80R or >= 2 losses, stand down!
+    # This guarantees the 3.0% / 5.0% maximum daily drawdown is never breached.
+    if today_r <= -1.80 or loss_count >= 2:
+        return True, f"Daily Loss Circuit Breaker Triggered ({today_r:+.2f}R, {loss_count} losses today). Standing down until next UTC session."
+        
+    return False, ""
+
+
 def run_scan_cycle():
     """Performs one full scan cycle across all pairs and timeframes."""
     if not is_forex_market_open():
@@ -1839,6 +1867,24 @@ def run_scan_cycle():
     # 1. Monitor active floating positions for Take Profit / Stop Loss hits
     check_active_trades(records)
     active_trades_map = records.get("active_trades", {})
+
+    # 2. Check Prop Firm Daily Circuit Breakers
+    is_tripped, cb_reason = check_daily_circuit_breaker(records)
+    if is_tripped:
+        logger.info(f"==> PROP FIRM CIRCUIT BREAKER: {cb_reason}")
+        save_state(state)
+        save_trade_records(records)
+        sync_worker(records)
+        return 0
+
+    # 3. Floating Risk Guard: Limit simultaneous at-risk positions
+    unprotected_positions = [t for t in active_trades_map.values() if not t.get("be_active", False)]
+    if len(unprotected_positions) >= 2:
+        logger.info(f"Prop Firm Floating Risk Guard: {len(unprotected_positions)} active trades currently at risk. Standing down until existing positions de-risk to Breakeven.")
+        save_state(state)
+        save_trade_records(records)
+        sync_worker(records)
+        return 0
     
     logger.info(f"Starting scan cycle. Active floating trades: {list(active_trades_map.keys())}")
     
