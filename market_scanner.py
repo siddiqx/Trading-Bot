@@ -1404,16 +1404,16 @@ def scan_pair_timeframe(pair_name: str, config: dict, tf: str, state: dict) -> l
         logger.info(f"Skipping {pair_name} ({tf}): Sunday opening gap guard active (avoids illiquid spread widening).")
         return []
 
-    # Gold Toxic Hours Filter: UTC 0, 4, 15, 16, 19
-    # Audit shows these hours carry 72% stop-hunt rate on XAUUSD.
-    if pair_name == "XAUUSD" and now_utc.hour in [0, 4, 15, 16, 19]:
-        logger.info(f"Skipping XAUUSD ({tf}): Toxic volatility hour ({now_utc.hour}:00 UTC). Avoiding stop hunts.")
+    # Gold Session Filter: Skip Asian illiquidity (UTC 0, 4) and NY Close spread spikes (UTC 19).
+    # Peak European & New York institutional volume windows (06:00 - 18:00 UTC) remain fully enabled.
+    if pair_name == "XAUUSD" and now_utc.hour in [0, 4, 19]:
+        logger.info(f"Skipping XAUUSD ({tf}): Illiquid transition hour ({now_utc.hour}:00 UTC). Surveillance resumed during institutional sessions.")
         return []
 
-    # London/New York Overlap Whipsaw Guard: Restrict 15M breakout noise between 12:00 and 16:00 UTC for Forex.
-    # 1H structural swings remain fully enabled to capture major institutional trend continuation.
-    if pair_name != "XAUUSD" and tf == "15m" and 12 <= now_utc.hour < 16:
-        logger.info(f"Skipping {pair_name} ({tf}): 15M London/NY Overlap news volatility window (12:00 - 16:00 UTC). 1H setups active.")
+    # High-Impact Red Folder Guard: Restrict 15M breakout entries during the major 12:00 - 13:30 UTC US data releases.
+    # 1H structural swings and post-news institutional trends remain fully active.
+    if pair_name != "XAUUSD" and tf == "15m" and 12 <= now_utc.hour < 14:
+        logger.info(f"Skipping {pair_name} ({tf}): 15M US data release window (12:00 - 14:00 UTC). 1H setups active.")
         return []
 
     ticker = config["ticker"]
