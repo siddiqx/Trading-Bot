@@ -20,13 +20,17 @@ const DEFAULT_CHAT_ID = "8142877259";
 const ASSETS = [
   { name: "GOLD",    symbol: "XAUUSD", ticker: "XAUUSD",   pip: 0.10,   digits: 2, donchian_len: 8 },
   { name: "EUR/USD", symbol: "EURUSD", ticker: "EURUSD=X", pip: 0.0001, digits: 5, donchian_len: 20 },
-  { name: "USD/CAD", symbol: "USDCAD", ticker: "USDCAD=X", pip: 0.0001, digits: 5, donchian_len: 20 }
+  { name: "USD/CAD", symbol: "USDCAD", ticker: "USDCAD=X", pip: 0.0001, digits: 5, donchian_len: 20 },
+  { name: "GBP/USD", symbol: "GBPUSD", ticker: "GBPUSD=X", pip: 0.0001, digits: 5, donchian_len: 20 },
+  { name: "USD/JPY", symbol: "USDJPY", ticker: "USDJPY=X", pip: 0.01,   digits: 3, donchian_len: 20 },
+  { name: "AUD/USD", symbol: "AUDUSD", ticker: "AUDUSD=X", pip: 0.0001, digits: 5, donchian_len: 20 }
 ];
 
 const ALL_KNOWN_CONFIGS = {
   "XAUUSD": { name: "GOLD",    ticker: "XAUUSD",   pip: 0.10,   digits: 2 },
   "EURUSD": { name: "EUR/USD", ticker: "EURUSD=X", pip: 0.0001, digits: 5 },
   "USDCAD": { name: "USD/CAD", ticker: "USDCAD=X", pip: 0.0001, digits: 5 },
+  "GBPUSD": { name: "GBP/USD", ticker: "GBPUSD=X", pip: 0.0001, digits: 5 },
   "USDJPY": { name: "USD/JPY", ticker: "USDJPY=X", pip: 0.01,   digits: 3 },
   "USDCHF": { name: "USD/CHF", ticker: "USDCHF=X", pip: 0.0001, digits: 5 },
   "AUDUSD": { name: "AUD/USD", ticker: "AUDUSD=X", pip: 0.0001, digits: 5 }

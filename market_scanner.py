@@ -29,6 +29,12 @@ logging.basicConfig(
 )
 logger = logging.getLogger("MarketScanner")
 
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
+
 # Telegram Bot Credentials — loaded strictly from environment variables.
 # NEVER hardcode fallback values here: if env vars are missing in CI, fail loudly.
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
@@ -79,9 +85,12 @@ def is_forex_market_open(dt: datetime | None = None) -> bool:
 # EURUSD: 56.4% WR, 0.366R expectancy, 2.26 PF
 # USDCAD: 65.9% WR, 0.402R expectancy, 2.20 PF
 SYMBOLS = {
-    "XAUUSD": {"ticker": "XAUUSD", "pip": 0.10,   "digits": 2, "donchian_len": 8},  # MT5 Spot Gold (Optimized 8-bar impulse trigger: 75.5% WR)
+    "XAUUSD": {"ticker": "XAUUSD", "pip": 0.10,   "digits": 2, "donchian_len": 8},  # MT5 Spot Gold
     "EURUSD": {"ticker": "EURUSD=X", "pip": 0.0001, "digits": 5, "donchian_len": 20}, # Institutional 20-bar Donchian
     "USDCAD": {"ticker": "USDCAD=X", "pip": 0.0001, "digits": 5, "donchian_len": 20}, # Institutional 20-bar Donchian
+    "GBPUSD": {"ticker": "GBPUSD=X", "pip": 0.0001, "digits": 5, "donchian_len": 20}, # Institutional 20-bar Donchian
+    "USDJPY": {"ticker": "USDJPY=X", "pip": 0.01,   "digits": 3, "donchian_len": 20}, # Institutional 20-bar Donchian
+    "AUDUSD": {"ticker": "AUDUSD=X", "pip": 0.0001, "digits": 5, "donchian_len": 20}, # Institutional 20-bar Donchian
 }
 
 TIMEFRAMES = ["15m", "1h"]
@@ -236,8 +245,9 @@ def check_active_trades(records: dict):
     resolved_pairs = []
     modified_pairs = []
 
-    for pair, trade in list(active.items()):
+    for trade_key, trade in list(active.items()):
         ticker = trade.get("ticker")
+        pair = trade.get("symbol") or trade.get("pair") or trade_key.split("_")[0]
         if pair == "XAUUSD" or ticker in ["PAXGUSDT", "GC=F", "XAUUSD"]:
             ticker = "XAUUSD"
         if not ticker:
@@ -294,7 +304,8 @@ def check_active_trades(records: dict):
                         )
                         send_telegram_alert(msg)
                         records.setdefault("completed_trades", []).append(completed_record)
-                        del records["active_trades"][pair]
+                        records.get("active_trades", {}).pop(trade_key, None)
+                        records.get("active_trades", {}).pop(pair, None)
                         resolved_pairs.append(pair)
                 continue
 
@@ -516,7 +527,8 @@ def check_active_trades(records: dict):
             )
             send_telegram_alert(msg)
             records.setdefault("completed_trades", []).append(completed_record)
-            del records["active_trades"][pair]
+            records.get("active_trades", {}).pop(trade_key, None)
+            records.get("active_trades", {}).pop(pair, None)
             resolved_pairs.append(pair)
 
         elif is_expired:
@@ -542,7 +554,8 @@ def check_active_trades(records: dict):
             )
             send_telegram_alert(msg)
             records.setdefault("completed_trades", []).append(completed_record)
-            del records["active_trades"][pair]
+            records.get("active_trades", {}).pop(trade_key, None)
+            records.get("active_trades", {}).pop(pair, None)
             resolved_pairs.append(pair)
 
         elif hit_tp:
@@ -580,7 +593,8 @@ def check_active_trades(records: dict):
             send_telegram_alert(msg)
 
             records.setdefault("completed_trades", []).append(completed_record)
-            del records["active_trades"][pair]
+            records.get("active_trades", {}).pop(trade_key, None)
+            records.get("active_trades", {}).pop(pair, None)
             resolved_pairs.append(pair)
 
         elif hit_sl:
@@ -631,7 +645,8 @@ def check_active_trades(records: dict):
             send_telegram_alert(msg)
 
             records.setdefault("completed_trades", []).append(completed_record)
-            del records["active_trades"][pair]
+            records.get("active_trades", {}).pop(trade_key, None)
+            records.get("active_trades", {}).pop(pair, None)
             resolved_pairs.append(pair)
 
         elif hit_ema_exit:
@@ -690,7 +705,8 @@ def check_active_trades(records: dict):
             send_telegram_alert(inval_msg)
 
             records.setdefault("completed_trades", []).append(completed_record)
-            del records["active_trades"][pair]
+            records.get("active_trades", {}).pop(trade_key, None)
+            records.get("active_trades", {}).pop(pair, None)
             resolved_pairs.append(pair)
 
     if resolved_pairs or modified_pairs:
@@ -1394,11 +1410,10 @@ def scan_pair_timeframe(pair_name: str, config: dict, tf: str, state: dict) -> l
         logger.info(f"Skipping XAUUSD ({tf}): Toxic volatility hour ({now_utc.hour}:00 UTC). Avoiding stop hunts.")
         return []
 
-    # London/New York Overlap Whipsaw Guard: Restrict new breakout signal generation between 12:00 and 16:00 UTC for Forex.
-    # Forensic audit: 33.3% WR, -0.218R expectancy, 0.62 PF — the single worst session window.
-    # Active floating positions remain fully monitored and protected with break-even stops.
-    if pair_name != "XAUUSD" and 12 <= now_utc.hour < 16:
-        logger.info(f"Skipping {pair_name} ({tf}): Current time {now_utc.strftime('%H:%M')} UTC inside London/NY Overlap news volatility window (12:00 - 16:00 UTC).")
+    # London/New York Overlap Whipsaw Guard: Restrict 15M breakout noise between 12:00 and 16:00 UTC for Forex.
+    # 1H structural swings remain fully enabled to capture major institutional trend continuation.
+    if pair_name != "XAUUSD" and tf == "15m" and 12 <= now_utc.hour < 16:
+        logger.info(f"Skipping {pair_name} ({tf}): 15M London/NY Overlap news volatility window (12:00 - 16:00 UTC). 1H setups active.")
         return []
 
     ticker = config["ticker"]
@@ -1466,11 +1481,13 @@ def scan_pair_timeframe(pair_name: str, config: dict, tf: str, state: dict) -> l
     except (KeyError, TypeError, ValueError):
         adx_val = 0.0
     if 20.0 < adx_val < 30.0:
-        logger.info(
-            f"Skipping {pair_name} ({tf}): ADX={adx_val:.1f} is in the moderate-trend killing zone (20-30). "
-            f"Historical expectancy: -0.09R / 38.4% WR. Waiting for clear regime."
-        )
-        return []
+        # Permit continuation setups when 20-EMA slope demonstrates clear directional momentum
+        slope_thresh = 0.05 * (closed_bar["atr"] if "atr" in closed_bar.index else pip)
+        if abs(closed_bar["ema20_slope"]) < slope_thresh:
+            logger.info(
+                f"Skipping {pair_name} ({tf}): ADX={adx_val:.1f} with flat EMA slope is in consolidation killing zone."
+            )
+            return []
 
     # Phase 1: Check for fresh initial Donchian breakout impulse on completed bar
     long_breakout = (closed_bar["close"] > closed_bar["donch_high"]) and (prev_bar["close"] <= prev_bar["donch_high"])
@@ -1821,17 +1838,21 @@ def run_scan_cycle():
 
     # 1. Monitor active floating positions for Take Profit / Stop Loss hits
     check_active_trades(records)
-    active_pairs = set(records.get("active_trades", {}).keys())
+    active_trades_map = records.get("active_trades", {})
     
-    logger.info(f"Starting scan cycle. Active locked pairs: {list(active_pairs)}")
+    logger.info(f"Starting scan cycle. Active floating trades: {list(active_trades_map.keys())}")
     
     for pair_name, cfg in SYMBOLS.items():
-        # Enforce strict single-trade lock: skip scanning if pair is already in a trade
-        if pair_name in active_pairs:
-            logger.info(f"Skipping {pair_name}: Active position currently floating.")
-            continue
-
         for tf in TIMEFRAMES:
+            slot_key = f"{pair_name}_{tf.upper()}"
+            active_slot_trade = active_trades_map.get(slot_key) or active_trades_map.get(pair_name)
+            
+            # Multi-trade concurrency: allow independent 15M and 1H trades on the same pair!
+            # If an existing trade in this slot has already banked +1.0R and is locked at Break-Even, allow fresh entry!
+            if active_slot_trade and not active_slot_trade.get("be_active", False):
+                logger.info(f"Skipping {pair_name} ({tf}): Active trade currently floating in market.")
+                continue
+
             try:
                 signals = scan_pair_timeframe(pair_name, cfg, tf, state)
                 for sig in signals:
@@ -1861,11 +1882,9 @@ def run_scan_cycle():
                         "status": "OPEN",
                         "filled_at": bar_time
                     }
-                    records.setdefault("active_trades", {})[pair_name] = new_trade_entry
+                    records.setdefault("active_trades", {})[slot_key] = new_trade_entry
+                    active_trades_map[slot_key] = new_trade_entry
                     save_trade_records(records)
-                    # Do NOT sync_worker here — a final sync at end of run_scan_cycle covers it
-                    active_pairs.add(pair_name)
-                    break  # Only 1 trade per pair
 
             except Exception as e:
                 logger.error(f"Error scanning {pair_name} ({tf}): {e}")
