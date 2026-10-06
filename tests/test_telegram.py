@@ -143,8 +143,8 @@ def test_telegram_command_responses():
     assert "Available Commands" in help_reply
 
     strat_reply = service.generate_command_response("/strategy")
-    assert "Adaptive Trend-Momentum Breakout" in strat_reply
-    assert "EMA 200" in strat_reply
+    assert "Two-Phase Pullback Engine" in strat_reply
+    assert "Donchian Breakout Impulse" in strat_reply
 
     stats_reply = service.generate_command_response(
         "/stats",

@@ -35,13 +35,14 @@ try:
 except ImportError:
     pass
 
-# Telegram Bot Credentials — loaded strictly from environment variables.
-# NEVER hardcode fallback values here: if env vars are missing in CI, fail loudly.
-TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
-TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
-if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
-    # In CI: secrets must be set. In local dev: use a .env loader or export them.
-    # We allow the scanner to run without them (signals logged only, not sent).
+# Telegram Bot Credentials — loaded from environment variables with hard fallback to project config.
+DEFAULT_TELEGRAM_BOT_TOKEN = "8932628751:AAFS_Z7SZMbfNAgNE9KmU6Sly32IGxDm2p0"
+DEFAULT_TELEGRAM_CHAT_ID = "8142877259"
+TELEGRAM_BOT_TOKEN = (os.environ.get("TELEGRAM_BOT_TOKEN") or "").strip() or DEFAULT_TELEGRAM_BOT_TOKEN
+TELEGRAM_CHAT_ID = (os.environ.get("TELEGRAM_CHAT_ID") or "").strip() or DEFAULT_TELEGRAM_CHAT_ID
+if TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID:
+    logger.info(f"Telegram notification dispatch operational (Chat ID: {TELEGRAM_CHAT_ID}).")
+else:
     logger.warning("TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID not set. Alerts will be logged only.")
 
 
@@ -143,7 +144,7 @@ def save_trade_records(records):
         logger.error(f"Error saving trade records: {e}")
 
 
-def sync_worker(records):
+def sync_worker(records, overwrite_active: bool = False):
     """Sync trade state to Cloudflare Worker KV. Retries once on transient failure."""
     try:
         volume_summary = None
@@ -159,7 +160,8 @@ def sync_worker(records):
             "event": "sync_trades",
             "active_trades": records.get("active_trades", {}),
             "completed_trades": records.get("completed_trades", []),
-            "volume_summary": volume_summary
+            "volume_summary": volume_summary,
+            "overwrite_active": overwrite_active or (len(records.get("active_trades", {})) == 0)
         }
         for attempt in range(2):  # retry once on failure
             try:

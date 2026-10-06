@@ -203,27 +203,26 @@ class TelegramService:
 
         if cmd in ["/start", "/help"]:
             return (
-                "🤖 <b>Forex Live Signal Bot v1.0.0</b>\n\n"
+                "🤖 <b>Forex & Spot Gold Live Signal Bot v3.1</b>\n\n"
                 "<b>Available Commands:</b>\n"
                 "• /status - Health and database operational status\n"
                 "• /last - Most recent confirmed signal\n"
                 "• /stats - Live forward-testing statistics\n"
                 "• /strategy - Strategy architecture and rule summary\n"
                 "• /help - Display this command overview\n\n"
-                "<i>Evidence-based forward-testing. No fabricated win rates.</i>"
+                "<i>Evidence-based forward-testing across 7 institutional pairs. Zero fabricated win rates.</i>"
             )
 
         elif cmd == "/strategy":
             return (
-                "📈 <b>Adaptive Trend-Momentum Breakout Strategy</b>\n\n"
-                "• <b>Primary Timeframe:</b> 1H (Execution)\n"
-                "• <b>Higher Timeframe:</b> 4H (EMA 200 Regime Filter)\n"
-                "• <b>Trend Filter:</b> 4H Close vs EMA 200 + Positive/Negative Slope\n"
-                "• <b>Regime Filter:</b> ADX(14) ≥ 18 (Trend strength)\n"
-                "• <b>Momentum:</b> ROC(20) > 0 (Long) / ROC(20) &lt; 0 (Short)\n"
-                "• <b>Breakout:</b> 20-bar Donchian channel (strictly completed bars)\n"
-                "• <b>Risk Model:</b> SL = 1.75 × ATR(14), TP = 2.0R\n"
-                "• <b>Execution:</b> Confirmed bar close only (Non-repainting)\n"
+                "📈 <b>Two-Phase Pullback Engine (v3.1) & Model J</b>\n\n"
+                "• <b>Monitored Assets:</b> 7 Pairs (XAUUSD, EURUSD, USDCAD, GBPUSD, USDJPY, USDCHF, AUDUSD)\n"
+                "• <b>Primary Timeframe:</b> 15M (Trigger / Execution)\n"
+                "• <b>Anchor Timeframe:</b> 1H (Structural Trend Filter)\n"
+                "• <b>Phase 1:</b> Donchian Breakout Impulse (Gold=8, Forex=20)\n"
+                "• <b>Phase 2:</b> Pullback into 20-EMA / 50% Fib Equilibrium with Confirmation\n"
+                "• <b>Risk Model:</b> SL = Dynamic ATR, Stage 1 = +1.0R (50% Banked + BE Lock), Stage 2 = 2.00R TP\n"
+                "• <b>Execution:</b> Confirmed bar close only (100% Non-repainting)\n"
             )
 
         elif cmd == "/status":

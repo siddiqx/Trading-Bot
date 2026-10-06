@@ -47,7 +47,7 @@ jobs:
       - name: Verify State Restored
         run: |
           if [ -f market_scanner_state.json ]; then
-            echo "State file restored: $(cat market_scanner_state.json | python3 -c 'import sys,json; d=json.load(sys.stdin); print(f\"{len(d.get(\"alerted_signals\",[]))} signals in state\")')"
+            python3 -c "import json; d=json.load(open('market_scanner_state.json')); print(f'State file restored: {len(d.get(\"alerted_signals\", []))} signals in state')"
           else
             echo "No state cache found — starting fresh (first run or cache expired)"
             echo '{"alerted_signals":[]}' > market_scanner_state.json

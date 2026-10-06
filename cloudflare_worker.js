@@ -18,7 +18,7 @@ const DEFAULT_GH_TOKEN = "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";
 const DEFAULT_CHAT_ID = "8142877259";
 
 const ASSETS = [
-  { name: "GOLD",    symbol: "XAUUSD", ticker: "XAUUSD",   pip: 0.10,   digits: 2, donchian_len: 20 },
+  { name: "GOLD",    symbol: "XAUUSD", ticker: "XAUUSD",   pip: 0.10,   digits: 2, donchian_len: 8 },
   { name: "EUR/USD", symbol: "EURUSD", ticker: "EURUSD=X", pip: 0.0001, digits: 5, donchian_len: 20 },
   { name: "USD/CAD", symbol: "USDCAD", ticker: "USDCAD=X", pip: 0.0001, digits: 5, donchian_len: 20 },
   { name: "GBP/USD", symbol: "GBPUSD", ticker: "GBPUSD=X", pip: 0.0001, digits: 5, donchian_len: 20 },
@@ -28,16 +28,137 @@ const ASSETS = [
 ];
 
 const ALL_KNOWN_CONFIGS = {
-  "XAUUSD": { name: "GOLD",    ticker: "XAUUSD",   pip: 0.10,   digits: 2 },
-  "EURUSD": { name: "EUR/USD", ticker: "EURUSD=X", pip: 0.0001, digits: 5 },
-  "USDCAD": { name: "USD/CAD", ticker: "USDCAD=X", pip: 0.0001, digits: 5 },
-  "GBPUSD": { name: "GBP/USD", ticker: "GBPUSD=X", pip: 0.0001, digits: 5 },
-  "USDJPY": { name: "USD/JPY", ticker: "USDJPY=X", pip: 0.01,   digits: 3 },
-  "USDCHF": { name: "USD/CHF", ticker: "USDCHF=X", pip: 0.0001, digits: 5 },
-  "AUDUSD": { name: "AUD/USD", ticker: "AUDUSD=X", pip: 0.0001, digits: 5 }
+  "XAUUSD": { name: "GOLD",    ticker: "XAUUSD",   pip: 0.10,   digits: 2, donchian_len: 8 },
+  "EURUSD": { name: "EUR/USD", ticker: "EURUSD=X", pip: 0.0001, digits: 5, donchian_len: 20 },
+  "USDCAD": { name: "USD/CAD", ticker: "USDCAD=X", pip: 0.0001, digits: 5, donchian_len: 20 },
+  "GBPUSD": { name: "GBP/USD", ticker: "GBPUSD=X", pip: 0.0001, digits: 5, donchian_len: 20 },
+  "USDJPY": { name: "USD/JPY", ticker: "USDJPY=X", pip: 0.01,   digits: 3, donchian_len: 20 },
+  "USDCHF": { name: "USD/CHF", ticker: "USDCHF=X", pip: 0.0001, digits: 5, donchian_len: 20 },
+  "AUDUSD": { name: "AUD/USD", ticker: "AUDUSD=X", pip: 0.0001, digits: 5, donchian_len: 20 }
 };
 
 const ALL_KNOWN_TICKERS = Object.fromEntries(Object.entries(ALL_KNOWN_CONFIGS).map(([k, v]) => [k, v.ticker]));
+
+/**
+ * Universal Symbol Normalizer
+ * Extracts base asset symbol (e.g., 'EURUSD') from slot keys like 'EURUSD_15M' or trade records
+ */
+function getBaseSymbol(key, trade = null) {
+  if (trade && trade.symbol) return String(trade.symbol).toUpperCase();
+  if (trade && trade.pair) return String(trade.pair).toUpperCase();
+  if (typeof key === "string" && key.includes("_")) {
+    return key.split("_")[0].toUpperCase();
+  }
+  return String(key || "").toUpperCase();
+}
+
+/**
+ * Universal Asset Configuration Resolver
+ * Always resolves to a valid asset configuration with correct market ticker (never EURUSD_15M=X)
+ */
+function getAssetConfig(symbolOrKey, trade = null) {
+  const sym = getBaseSymbol(symbolOrKey, trade);
+  if (ALL_KNOWN_CONFIGS[sym]) {
+    return { ...ALL_KNOWN_CONFIGS[sym], symbol: sym };
+  }
+  const found = ASSETS.find(a => a.symbol === sym);
+  if (found) return found;
+  return {
+    symbol: sym,
+    name: trade?.pair || sym,
+    ticker: trade?.ticker || (sym === "XAUUSD" ? "XAUUSD" : `${sym}=X`),
+    pip: trade?.pip || (sym.includes("JPY") ? 0.01 : (sym === "XAUUSD" ? 0.10 : 0.0001)),
+    digits: trade?.digits || (sym.includes("JPY") ? 3 : (sym === "XAUUSD" ? 2 : 5)),
+    donchian_len: sym === "XAUUSD" ? 8 : 20
+  };
+}
+
+// In-Memory High-Speed Quote Cache (15-second TTL prevents redundant HTTP calls across buttons)
+let QUOTE_CACHE = {};
+let QUOTE_CACHE_TIME = 0;
+const CACHE_TTL_MS = 15000;
+
+async function fetchWithTimeout(url, options = {}, timeoutMs = 2500) {
+  const controller = new AbortController();
+  const id = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, { ...options, signal: controller.signal });
+    clearTimeout(id);
+    return res;
+  } catch (err) {
+    clearTimeout(id);
+    throw err;
+  }
+}
+
+/**
+ * High-Speed Live Price Resolver with In-Memory Caching and Timeouts
+ */
+async function getLivePriceFast(asset, maxWaitMs = 2500) {
+  const sym = asset.symbol;
+  const now = Date.now();
+  if (QUOTE_CACHE[sym] && (now - QUOTE_CACHE_TIME < CACHE_TTL_MS)) {
+    return QUOTE_CACHE[sym];
+  }
+
+  // 1. Spot Gold
+  if (sym === "XAUUSD" || asset.ticker === "XAUUSD") {
+    try {
+      const res = await fetchWithTimeout("https://api.gold-api.com/price/XAU", {
+        headers: { "User-Agent": "Mozilla/5.0" }
+      }, maxWaitMs);
+      if (res.ok) {
+        const json = await res.json();
+        const p = parseFloat(json?.price);
+        if (!isNaN(p) && p > 0) {
+          QUOTE_CACHE[sym] = p;
+          QUOTE_CACHE_TIME = now;
+          return p;
+        }
+      }
+    } catch (e) {}
+
+    try {
+      const res = await fetchWithTimeout("https://scanner.tradingview.com/cfd/scan", {
+        method: "POST",
+        headers: { "User-Agent": "Mozilla/5.0", "Content-Type": "application/json" },
+        body: JSON.stringify({ symbols: { tickers: ["OANDA:XAUUSD", "FX:XAUUSD"] }, columns: ["close"] })
+      }, maxWaitMs);
+      if (res.ok) {
+        const json = await res.json();
+        const p = parseFloat(json?.data?.[0]?.d?.[0]);
+        if (!isNaN(p) && p > 0) {
+          QUOTE_CACHE[sym] = p;
+          QUOTE_CACHE_TIME = now;
+          return p;
+        }
+      }
+    } catch (e) {}
+  }
+
+  // 2. Forex Majors & Crosses
+  const ticker = asset.ticker || `${sym}=X`;
+  for (const host of ["query1.finance.yahoo.com", "query2.finance.yahoo.com"]) {
+    try {
+      const url = `https://${host}/v8/finance/chart/${ticker}?range=1d&interval=5m`;
+      const res = await fetchWithTimeout(url, {
+        headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" }
+      }, maxWaitMs);
+      if (res.ok) {
+        const json = await res.json();
+        const closes = json?.chart?.result?.[0]?.indicators?.quote?.[0]?.close?.filter(v => v !== null && v !== undefined) || [];
+        if (closes.length > 0) {
+          const p = closes[closes.length - 1];
+          QUOTE_CACHE[sym] = p;
+          QUOTE_CACHE_TIME = now;
+          return p;
+        }
+      }
+    } catch (e) {}
+  }
+
+  return null;
+}
 
 /**
  * Checks whether global Forex and MT5 Spot Gold markets are open.
@@ -195,6 +316,19 @@ async function autoResolveTrade(symbol, t, outcome, exitPrice, env, prefetchedLe
 
   delete currentActive[symbol];
   delete STORED_ACTIVE_TRADES[symbol];
+  if (t.symbol) {
+    delete currentActive[t.symbol];
+    delete STORED_ACTIVE_TRADES[t.symbol];
+  }
+  if (t.pair) {
+    delete currentActive[t.pair];
+    delete STORED_ACTIVE_TRADES[t.pair];
+  }
+  const baseSym = getBaseSymbol(symbol, t);
+  if (baseSym) {
+    delete currentActive[baseSym];
+    delete STORED_ACTIVE_TRADES[baseSym];
+  }
 
   const alreadyExists = currentCompleted.some(x => x.trade_id === t.trade_id);
   if (!alreadyExists) {
@@ -257,72 +391,12 @@ async function runActiveTradeChecks(env) {
   const resolved = [];
 
   for (const [symbol, t] of activeEntries) {
-    let asset = ASSETS.find(a => a.symbol === symbol);
-    if (!asset) {
-      const cfg = ALL_KNOWN_CONFIGS[symbol] || { name: t.pair || symbol, ticker: `${symbol}=X`, pip: 0.0001, digits: 5 };
-      asset = { name: t.pair || cfg.name, symbol, ticker: t.ticker || cfg.ticker, pip: t.pip || cfg.pip, digits: t.digits || cfg.digits };
-    }
+    const asset = getAssetConfig(symbol, t);
     try {
-      let lastClose, lastHigh, lastLow;
-      if (symbol === "XAUUSD" || asset.ticker === "XAUUSD") {
-        // 1. Primary: live spot gold API (guaranteed 100% uptime, zero Cloudflare block)
-        try {
-          const gRes = await fetch("https://api.gold-api.com/price/XAU", { headers: { "User-Agent": "Mozilla/5.0" } });
-          if (gRes.ok) {
-            const gJson = await gRes.json();
-            const p = parseFloat(gJson?.price);
-            if (!isNaN(p) && p > 0) {
-              lastClose = p;
-              lastHigh = p;
-              lastLow = p;
-            }
-          }
-        } catch(ge) {}
-
-        // 2. Secondary: TradingView CFD scanner (OANDA:XAUUSD spot feed)
-        if (lastClose === undefined) {
-          try {
-            const tvRes = await fetch("https://scanner.tradingview.com/cfd/scan", {
-              method: "POST",
-              headers: { "User-Agent": "Mozilla/5.0", "Content-Type": "application/json" },
-              body: JSON.stringify({ symbols: { tickers: ["OANDA:XAUUSD", "FX:XAUUSD"] }, columns: ["close", "high|15", "low|15"] })
-            });
-            const tvJson = await tvRes.json();
-            const d = tvJson?.data?.[0]?.d;
-            if (Array.isArray(d) && d[0] !== null) {
-              lastClose = parseFloat(d[0]);
-              lastHigh = parseFloat(d[1]) || lastClose;
-              lastLow = parseFloat(d[2]) || lastClose;
-            }
-          } catch(tve) {}
-        }
-      }
-
-      if (lastClose === undefined) {
-        // Use 5m interval for freshest available tick (not 15m which can be 15min stale)
-        for (const host of ["query1.finance.yahoo.com", "query2.finance.yahoo.com"]) {
-          try {
-            const url = `https://${host}/v8/finance/chart/${asset.ticker}?range=1d&interval=5m`;
-            const res = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36" } });
-            if (res.ok) {
-              const json = await res.json();
-              const quote = json?.chart?.result?.[0]?.indicators?.quote?.[0];
-              const closes = quote?.close?.filter(v => v !== null && v !== undefined) || [];
-              const highs = quote?.high?.filter(v => v !== null && v !== undefined) || [];
-              const lows = quote?.low?.filter(v => v !== null && v !== undefined) || [];
-              if (closes.length > 0) {
-                lastClose = closes[closes.length - 1];
-                // Use recent session high/low (last 4 bars ~20min) for accurate TP/SL sweep detection
-                const recentHighs = highs.slice(-4);
-                const recentLows = lows.slice(-4);
-                lastHigh = recentHighs.length > 0 ? Math.max(...recentHighs) : lastClose;
-                lastLow = recentLows.length > 0 ? Math.min(...recentLows) : lastClose;
-                break;
-              }
-            }
-          } catch (e) {}
-        }
-      }
+      const fastPrice = await getLivePriceFast(asset, 2500);
+      let lastClose = fastPrice !== null ? fastPrice : undefined;
+      let lastHigh = lastClose;
+      let lastLow = lastClose;
 
       if (lastClose !== undefined) {
         const isLong = (t.direction || "").toUpperCase() === "LONG";
@@ -498,7 +572,7 @@ export default {
             };
           })
         );
-        return new Response(JSON.stringify({ status: "RADAR_TEST_OK", version: "2.4.0-gold-infallible", radarPreview }, null, 2), {
+        return new Response(JSON.stringify({ status: "RADAR_TEST_OK", version: "3.1.0-institutional-alpha", radarPreview }, null, 2), {
           status: 200,
           headers: { "Content-Type": "application/json" }
         });
@@ -507,7 +581,7 @@ export default {
       const ledger = await getLedger(env);
       return new Response(JSON.stringify({
         status: "OK",
-        version: "2.4.0-gold-infallible",
+        version: "3.1.0-institutional-alpha",
         timestamp: new Date().toISOString(),
         kv_bound: !!kv,
         env_keys: env ? Object.keys(env) : [],
@@ -548,45 +622,43 @@ export default {
       if (payload.event === "sync_trades") {
         const kv = env && (env.TRADE_LEDGER || env.TRADES_KV || env.KV);
 
-        // Get current KV state so we can merge
+        // Get current KV state
         let kvActive = payload.active_trades || {};
         let kvCompleted = payload.completed_trades || [];
 
         if (kv) {
           try {
-            const existingActive = await kv.get("active_trades", "json") || {};
-            const existingCompleted = await kv.get("completed_trades", "json") || [];
+            if (payload.overwrite_active || Object.keys(kvActive).length === 0) {
+              // Authoritative sync: scanner has authoritative active trade state
+            } else {
+              const existingActive = await kv.get("active_trades", "json") || {};
+              const existingCompleted = await kv.get("completed_trades", "json") || [];
 
-            // Merge: KV wins for pairs already tracked (could be worker-resolved)
-            // Scanner wins for new pairs it just opened
-            const resolvedPairs = new Set(existingCompleted.map(t => t.symbol || t.pair));
-            const mergedActive = { ...kvActive };
-            for (const [symbol, trade] of Object.entries(existingActive)) {
-              // Keep KV active trade if scanner didn't send anything for this pair,
-              // OR if scanner sent it too (scanner is authoritative for its own new opens)
-              if (!(symbol in kvActive) || trade.status === "OPEN") {
-                mergedActive[symbol] = mergedActive[symbol] || trade;
+              const mergedActive = { ...kvActive };
+              for (const [symbol, trade] of Object.entries(existingActive)) {
+                if (!(symbol in kvActive) || trade.status === "OPEN") {
+                  mergedActive[symbol] = mergedActive[symbol] || trade;
+                }
               }
-            }
-            // Remove any active trades KV already closed
-            for (const ct of existingCompleted) {
-              const sym = ct.symbol || ct.pair;
-              if (sym && mergedActive[sym] && mergedActive[sym].trade_id === ct.trade_id) {
-                delete mergedActive[sym];
+              for (const ct of existingCompleted) {
+                for (const [k, at] of Object.entries(mergedActive)) {
+                  if (at.trade_id === ct.trade_id) {
+                    delete mergedActive[k];
+                  }
+                }
               }
-            }
 
-            // Merge completed: deduplicate by trade_id
-            const seenIds = new Set(existingCompleted.map(t => t.trade_id));
-            for (const ct of kvCompleted) {
-              if (!seenIds.has(ct.trade_id)) {
-                existingCompleted.push(ct);
-                seenIds.add(ct.trade_id);
+              const seenIds = new Set(existingCompleted.map(t => t.trade_id));
+              for (const ct of kvCompleted) {
+                if (!seenIds.has(ct.trade_id)) {
+                  existingCompleted.push(ct);
+                  seenIds.add(ct.trade_id);
+                }
               }
-            }
 
-            kvActive = mergedActive;
-            kvCompleted = existingCompleted;
+              kvActive = mergedActive;
+              kvCompleted = existingCompleted;
+            }
           } catch (e) {
             console.error("KV merge error:", e);
           }
@@ -730,11 +802,12 @@ async function handleTelegramUpdate(update, env) {
       const outcomeArg = parts[2] ? parts[2].toUpperCase() : null;
       if (symbol && outcomeArg) {
         const outcome = outcomeArg === "WIN" ? "WIN" : outcomeArg === "LOSS" ? "LOSS" : "CANCELLED";
-        const closeLedger = await getLedger(env);  // fetch once, reuse
-        const trade = closeLedger.active[symbol];
+        const closeLedger = await getLedger(env);
+        const matchedKey = Object.keys(closeLedger.active).find(k => k === symbol || getBaseSymbol(k, closeLedger.active[k]) === symbol);
+        const trade = matchedKey ? closeLedger.active[matchedKey] : null;
         if (trade) {
           const exitPrice = outcome === "WIN" ? trade.take_profit : outcome === "LOSS" ? trade.stop_loss : trade.entry;
-          await autoResolveTrade(symbol, trade, outcome, exitPrice, env, closeLedger);
+          await autoResolveTrade(matchedKey, trade, outcome, exitPrice, env, closeLedger);
           await sendTelegramMessage(chatId,
             `✅ <b>ADMIN FORCE-CLOSE · ${symbol} ${outcome}</b>\n` +
             `━━━━━━━━━━━━━━━━━━\n` +
@@ -751,7 +824,7 @@ async function handleTelegramUpdate(update, env) {
           `<code>/close EURUSD WIN</code>\n` +
           `<code>/close EURUSD LOSS</code>\n` +
           `<code>/close XAUUSD CANCEL</code>\n\n` +
-          `Available pairs: EURUSD · USDCAD · XAUUSD`
+          `Available pairs: GOLD · EURUSD · USDCAD · GBPUSD · USDJPY · USDCHF · AUDUSD`
         );
       }
     } else {
@@ -869,7 +942,7 @@ async function sendRadarMessage(chatId, env) {
         }
 
         // 1. CHECK IF PAIR HAS AN ACTIVE RUNNING TRADE
-        const activeTrade = active[asset.symbol];
+        const activeTrade = Object.entries(active).find(([k, t]) => getBaseSymbol(k, t) === asset.symbol)?.[1];
         if (activeTrade) {
           const isPending = activeTrade.status === "PENDING";
           const isLong = activeTrade.direction === "LONG";
@@ -1065,7 +1138,8 @@ async function sendRadarMessage(chatId, env) {
  */
 async function sendActiveMessage(chatId, env) {
   const utcNow = new Date().toISOString().replace("T", " ").substring(0, 16) + " UTC";
-  const { active } = await getLedger(env);
+  const ledger = await getLedger(env);
+  const { active } = ledger;
   const activeEntries = Object.entries(active);
 
   if (activeEntries.length === 0) {
@@ -1073,7 +1147,8 @@ async function sendActiveMessage(chatId, env) {
       `⚡ <b>ACTIVE LIVE TRADES (0)</b>\n` +
       `━━━━━━━━━━━━━━━━━━\n` +
       `<i>No active positions currently running.</i>\n\n` +
-      `Core Alpha Triad (EURUSD · USDCAD · XAUUSD) under surveillance.\n` +
+      `Institutional 7-Asset Universe under active surveillance:\n` +
+      `<code>GOLD · EURUSD · USDCAD · GBPUSD · USDJPY · USDCHF · AUDUSD</code>\n\n` +
       `Signals trigger strictly on confirmed candle closes.\n` +
       `━━━━━━━━━━━━━━━━━━\n` +
       `🕒 <code>${utcNow}</code>`;
@@ -1096,16 +1171,9 @@ async function sendActiveMessage(chatId, env) {
   }
 
   const rows = await Promise.all(
-    activeEntries.map(async ([symbol, t], idx) => {
+    activeEntries.map(async ([symbolKey, t], idx) => {
       const num = idx + 1;
-      const cfg = ALL_KNOWN_CONFIGS[symbol] || { name: symbol, ticker: `${symbol}=X`, pip: 0.0001, digits: 5 };
-      const asset = ASSETS.find(a => a.symbol === symbol) || {
-        symbol: symbol,
-        name: t.pair || cfg.name,
-        digits: t.digits || cfg.digits,
-        pip: t.pip || cfg.pip,
-        ticker: t.ticker || cfg.ticker
-      };
+      const asset = getAssetConfig(symbolKey, t);
 
       const isLong = (t.direction || "").toUpperCase() === "LONG";
       const dirIcon = isLong ? "🟢" : "🔴";
@@ -1113,39 +1181,8 @@ async function sendActiveMessage(chatId, env) {
       const openDate = (t.opened_at || "").substring(0, 10);
       const pName = t.pair || asset.name;
 
-      let currentPrice = null;
+      const currentPrice = await getLivePriceFast(asset, 2500);
       let floatText = "";
-
-      if (asset.symbol === "XAUUSD") {
-        try {
-          const gRes = await fetch("https://api.gold-api.com/price/XAU", { headers: { "User-Agent": "Mozilla/5.0" } });
-          if (gRes.ok) {
-            const gJson = await gRes.json();
-            const p = parseFloat(gJson?.price);
-            if (!isNaN(p) && p > 0) currentPrice = p;
-          }
-        } catch (ge) {}
-      }
-
-      if (currentPrice === null) {
-        // Use 5m interval for freshest price tick (not 15m which lags by up to 15 minutes)
-        for (const host of ["query1.finance.yahoo.com", "query2.finance.yahoo.com"]) {
-          try {
-            const url = `https://${host}/v8/finance/chart/${asset.ticker}?range=1d&interval=5m`;
-            const res = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36" } });
-            if (res.ok) {
-              const json = await res.json();
-              const quote = json?.chart?.result?.[0]?.indicators?.quote?.[0];
-              const closes = quote?.close?.filter(v => v !== null && v !== undefined) || [];
-              if (closes.length > 0) {
-                currentPrice = closes[closes.length - 1];
-                break;
-              }
-            }
-          } catch (e) {}
-        }
-      }
-
       const isPending = (t.status === "PENDING");
 
       if (currentPrice !== null) {
@@ -1154,7 +1191,7 @@ async function sendActiveMessage(chatId, env) {
           const hitEntry = isLong ? currentPrice <= t.entry : currentPrice >= t.entry;
 
           if (hitSL && !hitEntry) {
-            autoResolveTrade(symbol, t, "CANCELLED", currentPrice, env, { active: currentActive, completed: currentCompleted });
+            await autoResolveTrade(symbolKey, t, "CANCELLED", currentPrice, env, ledger);
             floatText = 
               `• Status: ⚠️ <b>SETUP CANCELLED · SL BREACHED BEFORE FILL</b>\n` +
               `• Live Price: <code>${currentPrice.toFixed(asset.digits)}</code> (0.0 pips | Unfilled)\n`;
@@ -1165,10 +1202,10 @@ async function sendActiveMessage(chatId, env) {
             const hitSLAfterFill = isLong ? currentPrice <= t.stop_loss : currentPrice >= t.stop_loss;
 
             if (hitTP) {
-              autoResolveTrade(symbol, t, "WIN", t.take_profit, env, { active: currentActive, completed: currentCompleted });
-              floatText = `• Status: 🎯 <b>TARGET REACHED · TAKE PROFIT HIT (+${t.tp_pips || "31.5"} pips | +${t.rr || "1.75"}R)</b>\n• Live Price: <code>${currentPrice.toFixed(asset.digits)}</code> (Target Booked)\n`;
+              await autoResolveTrade(symbolKey, t, "WIN", t.take_profit, env, ledger);
+              floatText = `• Status: 🎯 <b>TARGET REACHED · TAKE PROFIT HIT (+${t.tp_pips || "36.0"} pips | +${t.rr || "2.00"}R)</b>\n• Live Price: <code>${currentPrice.toFixed(asset.digits)}</code> (Target Booked)\n`;
             } else if (hitSLAfterFill) {
-              autoResolveTrade(symbol, t, "LOSS", t.stop_loss, env, { active: currentActive, completed: currentCompleted });
+              await autoResolveTrade(symbolKey, t, "LOSS", t.stop_loss, env, ledger);
               floatText = `• Status: 🛑 <b>STOP LOSS HIT (-${t.sl_pips || "18.0"} pips | -1.00R)</b>\n• Live Price: <code>${currentPrice.toFixed(asset.digits)}</code> (SL Booked)\n`;
             } else {
               const pnlPips = ((currentPrice - t.entry) / asset.pip) * (isLong ? 1 : -1);
@@ -1182,7 +1219,6 @@ async function sendActiveMessage(chatId, env) {
                 `• Live Price: <code>${currentPrice.toFixed(asset.digits)}</code> (${floatEmoji} <b>${pnlSign}${pnlPips.toFixed(1)} pips</b> | <b>${rSign}${floatR}R</b>)\n`;
             }
           } else {
-            // Still pending entry fill
             const distPips = (Math.abs(currentPrice - t.entry) / asset.pip).toFixed(1);
             floatText = 
               `• Status: ⏳ <b>PENDING ENTRY FILL</b>\n` +
@@ -1190,15 +1226,14 @@ async function sendActiveMessage(chatId, env) {
               `• Floating PnL: <b>0.0 pips</b> (<i>Awaiting Market Fill · Zero Exposure</i>)\n`;
           }
         } else {
-          // Normal active OPEN position
           const hitTP = isLong ? currentPrice >= t.take_profit : currentPrice <= t.take_profit;
           const hitSL = isLong ? currentPrice <= t.stop_loss : currentPrice >= t.stop_loss;
 
           if (hitTP) {
-            autoResolveTrade(symbol, t, "WIN", t.take_profit, env, { active: currentActive, completed: currentCompleted });
-            floatText = `• Status: 🎯 <b>TARGET REACHED · TAKE PROFIT HIT (+${t.tp_pips || "31.5"} pips | +${t.rr || "1.75"}R)</b>\n• Live Price: <code>${currentPrice.toFixed(asset.digits)}</code> (Target Booked)\n`;
+            await autoResolveTrade(symbolKey, t, "WIN", t.take_profit, env, ledger);
+            floatText = `• Status: 🎯 <b>TARGET REACHED · TAKE PROFIT HIT (+${t.tp_pips || "36.0"} pips | +${t.rr || "2.00"}R)</b>\n• Live Price: <code>${currentPrice.toFixed(asset.digits)}</code> (Target Booked)\n`;
           } else if (hitSL) {
-            autoResolveTrade(symbol, t, "LOSS", t.stop_loss, env, { active: currentActive, completed: currentCompleted });
+            await autoResolveTrade(symbolKey, t, "LOSS", t.stop_loss, env, ledger);
             floatText = `• Status: 🛑 <b>STOP LOSS HIT (-${t.sl_pips || "18.0"} pips | -1.00R)</b>\n• Live Price: <code>${currentPrice.toFixed(asset.digits)}</code> (SL Booked)\n`;
           } else {
             const pnlPips = ((currentPrice - t.entry) / asset.pip) * (isLong ? 1 : -1);
@@ -1207,13 +1242,16 @@ async function sendActiveMessage(chatId, env) {
             const floatR = riskDist > 0 ? (pnlPips / riskDist).toFixed(2) : "0.00";
             const rSign = parseFloat(floatR) >= 0 ? "+" : "";
             const floatEmoji = pnlPips >= 0 ? "🟢" : "🔻";
-            const beFlag = t.be_active ? " 🛡<b>Break-Even Active</b>" : "";
-            floatText = `• Live Price: <code>${currentPrice.toFixed(asset.digits)}</code> (${floatEmoji} <b>${pnlSign}${pnlPips.toFixed(1)} pips</b> | <b>${rSign}${floatR}R</b>)${beFlag}\n`;
+            const beFlag = t.be_active ? " 🛡<b>Break-Even Locked</b>" : "";
+            const partialFlag = t.partial_taken ? " 💰<b>+0.50R Banked</b>" : "";
+            floatText = `• Live Price: <code>${currentPrice.toFixed(asset.digits)}</code> (${floatEmoji} <b>${pnlSign}${pnlPips.toFixed(1)} pips</b> | <b>${rSign}${floatR}R</b>)${beFlag}${partialFlag}\n`;
           }
         }
       } else {
         if (isPending) {
-          floatText = `• Status: ⏳ <b>PENDING ENTRY FILL</b>\n• Floating PnL: <b>0.0 pips</b> (<i>Price Feed Offline · Awaiting Fill</i>)\n`;
+          floatText = `• Status: ⏳ <b>PENDING ENTRY FILL</b>\n• Floating PnL: <b>0.0 pips</b> (<i>Awaiting Feed</i>)\n`;
+        } else {
+          floatText = `• Status: 🟢 <b>IN MARKET (Active)</b>\n• Live Price: <code>Awaiting Feed Update</code>\n`;
         }
       }
 
@@ -1221,11 +1259,11 @@ async function sendActiveMessage(chatId, env) {
       const entryLabel = isPending ? "• Entry Target:" : "• Entry:";
 
       return (
-        `<b>${num}. ${pName}</b> · ${t.timeframe || "1H"} · ${statusBadge}\n` +
+        `<b>${num}. ${pName}</b> · ${t.timeframe || "15M"} · ${statusBadge}\n` +
         `${entryLabel} <code>${t.entry}</code> (${openDate} ${openTime} UTC)\n` +
         floatText +
         `• Targets: SL <code>${t.stop_loss}</code> | TP <code>${t.take_profit}</code>\n` +
-        `• Plan: <b>1 : ${t.rr || t.risk_reward || "1.75"} R:R</b> (1.0% Equity Risk)`
+        `• Plan: <b>1 : ${t.rr || t.risk_reward || "2.00"} R:R</b> (1.0% Equity Risk)`
       );
     })
   );
@@ -1341,9 +1379,15 @@ async function sendHistoryMessage(chatId, filterPair = "ALL", filterRange = "ALL
         { text: "All Time", callback_data: "hist_range_all" }
       ],
       [
-        { text: "GOLD", callback_data: "hist_pair_XAUUSD" },
+        { text: "🥇 GOLD", callback_data: "hist_pair_XAUUSD" },
         { text: "EUR/USD", callback_data: "hist_pair_EURUSD" },
         { text: "USD/CAD", callback_data: "hist_pair_USDCAD" }
+      ],
+      [
+        { text: "GBP/USD", callback_data: "hist_pair_GBPUSD" },
+        { text: "USD/JPY", callback_data: "hist_pair_USDJPY" },
+        { text: "USD/CHF", callback_data: "hist_pair_USDCHF" },
+        { text: "AUD/USD", callback_data: "hist_pair_AUDUSD" }
       ],
       [
         { text: "⚡ Active Trades", callback_data: "cmd_active" },
@@ -1410,10 +1454,10 @@ async function sendPerformanceMessage(chatId, filterPair = "ALL", env) {
   const expSign = parseFloat(expectancy) >= 0 ? "+" : "";
 
   const text = 
-    `📈 <b>STRATEGY PERFORMANCE (v2.0-Frozen)</b>\n` +
+    `📈 <b>STRATEGY PERFORMANCE (v3.1 Production)</b>\n` +
     `━━━━━━━━━━━━━━━━━━\n` +
     `Scope: <b>${scopeLabel}</b>\n` +
-    `Baseline: <code>2026-10-02</code> (Out-of-Sample Forward Only)\n` +
+    `Baseline: <code>2026-10-06</code> (Strict Live Forward Testing)\n` +
     `━━━━━━━━━━━━━━━━━━\n\n` +
     `<b>1. TRADE EXECUTION</b>\n` +
     `• Total Closed: <code>${totalClosed}</code>\n` +
@@ -1425,26 +1469,30 @@ async function sendPerformanceMessage(chatId, filterPair = "ALL", env) {
     `• Net Realized Return: <b>${rSign}${netR.toFixed(2)} R</b>\n` +
     `• Expectancy / Trade: <b>${expSign}${expectancy} R</b>\n` +
     `• Profit Factor: <code>${profitFactor}</code>\n` +
-    `• Target R:R: <code>1.5R – 2.5R (Model F Structural)</code>\n\n` +
+    `• Target R:R: <code>2.00R (Model J Structural)</code>\n\n` +
     `━━━━━━━━━━━━━━━━━━\n` +
-    `⚡ <i>100% out-of-sample. Strategy frozen 2026-10-02.</i>\n` +
+    `⚡ <i>100% out-of-sample forward verification. Baseline reset 2026-10-06.</i>\n` +
     `🕒 <code>${utcNow}</code>`;
 
   const keyboard = {
     inline_keyboard: [
       [
-        { text: "Overall", callback_data: "perf_pair_ALL" },
-        { text: "GOLD", callback_data: "perf_pair_XAUUSD" }
+        { text: "📊 Overall", callback_data: "perf_pair_ALL" },
+        { text: "🥇 GOLD", callback_data: "perf_pair_XAUUSD" }
       ],
       [
         { text: "EUR/USD", callback_data: "perf_pair_EURUSD" },
-        { text: "USD/CAD", callback_data: "perf_pair_USDCAD" }
+        { text: "USD/CAD", callback_data: "perf_pair_USDCAD" },
+        { text: "GBP/USD", callback_data: "perf_pair_GBPUSD" }
       ],
       [
-        { text: "⚡ Active Trades", callback_data: "cmd_active" },
-        { text: "📜 History (Closed)", callback_data: "cmd_history" }
+        { text: "USD/JPY", callback_data: "perf_pair_USDJPY" },
+        { text: "USD/CHF", callback_data: "perf_pair_USDCHF" },
+        { text: "AUD/USD", callback_data: "perf_pair_AUDUSD" }
       ],
       [
+        { text: "⚡ Active", callback_data: "cmd_active" },
+        { text: "📜 History", callback_data: "cmd_history" },
         { text: "« Menu", callback_data: "cmd_menu" }
       ]
     ]
@@ -1580,44 +1628,13 @@ async function sendPricesMessage(chatId) {
     ASSETS.map(async (asset, idx) => {
       const num = idx + 1;
       try {
-        if (asset.symbol === "XAUUSD" || asset.ticker === "XAUUSD") {
-          // 1. Primary: gold-api.com (100% uptime, zero Cloudflare block, live MT5 spot price)
-          try {
-            const gRes = await fetch("https://api.gold-api.com/price/XAU", { headers: { "User-Agent": "Mozilla/5.0" } });
-            if (gRes.ok) {
-              const gJson = await gRes.json();
-              const p = parseFloat(gJson?.price);
-              if (!isNaN(p) && p > 0) return `<b>${num}. ${asset.name}</b> · <code>${p.toFixed(asset.digits)}</code>`;
-            }
-          } catch(ge) {}
-
-          // 2. Secondary: TradingView CFD scanner (OANDA:XAUUSD)
-          try {
-            const tvRes = await fetch("https://scanner.tradingview.com/cfd/scan", {
-              method: "POST",
-              headers: { "User-Agent": "Mozilla/5.0", "Content-Type": "application/json" },
-              body: JSON.stringify({ symbols: { tickers: ["OANDA:XAUUSD", "FX:XAUUSD"] }, columns: ["close"] })
-            });
-            const tvJson = await tvRes.json();
-            const p = parseFloat(tvJson?.data?.[0]?.d?.[0]);
-            if (!isNaN(p)) return `<b>${num}. ${asset.name}</b> · <code>${p.toFixed(asset.digits)}</code>`;
-          } catch(tve) {}
+        const p = await getLivePriceFast(asset, 2500);
+        if (p !== null) {
+          return `<b>${num}. ${asset.name}</b> · <code>${p.toFixed(asset.digits)}</code>`;
         }
-        for (const host of ["query1.finance.yahoo.com", "query2.finance.yahoo.com"]) {
-          try {
-            // Use 5m interval for freshest price (not 15m which can be 15min stale)
-            const url = `https://${host}/v8/finance/chart/${asset.ticker}?range=1d&interval=5m`;
-            const res = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36" } });
-            if (res.ok) {
-              const json = await res.json();
-              const closes = json?.chart?.result?.[0]?.indicators?.quote?.[0]?.close?.filter(v => v !== null) || [];
-              if (closes.length > 0) return `<b>${num}. ${asset.name}</b> · <code>${closes[closes.length - 1].toFixed(asset.digits)}</code>`;
-            }
-          } catch (ye) {}
-        }
-        return `<b>${num}. ${asset.name}</b> · <i>Closed</i>`;
+        return `<b>${num}. ${asset.name}</b> · <i>Awaiting Tick</i>`;
       } catch (e) {
-        return `<b>${num}. ${asset.name}</b> · <i>Offline</i>`;
+        return `<b>${num}. ${asset.name}</b> · <i>Feed Offline</i>`;
       }
     })
   );
@@ -1657,16 +1674,17 @@ async function sendStatusMessage(chatId, env) {
   const text = 
     `⚡ <b>SYSTEM ARCHITECTURE STATUS</b>\n` +
     `━━━━━━━━━━━━━━━━━━\n` +
-    `1. Engine Core: 🟢 <b>OPERATIONAL (24/7)</b>\n` +
-    `2. Strategy Version: <code>v3.0 Two-Phase Pullback Engine</code>\n` +
-    `3. Profit Banking: <code>Model J (50% at +1.0R + Zero-Risk BE)</code>\n` +
-    `4. Cloud Edge: Cloudflare Global Edge\n` +
-    `5. Scanner Host: GitHub Actions Cron (*/15 5-21 UTC)\n` +
-    `6. Monitored Assets: <code>Core Alpha Triad (XAUUSD, EURUSD, USDCAD)</code>\n` +
-    `7. Active Positions: <code>${activeCount} locked</code>\n` +
-    `8. Recorded Trades: <code>${closedCount} closed</code>\n` +
-    `9. Donchian Calibration: <code>XAUUSD=8, EURUSD=20, USDCAD=20</code>\n` +
-    `10. 2-Year Reliability: <code>63.4% Win Rate · 23/24 Positive Months</code>\n` +
+    `1. Engine Core: 🟢 <b>OPERATIONAL (24/7 Live)</b>\n` +
+    `2. Strategy Version: <code>v3.1 Two-Phase Pullback Engine</code>\n` +
+    `3. Profit Banking: <code>Model J (50% at +1.0R + Breakeven Lock + 2.0R TP)</code>\n` +
+    `4. Cloud Edge: <code>Cloudflare Global Edge Gateway</code>\n` +
+    `5. Scanner Engine: <code>GitHub Actions Cloud Cron (*/15 Mon-Fri)</code>\n` +
+    `6. Monitored Universe: <code>7 Pairs (GOLD, EURUSD, USDCAD, GBPUSD, USDJPY, USDCHF, AUDUSD)</code>\n` +
+    `7. Execution Timeframes: <code>15M (Trigger) &amp; 1H (Structural Anchor)</code>\n` +
+    `8. Active Positions: <code>${activeCount} locked</code>\n` +
+    `9. Recorded Trades: <code>${closedCount} closed</code>\n` +
+    `10. Donchian Calibration: <code>Gold=8, Forex=20</code>\n` +
+    `11. Forward Baseline: <code>2026-10-06 (Strict Live Forward Testing)</code>\n` +
     `━━━━━━━━━━━━━━━━━━\n` +
     `🕒 <code>${utcNow}</code>`;
 
@@ -1691,31 +1709,26 @@ async function sendStatusMessage(chatId, env) {
  */
 async function sendStrategyMessage(chatId) {
   const text = 
-    `🎯 <b>STRATEGY SPECIFICATIONS</b>\n` +
+    `🎯 <b>STRATEGY SPECIFICATIONS (v3.1)</b>\n` +
     `━━━━━━━━━━━━━━━━━━\n` +
     `<b>TWO-PHASE PULLBACK ENGINE &amp; MODEL J PROFIT BANKING</b>\n\n` +
-    `<b>1. The Two-Phase Execution Core (Guaranteed ≥50% Win Rate)</b>\n` +
-    `• <b>Phase 1 (Breakout Impulse):</b> Donchian breakout impulse enters HUNTING mode. Zero immediate entry to avoid peak breakout exhaustion.\n` +
+    `<b>1. The Two-Phase Execution Core</b>\n` +
+    `• <b>Phase 1 (Breakout Impulse):</b> Donchian breakout impulse enters HUNTING mode. Zero premature entry at exhaustion extremes.\n` +
     `• <b>Phase 2 (Pullback &amp; Confirmation):</b> Price pulls back into 20-EMA / 50% Fib equilibrium value zone. Signal triggers ONLY on confirmed rejection bounce candle closing in trade direction (<code>close > open</code> for Longs, <code>close < open</code> for Shorts).\n\n` +
-    `<b>2. Asset Calibration &amp; Parameters</b>\n` +
-    `• <b>Spot Gold (XAUUSD):</b> 8-period Donchian (75.5% WR, +145.37R net, 3.69 PF backtested across 2 full years).\n` +
-    `• <b>EUR/USD &amp; USD/CAD:</b> 20-period Donchian institutional trend equilibrium.\n` +
-    `• <b>RSI Filter:</b> Longs 40–80, Shorts 20–60 (Anti-exhaustion).\n` +
-    `• <b>Toxic Hours Filter:</b> Gold blocked at 0, 4, 15, 16, 19 UTC (72% stop hunt rate eliminated).\n` +
-    `• <b>Sunday Gap Guard:</b> Fresh signals blocked on Sunday to prevent illiquid spread widening.\n\n` +
-    `<b>3. Model J Risk Management (50% Banking at +1.0R)</b>\n` +
-    `• At +1.0R floating profit: <b>50% of position is banked (+0.50R net)</b> and SL is moved to Breakeven (+1 pip).\n` +
-    `• If price hits full TP: Total trade return is <b>+1.38R</b>.\n` +
-    `• If price reverses to Breakeven: Trade closes at <b>+0.50R guaranteed win</b>!\n` +
-    `• <b>Outcome:</b> 23 out of 24 months profitable (95.8% monthly win consistency).\n\n` +
-    `<b>4. Institutional Targets: BSL &amp; SSL Liquidity Pools</b>\n` +
-    `• Longs: Nearest un-swept Buy-Side Liquidity (BSL) above 5-bar fractal swing highs.\n` +
-    `• Shorts: Nearest un-swept Sell-Side Liquidity (SSL) below 5-bar fractal swing lows.\n` +
-    `• Calibrated 1.75R target default when liquidity pool is unformed.\n\n` +
-    `<b>5. 2-Year Full Historical Audit Benchmarks</b>\n` +
-    `• <b>Portfolio Total:</b> 454 Trades · <b>63.4% Win Rate</b> · <b>+137.83 R Net Return</b> · <b>+3,635.8 Pips</b> · <b>1.83 PF</b>\n` +
-    `• <b>Gold (XAUUSD):</b> <b>75.5% Win Rate</b> · <b>+145.37 R</b> · <b>3.69 PF</b>\n` +
-    `• <b>Consistency:</b> <b>23 / 24 Months Net Profitable (95.8%)</b>\n` +
+    `<b>2. Asset Universe &amp; Calibrations</b>\n` +
+    `• <b>Spot Gold (XAUUSD):</b> 8-period Donchian (MT5 Institutional Spot Gold feed, zero COMEX futures gap).\n` +
+    `• <b>Forex Majors &amp; Crosses (6 Pairs):</b> EURUSD, USDCAD, GBPUSD, USDJPY, USDCHF, AUDUSD on 20-period Donchian.\n` +
+    `• <b>Dual Timeframes:</b> 15M execution confirmed with 1H trend alignment.\n` +
+    `• <b>RSI Filter:</b> Longs 40–80, Shorts 20–60 (Anti-exhaustion guard).\n` +
+    `• <b>Toxic Hours Filter:</b> High-volatility stop hunt hours blocked.\n\n` +
+    `<b>3. Model J Risk Management &amp; Profit Targets</b>\n` +
+    `• <b>Initial Risk:</b> Strict 1.0% equity risk with dynamic ATR-based SL.\n` +
+    `• <b>Stage 1 (+1.0R):</b> <b>50% of position is banked (+0.50R net)</b> and Stop Loss is moved to Breakeven (+1 pip).\n` +
+    `• <b>Stage 2 (Final Target):</b> Full Take Profit set at <b>2.00R</b>.\n` +
+    `• <b>Guaranteed Positive Asymmetry:</b> Once +1.0R is touched, trade outcome is strictly a win (minimum +0.50R guaranteed net win).\n\n` +
+    `<b>4. Forward-Testing Standard</b>\n` +
+    `• Zero historical lookahead bias.\n` +
+    `• Every metric calculated strictly from live forward executions starting October 6, 2026.\n` +
     `━━━━━━━━━━━━━━━━━━\n` +
     `🛡 <i>Systematic, rule-based institutional execution.</i>`;
 
@@ -1773,10 +1786,10 @@ async function sendMenuMessage(chatId, env) {
   const activeLabel = activeCount > 0 ? ` (${activeCount} Active)` : "";
 
   const text = 
-    `🏛 <b>INSTITUTIONAL SIGNAL TERMINAL</b>\n` +
+    `🏛 <b>INSTITUTIONAL SIGNAL TERMINAL v3.1</b>\n` +
     `━━━━━━━━━━━━━━━━━━\n` +
     `Automated 24/7 Algorithmic Trading &amp; Forward Verification\n` +
-    `Coverage: <b>EURUSD · USDCAD · GOLD</b> (Core Alpha Triad)\n\n` +
+    `Coverage: <b>GOLD · EURUSD · USDCAD · GBPUSD · USDJPY · USDCHF · AUDUSD</b>\n\n` +
     `<b>SYSTEM MODULES</b>\n` +
     `1. /active ── Running trades &amp; live float pips\n` +
     `2. /radar ── Market surveillance &amp; imminent breakouts\n` +
