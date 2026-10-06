@@ -223,5 +223,50 @@
       "summary": "Take-profit hit within 1 bar(s). High momentum impulse confirmed structural breakout conviction.",
       "actionable_insight": "Validates the 20-period Donchian channel breakout trigger."
     }
+  },
+  {
+    "tracking": {
+      "global_trade_no": 18,
+      "volume_no": 1,
+      "volume_trade_no": 18,
+      "volume_id": "VOL_01",
+      "volume_label": "Volume 1 (Trades 1\u2013100)"
+    },
+    "trade_id": "XAUUSD_15M_2026-10-06T02:00:00Z_SHORT",
+    "pair": "XAUUSD",
+    "symbol": "XAUUSD",
+    "timeframe": "15M",
+    "direction": "SHORT",
+    "entry_price": 4130.7,
+    "exit_price": 4107.29,
+    "stop_loss": 4130.6,
+    "take_profit": 4107.29,
+    "opened_at": "2026-10-06T02:00:00Z",
+    "closed_at": "2026-10-06T02:46:18Z",
+    "duration_hours": 0.77,
+    "duration_bars": 3,
+    "outcome": "WIN",
+    "realized_pips": 183.8,
+    "realized_r": 1.38,
+    "excursion_metrics": {
+      "mfe_pips": 271.8,
+      "mfe_r": 271.85,
+      "mae_pips": -9.3,
+      "mae_r": -9.3,
+      "tp_distance_pct_reached": 100.0
+    },
+    "market_regime": {
+      "trading_session": "Asian/Tokyo Session",
+      "rsi_at_entry": 50.0,
+      "atr_14": 0.0015,
+      "volatility_regime": "NORMAL",
+      "ema_alignment": "BEARISH_EXPANDING",
+      "breakout_candle_wick_ratio": 0.28
+    },
+    "diagnostic": {
+      "primary_factor": "HIGH_VELOCITY_BREAKOUT",
+      "summary": "Take-profit hit within 1 bar(s). High momentum impulse confirmed structural breakout conviction.",
+      "actionable_insight": "Validates the 20-period Donchian channel breakout trigger."
+    }
   }
 ]

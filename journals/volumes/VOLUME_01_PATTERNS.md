@@ -481,3 +481,28 @@
 
 ---
 
+### #18 · XAUUSD (15M) — 🎯 WIN (+1.75R)
+
+- **Global Sequence**: Trade `#18`
+- **Direction**: `SHORT` | **Outcome**: `WIN` (`+183.8 pips` / `1.38R`)
+- **Execution Range**: Entry ` 4130.7 ` ➔ Exit ` 4107.29 `
+- **Targets**: Stop Loss ` 4130.6 ` | Take Profit ` 4107.29 `
+- **Holding Time**: `0.77 hours` (3 bars)
+- **Window**: `2026-10-06 02:00:00 UTC` ➔ `2026-10-06 02:46:18 UTC`
+
+#### 📊 Excursion & Market Regime
+| Metric | Value | Detail |
+| :--- | :--- | :--- |
+| **Max Favorable Excursion (MFE)** | `+271.8 pips` | Reached `+271.85R` (100.0% of TP) |
+| **Max Adverse Excursion (MAE)** | `-9.3 pips` | Deepest drawdown `-9.3R` |
+| **Session** | `Asian/Tokyo Session` | Institutional Market Timing |
+| **Entry RSI (14)** | `50.0` | Momentum Baseline |
+| **EMA Alignment** | `BEARISH_EXPANDING` | Structural Trend Bias |
+
+#### 🔬 Post-Mortem Diagnosis: `HIGH_VELOCITY_BREAKOUT`
+> **Analysis**: Take-profit hit within 1 bar(s). High momentum impulse confirmed structural breakout conviction.
+>
+> **Actionable Takeaway**: Validates the 20-period Donchian channel breakout trigger.
+
+---
+
