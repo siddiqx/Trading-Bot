@@ -1,5 +1,25 @@
 {
   "tracking_started": "2026-10-06",
-  "active_trades": {},
+  "active_trades": {
+    "GBPUSD_15M": {
+      "trade_id": "GBPUSD_15M_2026-10-06T18:15:00Z_LONG",
+      "pair": "GBPUSD",
+      "symbol": "GBPUSD",
+      "ticker": "GBPUSD=X",
+      "direction": "LONG",
+      "timeframe": "15M",
+      "entry": 1.32767,
+      "stop_loss": 1.3258,
+      "take_profit": 1.3314,
+      "sl_pips": 18.7,
+      "tp_pips": 37.3,
+      "rr": 2.0,
+      "pip": 0.0001,
+      "digits": 5,
+      "opened_at": "2026-10-06T18:15:00Z",
+      "status": "OPEN",
+      "filled_at": "2026-10-06T18:15:00Z"
+    }
+  },
   "completed_trades": []
 }
