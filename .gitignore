@@ -57,4 +57,4 @@ cloudflared.exe
 
 # Logs
 *.log
-
+scratch/

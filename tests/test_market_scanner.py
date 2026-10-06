@@ -464,7 +464,7 @@ def test_gold_config_uses_mt5_spot_pair():
     assert gold_cfg["ticker"] == "XAUUSD"
     assert gold_cfg["pip"] == 0.10
     assert gold_cfg["digits"] == 2
-    assert gold_cfg["donchian_len"] == 8
+    assert gold_cfg["donchian_len"] == 20
 
     # Ensure no futures or crypto symbols exist in SYMBOLS
     for sym, cfg in SYMBOLS.items():
@@ -549,6 +549,7 @@ def test_model_j_partial_tp_and_breakeven_lock(monkeypatch):
     monkeypatch.setattr("market_scanner.send_telegram_alert", lambda *args, **kwargs: None)
     monkeypatch.setattr("market_scanner.sync_worker", lambda *args, **kwargs: None)
     monkeypatch.setattr("market_scanner.save_trade_records", lambda *args, **kwargs: None)
+    monkeypatch.setattr("market_scanner.record_trade_post_mortem", lambda *args, **kwargs: None)
 
     records = {
         "active_trades": {
@@ -589,6 +590,72 @@ def test_model_j_partial_tp_and_breakeven_lock(monkeypatch):
     assert completed["outcome"] == "WIN"
     assert completed["realized_r"] == 0.50
     assert completed["realized_pips"] == 50.5
+
+
+def test_stage_1_breakeven_lock_at_75_r(monkeypatch):
+    """Verify that reaching +0.75R moves SL to Breakeven (+1 pip), preventing full loss if trade reverses."""
+    from market_scanner import check_active_trades
+
+    t_entry = datetime(2026, 9, 28, 10, 0, tzinfo=timezone.utc)
+    # Entry: 1.10000, SL: 1.09800 (SL dist = 20 pips = 0.00200). +0.75R = 15 pips (1.10150).
+    # Bar 1 high reaches 1.10160 (+16 pips, exceeds +0.75R but does NOT reach +1.0R).
+    # Bar 2 price dips to 1.09900 (below entry).
+    mock_df = pd.DataFrame({
+        "time": [t_entry + timedelta(hours=i) for i in range(3)],
+        "open": [1.10000, 1.10050, 1.10100],
+        "high": [1.10050, 1.10160, 1.10120],  # Bar 1 high = 1.10160 (+0.80R)
+        "low": [1.09980, 1.10020, 1.09900],   # Bar 2 low dips to 1.09900, hitting BE at 1.10010
+        "close": [1.10040, 1.10110, 1.09920],
+        "volume": [100] * 3,
+        "ema20": [1.09900] * 3,
+        "ema50": [1.09800] * 3
+    })
+
+    monkeypatch.setattr("market_scanner.is_forex_market_open", lambda *args, **kwargs: True)
+    monkeypatch.setattr("market_scanner.fetch_candles", lambda *args, **kwargs: mock_df)
+    monkeypatch.setattr("market_scanner.send_telegram_alert", lambda *args, **kwargs: None)
+    monkeypatch.setattr("market_scanner.sync_worker", lambda *args, **kwargs: None)
+    monkeypatch.setattr("market_scanner.save_trade_records", lambda *args, **kwargs: None)
+    monkeypatch.setattr("market_scanner.record_trade_post_mortem", lambda *args, **kwargs: None)
+
+    records = {
+        "active_trades": {
+            "EURUSD": {
+                "trade_id": "EURUSD_TEST",
+                "pair": "EURUSD",
+                "symbol": "EURUSD",
+                "ticker": "EURUSD=X",
+                "direction": "LONG",
+                "timeframe": "1H",
+                "entry": 1.10000,
+                "stop_loss": 1.09800,  # 20 pips
+                "take_profit": 1.10350, # 1.75R
+                "sl_pips": 20.0,
+                "tp_pips": 35.0,
+                "rr": 1.75,
+                "pip": 0.0001,
+                "digits": 5,
+                "opened_at": t_entry.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "status": "OPEN",
+                "be_active": False,
+                "partial_taken": False
+            }
+        },
+        "completed_trades": []
+    }
+
+    check_active_trades(records)
+
+    # In bar 1, high reached 1.10160 (+16 pips >= 15 pips for +0.75R), activating Breakeven lock at 1.10010.
+    # In bar 2, low dipped to 1.09900, hitting the BE stop!
+    # Trade resolves as BREAK_EVEN instead of full loss!
+    assert "EURUSD" not in records["active_trades"]
+    assert len(records["completed_trades"]) == 1
+    completed = records["completed_trades"][0]
+    assert completed["status"] == "CLOSED"
+    assert completed["outcome"] == "BREAK_EVEN"
+    assert completed["realized_r"] >= 0.0
+    assert completed["realized_pips"] > 0.0
 
 
 def test_check_daily_circuit_breaker_profit_unlimited():
@@ -640,9 +707,58 @@ def test_check_daily_circuit_breaker_neutral():
     assert reason == ""
 
 
+def test_secondary_pair_conviction_filter(monkeypatch):
+    """Ensure secondary pairs (USDJPY, AUDUSD, GBPUSD) skip scanning when EMA separation is in flat chop."""
+    from market_scanner import scan_pair_timeframe
+    from datetime import datetime, timezone, timedelta
+
+    now = datetime.now(timezone.utc)
+    t0 = now - timedelta(hours=35)
+    # 35 bars of flat candle data where ema20 is virtually identical to ema50
+    mock_df = pd.DataFrame({
+        "timestamp": [int((t0 + timedelta(hours=i)).timestamp()) for i in range(35)],
+        "time": [t0 + timedelta(hours=i) for i in range(35)],
+        "open": [150.00] * 35,
+        "high": [150.10] * 35,
+        "low": [149.90] * 35,
+        "close": [150.00] * 35,
+        "volume": [100] * 35
+    })
+
+    monkeypatch.setattr("market_scanner.is_forex_market_open", lambda *args, **kwargs: True)
+    monkeypatch.setattr("market_scanner.fetch_candles", lambda *args, **kwargs: mock_df)
+    monkeypatch.setattr("market_scanner.get_live_price", lambda *args, **kwargs: 150.00)
+
+    cfg = {"ticker": "USDJPY=X", "pip": 0.01, "digits": 3, "donchian_len": 20}
+    state = {"alerted_signals": []}
+    signals = scan_pair_timeframe("USDJPY", cfg, "1h", state)
+    assert len(signals) == 0
 
 
+def test_audusd_elevated_conviction_threshold(monkeypatch):
+    """Ensure AUDUSD requires higher conviction (0.25 ATR EMA separation) to avoid chronic range chop."""
+    from market_scanner import scan_pair_timeframe
+    from datetime import datetime, timezone, timedelta
 
+    now = datetime.now(timezone.utc)
+    t0 = now - timedelta(hours=35)
+    # Mild trend with separation ~0.18 ATR (passes standard 0.15 filter, but rejected by AUDUSD 0.25 filter)
+    mock_df = pd.DataFrame({
+        "timestamp": [int((t0 + timedelta(hours=i)).timestamp()) for i in range(35)],
+        "time": [t0 + timedelta(hours=i) for i in range(35)],
+        "open": [0.6500 + i * 0.0001 for i in range(35)],
+        "high": [0.6510 + i * 0.0001 for i in range(35)],
+        "low": [0.6490 + i * 0.0001 for i in range(35)],
+        "close": [0.6505 + i * 0.0001 for i in range(35)],
+        "volume": [100] * 35
+    })
 
+    monkeypatch.setattr("market_scanner.is_forex_market_open", lambda *args, **kwargs: True)
+    monkeypatch.setattr("market_scanner.fetch_candles", lambda *args, **kwargs: mock_df)
+    monkeypatch.setattr("market_scanner.get_live_price", lambda *args, **kwargs: 0.6540)
 
+    cfg = {"ticker": "AUDUSD=X", "pip": 0.0001, "digits": 5, "donchian_len": 20}
+    state = {"alerted_signals": []}
+    signals = scan_pair_timeframe("AUDUSD", cfg, "1h", state)
+    assert len(signals) == 0
 

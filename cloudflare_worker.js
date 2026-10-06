@@ -18,11 +18,12 @@ const DEFAULT_GH_TOKEN = "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";
 const DEFAULT_CHAT_ID = "8142877259";
 
 const ASSETS = [
-  { name: "GOLD",    symbol: "XAUUSD", ticker: "XAUUSD",   pip: 0.10,   digits: 2, donchian_len: 8 },
+  { name: "GOLD",    symbol: "XAUUSD", ticker: "XAUUSD",   pip: 0.10,   digits: 2, donchian_len: 20 },
   { name: "EUR/USD", symbol: "EURUSD", ticker: "EURUSD=X", pip: 0.0001, digits: 5, donchian_len: 20 },
   { name: "USD/CAD", symbol: "USDCAD", ticker: "USDCAD=X", pip: 0.0001, digits: 5, donchian_len: 20 },
   { name: "GBP/USD", symbol: "GBPUSD", ticker: "GBPUSD=X", pip: 0.0001, digits: 5, donchian_len: 20 },
   { name: "USD/JPY", symbol: "USDJPY", ticker: "USDJPY=X", pip: 0.01,   digits: 3, donchian_len: 20 },
+  { name: "USD/CHF", symbol: "USDCHF", ticker: "USDCHF=X", pip: 0.0001, digits: 5, donchian_len: 20 },
   { name: "AUD/USD", symbol: "AUDUSD", ticker: "AUDUSD=X", pip: 0.0001, digits: 5, donchian_len: 20 }
 ];
 
@@ -328,7 +329,44 @@ async function runActiveTradeChecks(env) {
         const pipVal = asset.pip || 0.0001;
         const initialSlDist = t.initial_sl_dist || Math.abs(t.entry - t.stop_loss);
 
-        // Model J: Bank 50% at +1.0R and lock Breakeven
+        // Progressive Capital Protection:
+        // Stage 1: Breakeven Lock at +0.75R
+        if (!t.be_active && initialSlDist > 0) {
+          const reachedBE = isLong
+            ? (lastHigh - t.entry >= 0.75 * initialSlDist)
+            : (t.entry - lastLow >= 0.75 * initialSlDist);
+
+          if (reachedBE) {
+            t.be_active = true;
+            t.initial_sl_dist = initialSlDist;
+            t.stop_loss = isLong ? (t.entry + (1.0 * pipVal)) : (t.entry - (1.0 * pipVal));
+
+            const kv = env && (env.TRADE_LEDGER || env.TRADES_KV || env.KV);
+            if (kv) {
+              try {
+                const currentActive = { ...(ledger.active || {}) };
+                currentActive[symbol] = t;
+                await kv.put("active_trades", JSON.stringify(currentActive));
+              } catch (e) {}
+            }
+
+            const beLockText =
+              `🛡️ <b>CAPITAL PROTECTED · BREAKEVEN ACTIVATED</b>\n` +
+              `━━━━━━━━━━━━━━━━━━\n` +
+              `📊 <b>Asset:</b> <b>${t.pair || symbol}</b> (${t.timeframe || "1H"})\n` +
+              `🧭 <b>Direction:</b> <b>${t.direction}</b>\n` +
+              `━━━━━━━━━━━━━━━━━━\n\n` +
+              `<b>🔒 RISK ELIMINATED</b>\n` +
+              `• <b>Milestone:</b> Floating profit reached <b>+0.75 R</b>\n` +
+              `• <b>Stop Loss:</b> Moved to Breakeven (+1 pip): <code>${t.stop_loss.toFixed(asset.digits)}</code>\n` +
+              `• <b>Downside Risk:</b> <b>0.00 R (Zero Loss Guaranteed)</b>\n\n` +
+              `━━━━━━━━━━━━━━━━━━\n` +
+              `🕒 <code>${new Date().toISOString().replace("T", " ").substring(0, 16)} UTC</code>`;
+            await sendTelegramMessage(DEFAULT_CHAT_ID, beLockText);
+          }
+        }
+
+        // Stage 2: Model J: Bank 50% at +1.0R and lock Breakeven
         if (!t.partial_taken) {
           const reached1R = isLong
             ? (lastHigh - t.entry >= initialSlDist)
@@ -486,6 +524,22 @@ export default {
       const rawText = await request.text();
       let payload = {};
       try { payload = JSON.parse(rawText); } catch (e) { payload = { text: rawText }; }
+
+      // Handle Reset / Fresh Start from Market Scanner Engine
+      if (payload.event === "reset_trades" || payload.reset === true) {
+        const kv = env && (env.TRADE_LEDGER || env.TRADES_KV || env.KV);
+        if (kv) {
+          try {
+            await kv.put("active_trades", JSON.stringify({}));
+            await kv.put("completed_trades", JSON.stringify([]));
+          } catch (e) {
+            console.error("KV reset error:", e);
+          }
+        }
+        STORED_ACTIVE_TRADES = {};
+        STORED_COMPLETED_TRADES = [];
+        return new Response("Trades Reset Cleanly", { status: 200 });
+      }
 
       // Handle Sync from Market Scanner Engine
       // IMPORTANT: Merge strategy — never blindly overwrite KV active trades.
@@ -659,6 +713,15 @@ async function handleTelegramUpdate(update, env) {
     } else if (cmd === "/strategy" || cmd === "/rules") {
       await sendStrategyMessage(chatId);
     } else if (cmd === "/clear" || cmd === "/clean" || cmd === "/reset") {
+      const kv = env && (env.TRADE_LEDGER || env.TRADES_KV || env.KV);
+      if (kv) {
+        try {
+          await kv.put("active_trades", JSON.stringify({}));
+          await kv.put("completed_trades", JSON.stringify([]));
+        } catch (e) {}
+      }
+      STORED_ACTIVE_TRADES = {};
+      STORED_COMPLETED_TRADES = [];
       await sendClearInstructions(chatId);
     } else if (cmd === "/close" || cmd === "/resolve") {
       // Admin: force-resolve a stuck active trade

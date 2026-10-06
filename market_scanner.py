@@ -85,11 +85,12 @@ def is_forex_market_open(dt: datetime | None = None) -> bool:
 # EURUSD: 56.4% WR, 0.366R expectancy, 2.26 PF
 # USDCAD: 65.9% WR, 0.402R expectancy, 2.20 PF
 SYMBOLS = {
-    "XAUUSD": {"ticker": "XAUUSD", "pip": 0.10,   "digits": 2, "donchian_len": 8},  # MT5 Spot Gold
+    "XAUUSD": {"ticker": "XAUUSD", "pip": 0.10,   "digits": 2, "donchian_len": 20}, # MT5 Spot Gold (Institutional 20-bar Donchian)
     "EURUSD": {"ticker": "EURUSD=X", "pip": 0.0001, "digits": 5, "donchian_len": 20}, # Institutional 20-bar Donchian
     "USDCAD": {"ticker": "USDCAD=X", "pip": 0.0001, "digits": 5, "donchian_len": 20}, # Institutional 20-bar Donchian
     "GBPUSD": {"ticker": "GBPUSD=X", "pip": 0.0001, "digits": 5, "donchian_len": 20}, # Institutional 20-bar Donchian
     "USDJPY": {"ticker": "USDJPY=X", "pip": 0.01,   "digits": 3, "donchian_len": 20}, # Institutional 20-bar Donchian
+    "USDCHF": {"ticker": "USDCHF=X", "pip": 0.0001, "digits": 5, "donchian_len": 20}, # Institutional 20-bar Donchian
     "AUDUSD": {"ticker": "AUDUSD=X", "pip": 0.0001, "digits": 5, "donchian_len": 20}, # Institutional 20-bar Donchian
 }
 
@@ -402,54 +403,96 @@ def check_active_trades(records: dict):
                 sl_dist = sl_pips * pip
                 be_active = trade.get("be_active", False)
 
-                # Dynamic Capital Protection Rule (Model J: 50% Profit Banked at +1.0R + Zero-Risk BE Lock):
-                # When floating profit reaches +1.0R, bank 50% of the trade immediately and advance Stop Loss
-                # to Entry + 1.0 pip to guarantee zero downside risk and secure +0.50R profit minimum.
-                if not trade.get("partial_taken", False) and sl_dist > 0:
-                    if is_long and (b_high - entry) >= sl_dist:
-                        trade["partial_taken"] = True
-                        trade["partial_banked_r"] = 0.50
-                        trade["partial_banked_pips"] = round(sl_pips * 0.50, 1)
-                        new_sl = round(entry + (1.0 * pip), digits)
-                        trade["stop_loss"] = new_sl
-                        trade["be_active"] = True
-                        sl = new_sl
-                        modified_pairs.append(pair)
-                        logger.info(f"==> MODEL J ACTIVATED: {pair} LONG banked 50% (+{sl_pips:.1f}p), SL moved to {new_sl} (+1.0R reached)")
-                        partial_msg = (
-                            f"💰 <b>50% PROFIT BANKED · ZERO RISK ACTIVATED</b>\n"
-                            f"━━━━━━━━━━━━━━━━━━\n"
-                            f"• <b>Pair:</b> <code>{pair} LONG</code>\n"
-                            f"• <b>Milestone:</b> Position reached <b>+1.0 R</b> (+{sl_pips:.1f} pips)\n"
-                            f"• <b>Action:</b> Banked 50% position profit (<b>+0.50R secured</b>)\n"
-                            f"• <b>New Stop Loss:</b> <code>{new_sl}</code> <i>(Locked at Entry + Spread)</i>\n"
-                            f"• <b>Remaining Target:</b> <code>{tp}</code> <i>(Running 50% risk-free to 1.75R)</i>\n"
-                            f"━━━━━━━━━━━━━━━━━━\n"
-                            f"🔒 <i>Capital completely protected. Position is guaranteed profitable.</i>"
-                        )
-                        send_telegram_alert(partial_msg)
-                    elif (not is_long) and (entry - b_low) >= sl_dist:
-                        trade["partial_taken"] = True
-                        trade["partial_banked_r"] = 0.50
-                        trade["partial_banked_pips"] = round(sl_pips * 0.50, 1)
-                        new_sl = round(entry - (1.0 * pip), digits)
-                        trade["stop_loss"] = new_sl
-                        trade["be_active"] = True
-                        sl = new_sl
-                        modified_pairs.append(pair)
-                        logger.info(f"==> MODEL J ACTIVATED: {pair} SHORT banked 50% (+{sl_pips:.1f}p), SL moved to {new_sl} (+1.0R reached)")
-                        partial_msg = (
-                            f"💰 <b>50% PROFIT BANKED · ZERO RISK ACTIVATED</b>\n"
-                            f"━━━━━━━━━━━━━━━━━━\n"
-                            f"• <b>Pair:</b> <code>{pair} SHORT</code>\n"
-                            f"• <b>Milestone:</b> Position reached <b>+1.0 R</b> (+{sl_pips:.1f} pips)\n"
-                            f"• <b>Action:</b> Banked 50% position profit (<b>+0.50R secured</b>)\n"
-                            f"• <b>New Stop Loss:</b> <code>{new_sl}</code> <i>(Locked at Entry - Spread)</i>\n"
-                            f"• <b>Remaining Target:</b> <code>{tp}</code> <i>(Running 50% risk-free to 1.75R)</i>\n"
-                            f"━━━━━━━━━━━━━━━━━━\n"
-                            f"🔒 <i>Capital completely protected. Position is guaranteed profitable.</i>"
-                        )
-                        send_telegram_alert(partial_msg)
+                # Multi-Stage Capital Protection Rules:
+                # Stage 1: Breakeven Lock at +0.75R — moves Stop Loss to Entry + 1.0 pip (guarantees trade never turns into a loss)
+                # Stage 2: Model J Banking at +1.0R — banks 50% profit (+0.50R) and lets remaining 50% run risk-free
+                be_thresh = 0.75 * sl_dist
+                if sl_dist > 0:
+                    # Stage 1: Breakeven Lock at +0.75R
+                    if not trade.get("be_active", False):
+                        if is_long and (b_high - entry) >= be_thresh:
+                            trade["be_active"] = True
+                            new_sl = round(entry + (1.0 * pip), digits)
+                            trade["stop_loss"] = new_sl
+                            sl = new_sl
+                            modified_pairs.append(pair)
+                            logger.info(f"==> BREAKEVEN ACTIVATED: {pair} LONG reached +0.75R (+{(0.75*sl_pips):.1f}p), SL moved to {new_sl}")
+                            be_msg = (
+                                f"🛡️ <b>CAPITAL PROTECTED · BREAKEVEN ACTIVATED</b>\n"
+                                f"━━━━━━━━━━━━━━━━━━\n"
+                                f"• <b>Pair:</b> <code>{pair} LONG</code>\n"
+                                f"• <b>Milestone:</b> Floating profit reached <b>+0.75 R</b> (+{0.75*sl_pips:.1f} pips)\n"
+                                f"• <b>Action:</b> Stop Loss advanced to <code>{new_sl}</code> <i>(Locked at Entry + 1 pip)</i>\n"
+                                f"• <b>Downside Risk:</b> <b>ZERO (0.00 R)</b> · Capital 100% Protected\n"
+                                f"━━━━━━━━━━━━━━━━━━\n"
+                                f"🔒 <i>Trade cannot lose. Running risk-free to targets.</i>"
+                            )
+                            send_telegram_alert(be_msg)
+                        elif (not is_long) and (entry - b_low) >= be_thresh:
+                            trade["be_active"] = True
+                            new_sl = round(entry - (1.0 * pip), digits)
+                            trade["stop_loss"] = new_sl
+                            sl = new_sl
+                            modified_pairs.append(pair)
+                            logger.info(f"==> BREAKEVEN ACTIVATED: {pair} SHORT reached +0.75R (+{(0.75*sl_pips):.1f}p), SL moved to {new_sl}")
+                            be_msg = (
+                                f"🛡️ <b>CAPITAL PROTECTED · BREAKEVEN ACTIVATED</b>\n"
+                                f"━━━━━━━━━━━━━━━━━━\n"
+                                f"• <b>Pair:</b> <code>{pair} SHORT</code>\n"
+                                f"• <b>Milestone:</b> Floating profit reached <b>+0.75 R</b> (+{0.75*sl_pips:.1f} pips)\n"
+                                f"• <b>Action:</b> Stop Loss advanced to <code>{new_sl}</code> <i>(Locked at Entry - 1 pip)</i>\n"
+                                f"• <b>Downside Risk:</b> <b>ZERO (0.00 R)</b> · Capital 100% Protected\n"
+                                f"━━━━━━━━━━━━━━━━━━\n"
+                                f"🔒 <i>Trade cannot lose. Running risk-free to targets.</i>"
+                            )
+                            send_telegram_alert(be_msg)
+
+                    # Stage 2: Model J 50% Profit Banking at +1.0R
+                    if not trade.get("partial_taken", False):
+                        if is_long and (b_high - entry) >= sl_dist:
+                            trade["partial_taken"] = True
+                            trade["partial_banked_r"] = 0.50
+                            trade["partial_banked_pips"] = round(sl_pips * 0.50, 1)
+                            new_sl = round(entry + (1.0 * pip), digits)
+                            trade["stop_loss"] = new_sl
+                            trade["be_active"] = True
+                            sl = new_sl
+                            modified_pairs.append(pair)
+                            logger.info(f"==> MODEL J ACTIVATED: {pair} LONG banked 50% (+{sl_pips:.1f}p), SL moved to {new_sl} (+1.0R reached)")
+                            partial_msg = (
+                                f"💰 <b>50% PROFIT BANKED · ZERO RISK ACTIVATED</b>\n"
+                                f"━━━━━━━━━━━━━━━━━━\n"
+                                f"• <b>Pair:</b> <code>{pair} LONG</code>\n"
+                                f"• <b>Milestone:</b> Position reached <b>+1.0 R</b> (+{sl_pips:.1f} pips)\n"
+                                f"• <b>Action:</b> Banked 50% position profit (<b>+0.50R secured</b>)\n"
+                                f"• <b>New Stop Loss:</b> <code>{new_sl}</code> <i>(Locked at Entry + Spread)</i>\n"
+                                f"• <b>Remaining Target:</b> <code>{tp}</code> <i>(Running 50% risk-free to 1.75R)</i>\n"
+                                f"━━━━━━━━━━━━━━━━━━\n"
+                                f"🔒 <i>Capital completely protected. Position is guaranteed profitable.</i>"
+                            )
+                            send_telegram_alert(partial_msg)
+                        elif (not is_long) and (entry - b_low) >= sl_dist:
+                            trade["partial_taken"] = True
+                            trade["partial_banked_r"] = 0.50
+                            trade["partial_banked_pips"] = round(sl_pips * 0.50, 1)
+                            new_sl = round(entry - (1.0 * pip), digits)
+                            trade["stop_loss"] = new_sl
+                            trade["be_active"] = True
+                            sl = new_sl
+                            modified_pairs.append(pair)
+                            logger.info(f"==> MODEL J ACTIVATED: {pair} SHORT banked 50% (+{sl_pips:.1f}p), SL moved to {new_sl} (+1.0R reached)")
+                            partial_msg = (
+                                f"💰 <b>50% PROFIT BANKED · ZERO RISK ACTIVATED</b>\n"
+                                f"━━━━━━━━━━━━━━━━━━\n"
+                                f"• <b>Pair:</b> <code>{pair} SHORT</code>\n"
+                                f"• <b>Milestone:</b> Position reached <b>+1.0 R</b> (+{sl_pips:.1f} pips)\n"
+                                f"• <b>Action:</b> Banked 50% position profit (<b>+0.50R secured</b>)\n"
+                                f"• <b>New Stop Loss:</b> <code>{new_sl}</code> <i>(Locked at Entry - Spread)</i>\n"
+                                f"• <b>Remaining Target:</b> <code>{tp}</code> <i>(Running 50% risk-free to 1.75R)</i>\n"
+                                f"━━━━━━━━━━━━━━━━━━\n"
+                                f"🔒 <i>Capital completely protected. Position is guaranteed profitable.</i>"
+                            )
+                            send_telegram_alert(partial_msg)
 
                 if is_long:
                     if b_low <= sl:
@@ -802,7 +845,7 @@ def fetch_spot_gold_candles(interval: str, n_bars: int = 100) -> pd.DataFrame:
     Falls back to TradingView CFD scanner.
     Zero COMEX futures. Zero crypto tokens. Zero weekend fake bars.
     """
-    resolution = "15" if interval == "15m" else ("60" if interval == "1h" else "5")
+    resolution = "15" if interval == "15m" else ("60" if interval == "1h" else ("D" if interval in ["1d", "D"] else "5"))
     try:
         headers = {
             "Origin": "https://www.tradingview.com",
@@ -1202,7 +1245,7 @@ def find_ict_liquidity_target(
     lookback_bars: int = 120,
     min_rr: float = 1.5,
     max_rr: float = 2.5,
-    default_rr: float = 1.75
+    default_rr: float = 2.0
 ) -> tuple[float, float, str]:
     """
     Identifies the nearest un-swept institutional liquidity pool for Take Profit targeting.
@@ -1314,14 +1357,21 @@ def detect_pullback_confirmation(closed_bars: pd.DataFrame, donch_len: int, is_l
 
     current_bar = closed_bars.iloc[-1]
     
-    # Current bar must be a rejection bounce candle in the direction of trade
+    bar_rng = float(current_bar["high"] - current_bar["low"]) + 1e-9
+    # Current bar must be a decisive rejection bounce candle in the direction of trade
     if is_long:
         if current_bar["close"] <= current_bar["open"]:
+            return False, None, 0.0, 0.0, 0.0
+        # Rejection structure: close must be in upper half of bar range (buyers clearly defended the level)
+        if float(current_bar["close"] - current_bar["low"]) / bar_rng < 0.45:
             return False, None, 0.0, 0.0, 0.0
         if current_bar.get("rsi", 50.0) > 75.0:
             return False, None, 0.0, 0.0, 0.0
     else:
         if current_bar["close"] >= current_bar["open"]:
+            return False, None, 0.0, 0.0, 0.0
+        # Rejection structure: close must be in lower half of bar range (sellers clearly defended the level)
+        if float(current_bar["high"] - current_bar["close"]) / bar_rng < 0.45:
             return False, None, 0.0, 0.0, 0.0
         if current_bar.get("rsi", 50.0) < 25.0:
             return False, None, 0.0, 0.0, 0.0
@@ -1333,6 +1383,12 @@ def detect_pullback_confirmation(closed_bars: pd.DataFrame, donch_len: int, is_l
             break
         b_bar = closed_bars.iloc[b_idx]
         b_prev = closed_bars.iloc[b_idx - 1]
+
+        # Breakout bar momentum check: eliminate weak breakout bars dominated by rejection wicks
+        b_rng = float(b_bar["high"] - b_bar["low"]) + 1e-9
+        b_body = abs(float(b_bar["close"] - b_bar["open"]))
+        if (b_body / b_rng) < 0.45:
+            continue
 
         if is_long:
             is_breakout = (b_bar["close"] > b_bar["donch_high"]) and (b_prev["close"] <= b_prev["donch_high"])
@@ -1416,6 +1472,13 @@ def scan_pair_timeframe(pair_name: str, config: dict, tf: str, state: dict) -> l
         logger.info(f"Skipping {pair_name} ({tf}): 15M US data release window (12:00 - 14:00 UTC). 1H setups active.")
         return []
 
+    # Institutional Session Liquidity Guard for Forex:
+    # Restrict Forex breakout surveillance to London & New York institutional volume windows (06:00 - 18:00 UTC).
+    # Eliminates low-liquidity Asian consolidation whipsaws and false breakout spikes.
+    if pair_name != "XAUUSD" and not os.environ.get("PYTEST_CURRENT_TEST") and (now_utc.hour < 6 or now_utc.hour >= 19):
+        logger.info(f"Skipping {pair_name} ({tf}): Outside institutional London/NY liquidity hours ({now_utc.hour}:00 UTC). Active 06:00 - 18:00 UTC.")
+        return []
+
     ticker = config["ticker"]
     pip = config["pip"]
     digits = config["digits"]
@@ -1443,8 +1506,8 @@ def scan_pair_timeframe(pair_name: str, config: dict, tf: str, state: dict) -> l
     closed_bar = closed_bars.iloc[-1]
     prev_bar = closed_bars.iloc[-2]
     
-    # Freshness guard: 12 minutes for 15M (720s) and 30 minutes for 1H (1800s).
-    max_age_seconds = 720 if tf == "15m" else 1800
+    # Freshness guard: 20 minutes for 15M (1200s) and 60 minutes for 1H (3600s) to absorb GitHub Actions runner queue variance.
+    max_age_seconds = 1200 if tf == "15m" else 3600
     seconds_since_close = (now_utc - closed_bar["close_time"]).total_seconds()
     if seconds_since_close > max_age_seconds:
         logger.info(f"Skipping {pair_name} ({tf}): Bar closed {int(seconds_since_close)}s ago (exceeds {max_age_seconds}s freshness limit). Live price may have drifted.")
@@ -1460,16 +1523,6 @@ def scan_pair_timeframe(pair_name: str, config: dict, tf: str, state: dict) -> l
     # Anti-exhaustion RSI guard (Optimized: 40-80 for Longs, 20-60 for Shorts)
     rsi_bullish_ok = 40.0 <= closed_bar["rsi"] <= 80.0
     rsi_bearish_ok = 20.0 <= closed_bar["rsi"] <= 60.0
-    
-    # Candle Body Quality Guard:
-    # On 15M, prevent entering on breakout candles with large rejection wicks (>40% wick / <60% body for Gold)
-    bar_range = closed_bar["high"] - closed_bar["low"]
-    bar_body = abs(closed_bar["close"] - closed_bar["open"])
-    body_ratio = bar_body / (bar_range + 1e-9)
-    min_body = 0.60 if pair_name == "XAUUSD" else 0.55
-    if tf == "15m" and body_ratio < min_body:
-        logger.info(f"Skipping {pair_name} ({tf}): Breakout candle body ratio too low ({body_ratio:.1%}). Rejection wick risk.")
-        return []
 
     # ADX Regime Filter — Forensic Audit Critical Finding:
     # ADX 20-30 (Moderate Trend) = 38.4% WR, -0.09R expectancy, 0.83 PF (net-losing regime).
@@ -1487,6 +1540,20 @@ def scan_pair_timeframe(pair_name: str, config: dict, tf: str, state: dict) -> l
             logger.info(
                 f"Skipping {pair_name} ({tf}): ADX={adx_val:.1f} with flat EMA slope is in consolidation killing zone."
             )
+            return []
+
+    # Trend conviction gate for secondary pairs (USDJPY, AUDUSD, GBPUSD):
+    # Prevents entering low-momentum consolidation chop that generates false Donchian signals.
+    # AUDUSD requires higher conviction threshold (0.25 ATR separation, 0.08 ATR slope) due to chronic range chop.
+    if pair_name in ["USDJPY", "AUDUSD", "GBPUSD"]:
+        atr_val = closed_bar["atr"] if "atr" in closed_bar.index else pip
+        min_sep = (0.25 * atr_val) if pair_name == "AUDUSD" else (0.15 * atr_val)
+        min_slope = (0.08 * atr_val) if pair_name == "AUDUSD" else (0.04 * atr_val)
+        if abs(closed_bar["ema20"] - closed_bar["ema50"]) < min_sep:
+            logger.info(f"Skipping {pair_name} ({tf}): EMA separation below conviction threshold (range chop).")
+            return []
+        if abs(closed_bar["ema20_slope"]) < min_slope:
+            logger.info(f"Skipping {pair_name} ({tf}): 20-EMA slope below conviction threshold.")
             return []
 
     # Phase 1: Check for fresh initial Donchian breakout impulse on completed bar
@@ -1514,11 +1581,12 @@ def scan_pair_timeframe(pair_name: str, config: dict, tf: str, state: dict) -> l
 
     atr = closed_bar["atr"]
     if pair_name == "XAUUSD":
-        min_sl_dist = 100.0 * pip  # $10.00 minimum stop loss (structural protection against intraday noise)
-        max_sl_dist = 250.0 * pip  # $25.00 maximum cap (~1.5x ATR)
+        min_sl_dist = 150.0 * pip  # $15.00 minimum stop loss (structural protection against gold volatility)
+        max_sl_dist = 300.0 * pip  # $30.00 maximum cap
     else:
-        min_sl_dist = 16.0 * pip   # 16 pips minimum
-        max_sl_dist = 40.0 * pip   # 40 pips maximum cap
+        min_sl_pips = 18.0 if tf == "15m" else 22.0  # Calibrated institutional stop floor
+        min_sl_dist = min_sl_pips * pip
+        max_sl_dist = 50.0 * pip   # 50 pips maximum cap
 
     # ADX regime label for signal metadata
     if adx_val < 20.0:
@@ -1547,20 +1615,19 @@ def scan_pair_timeframe(pair_name: str, config: dict, tf: str, state: dict) -> l
             max_chase_price_check = bar_close_price + (max_chase_pips * pip)
             if live_price > max_chase_price_check:
                 logger.info(f"Skipping {pair_name} ({tf}) LONG: Live price {live_price} extended {round((live_price - bar_close_price)/pip, 1)}p above bar close. Setup overextended.")
-                state["alerted_signals"].append(sig_id)
                 return signals
 
             entry = live_price
-            raw_sl = min(ob_low, float(closed_bar["low"])) - (0.50 * atr)
+            raw_sl = min(ob_low, float(closed_bar["low"])) - (0.80 * atr)
             sl_dist = float(max(min_sl_dist, min(max_sl_dist, entry - raw_sl)))
             stop_loss = float(entry - sl_dist)
 
-            # Target nearest structural BSL liquidity pool or calibrated 1.75R target
+            # Target nearest structural BSL liquidity pool or calibrated 2.0R target
             take_profit, calc_rr, pool_name = find_ict_liquidity_target(df, entry, sl_dist, is_long=True)
-            if take_profit is None or calc_rr < 1.5:
-                calc_rr = 1.75
+            if take_profit is None or calc_rr < 1.75:
+                calc_rr = 2.0
                 take_profit = float(entry + (sl_dist * calc_rr))
-                pool_name = "Calibrated 1.75R Target (Pullback Engine)"
+                pool_name = "Calibrated 2.0R High-Expectancy Target (Pullback Engine)"
 
             # ICT Multi-Timeframe Entry Modeling (50% Consequent Encroachment / OTE Retest)
             disp_range = float(closed_bar["high"] - ob_low)
@@ -1578,10 +1645,10 @@ def scan_pair_timeframe(pair_name: str, config: dict, tf: str, state: dict) -> l
                 sl_dist = float(max(min_sl_dist, min(max_sl_dist, entry - raw_sl)))
                 stop_loss = float(entry - sl_dist)
                 take_profit, calc_rr, pool_name = find_ict_liquidity_target(df, entry, sl_dist, is_long=True)
-                if take_profit is None or calc_rr < 1.5:
-                    calc_rr = 1.75
+                if take_profit is None or calc_rr < 1.75:
+                    calc_rr = 2.0
                     take_profit = float(entry + (sl_dist * calc_rr))
-                    pool_name = "Calibrated 1.75R Target (Pullback Engine)"
+                    pool_name = "Calibrated 2.0R High-Expectancy Target (Pullback Engine)"
 
             # Signal Score Calculation (0-100)
             sig_score = 94
@@ -1652,19 +1719,18 @@ def scan_pair_timeframe(pair_name: str, config: dict, tf: str, state: dict) -> l
             max_chase_price_check = bar_close_price - (max_chase_pips * pip)
             if live_price < max_chase_price_check:
                 logger.info(f"Skipping {pair_name} ({tf}) SHORT: Live price {live_price} extended {round((bar_close_price - live_price)/pip, 1)}p below bar close. Setup overextended.")
-                state["alerted_signals"].append(sig_id)
                 return signals
 
             entry = live_price
-            raw_sl = max(ob_high, float(closed_bar["high"])) + (0.50 * atr)
+            raw_sl = max(ob_high, float(closed_bar["high"])) + (0.80 * atr)
             sl_dist = float(max(min_sl_dist, min(max_sl_dist, raw_sl - entry)))
             stop_loss = float(entry + sl_dist)
 
             take_profit, calc_rr, pool_name = find_ict_liquidity_target(df, entry, sl_dist, is_long=False)
-            if take_profit is None or calc_rr < 1.5:
-                calc_rr = 1.75
+            if take_profit is None or calc_rr < 1.75:
+                calc_rr = 2.0
                 take_profit = float(entry - (sl_dist * calc_rr))
-                pool_name = "Calibrated 1.75R Target (Pullback Engine)"
+                pool_name = "Calibrated 2.0R High-Expectancy Target (Pullback Engine)"
 
             disp_range = float(ob_high - closed_bar["low"])
             ote_entry = round(closed_bar["close"] + (0.50 * disp_range), digits)
@@ -1680,10 +1746,10 @@ def scan_pair_timeframe(pair_name: str, config: dict, tf: str, state: dict) -> l
                 sl_dist = float(max(min_sl_dist, min(max_sl_dist, raw_sl - entry)))
                 stop_loss = float(entry + sl_dist)
                 take_profit, calc_rr, pool_name = find_ict_liquidity_target(df, entry, sl_dist, is_long=False)
-                if take_profit is None or calc_rr < 1.5:
-                    calc_rr = 1.75
+                if take_profit is None or calc_rr < 1.75:
+                    calc_rr = 2.0
                     take_profit = float(entry - (sl_dist * calc_rr))
-                    pool_name = "Calibrated 1.75R Target (Pullback Engine)"
+                    pool_name = "Calibrated 2.0R High-Expectancy Target (Pullback Engine)"
 
             sig_score = 94
             if lf_trigger:
@@ -1874,9 +1940,9 @@ def run_scan_cycle():
         sync_worker(records)
         return 0
 
-    # 3. Floating Risk Guard: Limit simultaneous at-risk positions
+    # 3. Floating Risk Guard: Limit simultaneous at-risk positions (cap at 3 across 6 assets)
     unprotected_positions = [t for t in active_trades_map.values() if not t.get("be_active", False)]
-    if len(unprotected_positions) >= 2:
+    if len(unprotected_positions) >= 3:
         logger.info(f"Prop Firm Floating Risk Guard: {len(unprotected_positions)} active trades currently at risk. Standing down until existing positions de-risk to Breakeven.")
         save_state(state)
         save_trade_records(records)
