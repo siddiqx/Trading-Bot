@@ -2,6 +2,8 @@
 
 from typing import Dict, Any, Optional, Tuple
 import html
+import json
+from pathlib import Path
 import httpx
 from app.config import get_settings
 from app.utils.logging import logger
@@ -192,6 +194,17 @@ class TelegramService:
         message = self.format_signal_message(signal_data)
         return await self.send_message(message)
 
+    def _load_trade_records(self) -> Dict[str, Any]:
+        """Load trade ledger records from trade_records.json."""
+        for candidate in [Path("trade_records.json"), Path(__file__).resolve().parents[2] / "trade_records.json"]:
+            if candidate.exists():
+                try:
+                    with open(candidate, "r", encoding="utf-8") as f:
+                        return json.load(f)
+                except Exception:
+                    pass
+        return {"tracking_started": "2026-10-06", "active_trades": {}, "completed_trades": []}
+
     def generate_command_response(
         self,
         command: str,
@@ -199,21 +212,30 @@ class TelegramService:
         last_signal: Optional[Any] = None,
     ) -> str:
         """Generate response text for Telegram bot slash commands."""
-        cmd = command.strip().lower()
+        parts = command.strip().split()
+        cmd = parts[0].lower().split("@")[0] if parts else ""
+        records = self._load_trade_records()
+        active_trades = records.get("active_trades", {})
+        completed_trades = records.get("completed_trades", [])
 
-        if cmd in ["/start", "/help"]:
+        if cmd in ["/start", "/help", "/menu"]:
             return (
                 "🤖 <b>Forex & Spot Gold Live Signal Bot v3.1</b>\n\n"
                 "<b>Available Commands:</b>\n"
-                "• /status - Health and database operational status\n"
-                "• /last - Most recent confirmed signal\n"
-                "• /stats - Live forward-testing statistics\n"
+                "• /active - Currently running trades & floating positions\n"
+                "• /radar - 7-Asset institutional surveillance radar\n"
+                "• /prices - Live market quotes table\n"
+                "• /history - Completed trade ledger history\n"
+                "• /performance - Live forward-testing performance metrics\n"
                 "• /strategy - Strategy architecture and rule summary\n"
+                "• /status - Health and database operational status\n"
+                "• /patterns - Volume trade analytics & failure analysis\n"
+                "• /last - Most recent confirmed signal\n"
                 "• /help - Display this command overview\n\n"
                 "<i>Evidence-based forward-testing across 7 institutional pairs. Zero fabricated win rates.</i>"
             )
 
-        elif cmd == "/strategy":
+        elif cmd in ["/strategy", "/rules"]:
             return (
                 "📈 <b>Two-Phase Pullback Engine (v3.1) & Model J</b>\n\n"
                 "• <b>Monitored Assets:</b> 7 Pairs (XAUUSD, EURUSD, USDCAD, GBPUSD, USDJPY, USDCHF, AUDUSD)\n"
@@ -223,56 +245,209 @@ class TelegramService:
                 "• <b>Phase 2:</b> Pullback into 20-EMA / 50% Fib Equilibrium with Confirmation\n"
                 "• <b>Risk Model:</b> SL = Dynamic ATR, Stage 1 = +1.0R (50% Banked + BE Lock), Stage 2 = 2.00R TP\n"
                 "• <b>Execution:</b> Confirmed bar close only (100% Non-repainting)\n"
+                "• <b>Baseline:</b> <code>2026-10-06</code> (Strict Live Forward Testing)\n"
+            )
+
+        elif cmd in ["/active", "/open", "/trades", "/positions"]:
+            if not active_trades:
+                return (
+                    "⚡ <b>ACTIVE LIVE TRADES (0)</b>\n"
+                    "━━━━━━━━━━━━━━━━━━\n"
+                    "<i>No active positions currently running.</i>\n\n"
+                    "Institutional 7-Asset Universe under active surveillance:\n"
+                    "<code>GOLD · EURUSD · USDCAD · GBPUSD · USDJPY · USDCHF · AUDUSD</code>\n\n"
+                    "Signals trigger strictly on confirmed candle closes."
+                )
+
+            rows = []
+            for idx, (k, t) in enumerate(active_trades.items(), 1):
+                sym = t.get("symbol") or t.get("pair") or k
+                direction = t.get("direction", "LONG")
+                icon = "🟢" if direction == "LONG" else "🔴"
+                entry = t.get("entry")
+                sl = t.get("stop_loss")
+                tp = t.get("take_profit")
+                rr = t.get("rr", 2.0)
+                opened = t.get("opened_at", "N/A")
+                status = t.get("status", "OPEN")
+                be_tag = " 🛡<b>BE Locked</b>" if t.get("be_active") else ""
+                partial_tag = " 💰<b>+0.50R Banked</b>" if t.get("partial_taken") else ""
+                rows.append(
+                    f"<b>{idx}. {sym}</b> · {icon} <b>{direction}</b> ({t.get('timeframe', '15M')})\n"
+                    f"• Status: <code>{status}</code>{be_tag}{partial_tag}\n"
+                    f"• Entry: <code>{entry}</code>\n"
+                    f"• SL: <code>{sl}</code> | TP: <code>{tp}</code> (1:{rr}R)\n"
+                    f"• Opened: <code>{opened}</code>"
+                )
+
+            return (
+                f"⚡ <b>ACTIVE LIVE TRADES ({len(active_trades)})</b>\n"
+                "━━━━━━━━━━━━━━━━━━\n\n" +
+                "\n\n".join(rows) + "\n\n" +
+                "━━━━━━━━━━━━━━━━━━"
             )
 
         elif cmd == "/status":
             last_sig_text = "None"
             if last_signal:
                 last_sig_text = f"{last_signal.symbol} {last_signal.direction} at {last_signal.received_at.strftime('%Y-%m-%d %H:%M:%S UTC')}"
+            elif completed_trades:
+                lt = completed_trades[-1]
+                last_sig_text = f"{lt.get('symbol', '')} {lt.get('direction', '')} ({lt.get('outcome', '')})"
+            elif active_trades:
+                at = next(iter(active_trades.values()))
+                last_sig_text = f"{at.get('symbol', '')} {at.get('direction', '')} (RUNNING)"
+
             return (
                 "⚡ <b>System Operational Status</b>\n\n"
-                "• <b>Bot Service:</b> Online (FastAPI)\n"
-                "• <b>Database:</b> SQLite (Connected & Healthy)\n"
+                "• <b>Engine Core:</b> Online (v3.1 Two-Phase Pullback Engine)\n"
+                "• <b>Profit Banking:</b> Model J (50% at +1.0R + Breakeven Lock + 2.0R TP)\n"
+                "• <b>Active Positions:</b> <code>" + str(len(active_trades)) + " locked</code>\n"
+                "• <b>Recorded Trades:</b> <code>" + str(len(completed_trades)) + " closed</code>\n"
                 "• <b>Execution Mode:</b> Confirmed Bar Webhook\n"
                 f"• <b>Last Recorded Signal:</b> <code>{last_sig_text}</code>\n"
                 f"• <b>Telegram Dispatch:</b> {'Configured' if self.is_configured else 'Mock / Unconfigured'}\n"
             )
 
         elif cmd == "/last":
-            if not last_signal:
-                return "ℹ️ No trading signals have been logged yet."
+            if last_signal:
+                return (
+                    f"📌 <b>Most Recent Signal:</b>\n\n"
+                    f"• <b>Instrument:</b> {last_signal.symbol}\n"
+                    f"• <b>Direction:</b> {last_signal.direction}\n"
+                    f"• <b>Entry:</b> {last_signal.entry}\n"
+                    f"• <b>Stop Loss:</b> {last_signal.stop_loss}\n"
+                    f"• <b>Take Profit:</b> {last_signal.take_profit}\n"
+                    f"• <b>Risk/Reward:</b> 1:{last_signal.risk_reward}\n"
+                    f"• <b>Score:</b> {last_signal.signal_score}/100\n"
+                    f"• <b>Timestamp:</b> {last_signal.received_at.strftime('%Y-%m-%d %H:%M:%S UTC')}\n"
+                    f"• <b>Environment:</b> {last_signal.environment}\n"
+                )
+            if active_trades:
+                at = next(iter(active_trades.values()))
+                return (
+                    f"📌 <b>Most Recent Active Signal:</b>\n\n"
+                    f"• <b>Instrument:</b> {at.get('symbol', at.get('pair'))}\n"
+                    f"• <b>Direction:</b> {at.get('direction')}\n"
+                    f"• <b>Entry:</b> {at.get('entry')}\n"
+                    f"• <b>Stop Loss:</b> {at.get('stop_loss')}\n"
+                    f"• <b>Take Profit:</b> {at.get('take_profit')}\n"
+                    f"• <b>Risk/Reward:</b> 1:{at.get('rr', 2.0)}\n"
+                    f"• <b>Opened:</b> {at.get('opened_at')}\n"
+                    f"• <b>Status:</b> {at.get('status')}\n"
+                )
+            if completed_trades:
+                ct = completed_trades[-1]
+                return (
+                    f"📌 <b>Most Recent Closed Signal:</b>\n\n"
+                    f"• <b>Instrument:</b> {ct.get('symbol', ct.get('pair'))}\n"
+                    f"• <b>Direction:</b> {ct.get('direction')}\n"
+                    f"• <b>Entry:</b> {ct.get('entry')}\n"
+                    f"• <b>Exit Price:</b> {ct.get('exit_price')}\n"
+                    f"• <b>Outcome:</b> {ct.get('outcome')}\n"
+                    f"• <b>Realized:</b> {ct.get('realized_pips')} pips ({ct.get('realized_r')}R)\n"
+                    f"• <b>Closed:</b> {ct.get('closed_at')}\n"
+                )
+            return "ℹ️ No trading signals have been logged yet."
+
+        elif cmd in ["/performance", "/stats"]:
+            # Backwards-compatibility for tests passing stats dict
+            if stats and "total_signals" in stats:
+                total = stats.get("total_signals", 0)
+                longs = stats.get("long_signals", 0)
+                shorts = stats.get("short_signals", 0)
+                live = stats.get("live_signals", 0)
+                pairs = stats.get("signals_by_pair", {})
+                pair_lines = "\n".join([f"  • {k}: {v}" for k, v in pairs.items()]) or "  • None"
+
+                return (
+                    "📊 <b>Forward-Testing Performance Metrics</b>\n\n"
+                    f"• <b>Total Signals Recorded:</b> {total}\n"
+                    f"• <b>Long Signals:</b> {longs}\n"
+                    f"• <b>Short Signals:</b> {shorts}\n"
+                    f"• <b>Live Environment Signals:</b> {live}\n\n"
+                    f"<b>Signals by Currency Pair:</b>\n{pair_lines}\n\n"
+                    "<i>Note: Forward profitability metrics (win rate, profit factor, expectancy) "
+                    "require sufficient live sample size before statistical reporting.</i>"
+                )
+
+            # Authoritative calculation from trade_records.json
+            filter_pair = parts[1].upper().replace("/", "") if len(parts) > 1 else "ALL"
+            closed = [t for t in completed_trades if filter_pair in ["ALL", (t.get("symbol") or "").upper()]]
+            active_list = [t for t in active_trades.values() if filter_pair in ["ALL", (t.get("symbol") or "").upper()]]
+
+            wins = len([t for t in closed if t.get("outcome") == "WIN"])
+            losses = len([t for t in closed if t.get("outcome") == "LOSS"])
+            be_count = len([t for t in closed if t.get("outcome") == "BREAK_EVEN"])
+            cancelled = len([t for t in closed if t.get("outcome") == "CANCELLED"])
+            decided = wins + losses
+
+            win_rate = f"{(wins / decided) * 100:.1f}%" if decided > 0 else "N/A"
+            net_pips = sum(float(t.get("realized_pips") or 0.0) for t in closed)
+            net_r = sum(float(t.get("realized_r") or 0.0) for t in closed)
+
+            gross_wins = sum(float(t.get("realized_pips") or 0.0) for t in closed if float(t.get("realized_pips") or 0.0) > 0)
+            gross_losses = sum(abs(float(t.get("realized_pips") or 0.0)) for t in closed if float(t.get("realized_pips") or 0.0) < 0)
+
+            if gross_losses > 0:
+                pf = f"{gross_wins / gross_losses:.2f}"
+            elif gross_wins > 0:
+                pf = "MAX (0 Loss)"
+            else:
+                pf = "N/A"
+
+            expectancy = f"{net_r / (decided + be_count):+.3f} R" if (decided + be_count) > 0 else "N/A"
+            pips_sign = "+" if net_pips >= 0 else ""
+            r_sign = "+" if net_r >= 0 else ""
+
             return (
-                f"📌 <b>Most Recent Signal:</b>\n\n"
-                f"• <b>Instrument:</b> {last_signal.symbol}\n"
-                f"• <b>Direction:</b> {last_signal.direction}\n"
-                f"• <b>Entry:</b> {last_signal.entry}\n"
-                f"• <b>Stop Loss:</b> {last_signal.stop_loss}\n"
-                f"• <b>Take Profit:</b> {last_signal.take_profit}\n"
-                f"• <b>Risk/Reward:</b> 1:{last_signal.risk_reward}\n"
-                f"• <b>Score:</b> {last_signal.signal_score}/100\n"
-                f"• <b>Timestamp:</b> {last_signal.received_at.strftime('%Y-%m-%d %H:%M:%S UTC')}\n"
-                f"• <b>Environment:</b> {last_signal.environment}\n"
+                "📈 <b>STRATEGY PERFORMANCE (v3.1 Production)</b>\n"
+                "━━━━━━━━━━━━━━━━━━\n"
+                f"Scope: <b>{filter_pair}</b>\n"
+                "Baseline: <code>2026-10-06</code> (Strict Live Forward Testing)\n"
+                "━━━━━━━━━━━━━━━━━━\n\n"
+                "<b>1. TRADE EXECUTION</b>\n"
+                f"• Total Closed: <code>{len(closed)}</code>\n"
+                f"• Active Live: <code>{len(active_list)} positions</code>\n"
+                f"• Win / Loss / BE: <b>{wins}W</b> · <b>{losses}L</b>" + (f" · <b>{be_count} BE</b>" if be_count else "") + "\n"
+                f"• Win Rate: <b>{win_rate}</b>\n\n"
+                "<b>2. RETURNS & PROFITABILITY</b>\n"
+                f"• Net Realized Pips: <b>{pips_sign}{net_pips:.1f} pips</b>\n"
+                f"• Net Realized Return: <b>{r_sign}{net_r:.2f} R</b>\n"
+                f"• Expectancy / Trade: <b>{expectancy}</b>\n"
+                f"• Profit Factor: <code>{pf}</code>\n"
+                "• Target R:R: <code>2.00R (Model J Structural)</code>\n\n"
+                "━━━━━━━━━━━━━━━━━━\n"
+                "⚡ <i>100% out-of-sample forward verification. Baseline reset 2026-10-06.</i>"
             )
 
-        elif cmd == "/stats":
-            if not stats:
-                return "ℹ️ No statistics available."
-            total = stats.get("total_signals", 0)
-            longs = stats.get("long_signals", 0)
-            shorts = stats.get("short_signals", 0)
-            live = stats.get("live_signals", 0)
-            pairs = stats.get("signals_by_pair", {})
-            pair_lines = "\n".join([f"  • {k}: {v}" for k, v in pairs.items()]) or "  • None"
+        elif cmd == "/history":
+            if not completed_trades:
+                return (
+                    "📜 <b>COMPLETED TRADE HISTORY</b>\n"
+                    "━━━━━━━━━━━━━━━━━━\n"
+                    "<i>No completed trades logged in live forward ledger yet.</i>"
+                )
+
+            rows = []
+            for idx, t in enumerate(completed_trades[-10:], 1):
+                sym = t.get("symbol") or t.get("pair") or "TRADE"
+                outcome = t.get("outcome", "CLOSED")
+                pips = t.get("realized_pips", 0.0)
+                r = t.get("realized_r", 0.0)
+                sign = "+" if float(pips) >= 0 else ""
+                r_sign = "+" if float(r) >= 0 else ""
+                rows.append(
+                    f"<b>{idx}. {sym}</b> · {t.get('direction', '')} · <b>{outcome}</b>\n"
+                    f"• Entry: <code>{t.get('entry')}</code> ➔ Exit: <code>{t.get('exit_price')}</code>\n"
+                    f"• Net: <b>{sign}{pips} pips / {r_sign}{r} R</b> · <code>{t.get('closed_at', '')[:10]}</code>"
+                )
 
             return (
-                "📊 <b>Forward-Testing Performance Metrics</b>\n\n"
-                f"• <b>Total Signals Recorded:</b> {total}\n"
-                f"• <b>Long Signals:</b> {longs}\n"
-                f"• <b>Short Signals:</b> {shorts}\n"
-                f"• <b>Live Environment Signals:</b> {live}\n\n"
-                f"<b>Signals by Currency Pair:</b>\n{pair_lines}\n\n"
-                "<i>Note: Forward profitability metrics (win rate, profit factor, expectancy) "
-                "require sufficient live sample size before statistical reporting.</i>"
+                f"📜 <b>COMPLETED TRADE HISTORY ({len(completed_trades)} Total)</b>\n"
+                "━━━━━━━━━━━━━━━━━━\n\n" +
+                "\n\n".join(rows) + "\n\n" +
+                "━━━━━━━━━━━━━━━━━━"
             )
 
         return "Unknown command. Type /help to see available commands."

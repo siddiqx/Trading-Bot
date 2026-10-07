@@ -158,3 +158,17 @@ def test_telegram_command_responses():
     )
     assert "Total Signals Recorded:</b> 10" in stats_reply
     assert "EURUSD: 6" in stats_reply
+
+    active_reply = service.generate_command_response("/active")
+    assert "ACTIVE LIVE TRADES" in active_reply
+
+    status_reply = service.generate_command_response("/status")
+    assert "System Operational Status" in status_reply
+    assert "v3.1 Two-Phase Pullback Engine" in status_reply
+
+    perf_reply = service.generate_command_response("/performance")
+    assert "STRATEGY PERFORMANCE" in perf_reply
+    assert "Model J Structural" in perf_reply
+
+    hist_reply = service.generate_command_response("/history")
+    assert "COMPLETED TRADE HISTORY" in hist_reply

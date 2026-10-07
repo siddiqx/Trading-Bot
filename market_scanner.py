@@ -161,7 +161,7 @@ def sync_worker(records, overwrite_active: bool = False):
             "active_trades": records.get("active_trades", {}),
             "completed_trades": records.get("completed_trades", []),
             "volume_summary": volume_summary,
-            "overwrite_active": overwrite_active or (len(records.get("active_trades", {})) == 0)
+            "overwrite_active": True
         }
         for attempt in range(2):  # retry once on failure
             try:
