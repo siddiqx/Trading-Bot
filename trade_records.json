@@ -39,26 +39,6 @@
       "status": "OPEN",
       "filled_at": "2026-10-07T09:00:00Z"
     },
-    "EURUSD_15M": {
-      "trade_id": "EURUSD_15M_2026-10-07T09:00:00Z_SHORT",
-      "pair": "EURUSD",
-      "symbol": "EURUSD",
-      "ticker": "EURUSD=X",
-      "direction": "SHORT",
-      "timeframe": "15M",
-      "entry": 1.1207,
-      "stop_loss": 1.1206,
-      "take_profit": 1.11428,
-      "sl_pips": 32.1,
-      "tp_pips": 64.2,
-      "rr": 2.0,
-      "pip": 0.0001,
-      "digits": 5,
-      "opened_at": "2026-10-07T09:00:00Z",
-      "status": "OPEN",
-      "filled_at": "2026-10-07T09:00:00Z",
-      "be_active": true
-    },
     "XAUUSD_15M": {
       "trade_id": "XAUUSD_15M_2026-10-07T11:45:00Z_SHORT",
       "pair": "XAUUSD",
@@ -152,6 +132,31 @@
       "realized_pips": 1.0,
       "realized_r": 0.0,
       "closed_at": "2026-10-07T10:46:45Z"
+    },
+    {
+      "trade_id": "EURUSD_15M_2026-10-07T09:00:00Z_SHORT",
+      "pair": "EURUSD",
+      "symbol": "EURUSD",
+      "ticker": "EURUSD=X",
+      "direction": "SHORT",
+      "timeframe": "15M",
+      "entry": 1.1207,
+      "stop_loss": 1.1206,
+      "take_profit": 1.11428,
+      "sl_pips": 32.1,
+      "tp_pips": 64.2,
+      "rr": 2.0,
+      "pip": 0.0001,
+      "digits": 5,
+      "opened_at": "2026-10-07T09:00:00Z",
+      "status": "CLOSED",
+      "filled_at": "2026-10-07T09:00:00Z",
+      "be_active": true,
+      "exit_price": 1.1206,
+      "outcome": "BREAK_EVEN",
+      "realized_pips": 1.0,
+      "realized_r": 0.03,
+      "closed_at": "2026-10-07T11:48:02Z"
     }
   ]
 }

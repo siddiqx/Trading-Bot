@@ -606,3 +606,28 @@
 
 ---
 
+### #23 · EURUSD (15M) — 🛑 LOSS (-1.00R)
+
+- **Global Sequence**: Trade `#23`
+- **Direction**: `SHORT` | **Outcome**: `BREAK_EVEN` (`+1.0 pips` / `0.03R`)
+- **Execution Range**: Entry ` 1.1207 ` ➔ Exit ` 1.1206 `
+- **Targets**: Stop Loss ` 1.1206 ` | Take Profit ` 1.11428 `
+- **Holding Time**: `2.8 hours` (11 bars)
+- **Window**: `2026-10-07 09:00:00 UTC` ➔ `2026-10-07 11:48:02 UTC`
+
+#### 📊 Excursion & Market Regime
+| Metric | Value | Detail |
+| :--- | :--- | :--- |
+| **Max Favorable Excursion (MFE)** | `+27.6 pips` | Reached `+27.57R` (42.9% of TP) |
+| **Max Adverse Excursion (MAE)** | `0.0 pips` | Deepest drawdown `0.0R` |
+| **Session** | `London Session` | Institutional Market Timing |
+| **Entry RSI (14)** | `50.0` | Momentum Baseline |
+| **EMA Alignment** | `BEARISH_EXPANDING` | Structural Trend Bias |
+
+#### 🔬 Post-Mortem Diagnosis: `PREMATURE_REVERSAL`
+> **Analysis**: Position reached +27.6 pips (+27.57R / 42.9% of TP) before aggressive counter-trend reversal hit stop-loss.
+>
+> **Actionable Takeaway**: Incorporate a Breakeven Protection rule once position reaches +0.8R or 50% TP distance.
+
+---
+
