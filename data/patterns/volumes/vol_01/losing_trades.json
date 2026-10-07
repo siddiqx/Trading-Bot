@@ -628,5 +628,50 @@
       "summary": "Order block level was invalidated by institutional flow after 1 bar(s). Stop-loss executed disciplined capital preservation.",
       "actionable_insight": "Trade adhered strictly to risk geometry. Invalidation was clean and preserved capital."
     }
+  },
+  {
+    "tracking": {
+      "global_trade_no": 21,
+      "volume_no": 1,
+      "volume_trade_no": 21,
+      "volume_id": "VOL_01",
+      "volume_label": "Volume 1 (Trades 1\u2013100)"
+    },
+    "trade_id": "GBPUSD_15M_2026-10-06T18:15:00Z_LONG",
+    "pair": "GBPUSD",
+    "symbol": "GBPUSD",
+    "timeframe": "15M",
+    "direction": "LONG",
+    "entry_price": 1.32767,
+    "exit_price": 1.3258,
+    "stop_loss": 1.3258,
+    "take_profit": 1.3314,
+    "opened_at": "2026-10-06T18:15:00Z",
+    "closed_at": "2026-10-07T02:01:57Z",
+    "duration_hours": 7.78,
+    "duration_bars": 31,
+    "outcome": "LOSS",
+    "realized_pips": -18.7,
+    "realized_r": -1.0,
+    "excursion_metrics": {
+      "mfe_pips": 3.7,
+      "mfe_r": 0.2,
+      "mae_pips": -20.3,
+      "mae_r": -1.08,
+      "tp_distance_pct_reached": 9.9
+    },
+    "market_regime": {
+      "trading_session": "New York Afternoon",
+      "rsi_at_entry": 50.0,
+      "atr_14": 0.0015,
+      "volatility_regime": "NORMAL",
+      "ema_alignment": "BULLISH_EXPANDING",
+      "breakout_candle_wick_ratio": 0.28
+    },
+    "diagnostic": {
+      "primary_factor": "STRUCTURAL_INVALIDATION",
+      "summary": "Order block level was invalidated by institutional flow after 1 bar(s). Stop-loss executed disciplined capital preservation.",
+      "actionable_insight": "Trade adhered strictly to risk geometry. Invalidation was clean and preserved capital."
+    }
   }
 ]
