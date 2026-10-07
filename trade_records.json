@@ -19,8 +19,10 @@
       "opened_at": "2026-10-06T18:15:00Z",
       "status": "OPEN",
       "filled_at": "2026-10-06T18:15:00Z"
-    },
-    "XAUUSD_15M": {
+    }
+  },
+  "completed_trades": [
+    {
       "trade_id": "XAUUSD_15M_2026-10-06T20:00:00Z_LONG",
       "pair": "XAUUSD",
       "symbol": "XAUUSD",
@@ -36,9 +38,13 @@
       "pip": 0.1,
       "digits": 2,
       "opened_at": "2026-10-06T20:00:00Z",
-      "status": "OPEN",
-      "filled_at": "2026-10-06T20:00:00Z"
+      "status": "CLOSED",
+      "filled_at": "2026-10-06T20:00:00Z",
+      "exit_price": 4155.8,
+      "outcome": "LOSS",
+      "realized_pips": -150.0,
+      "realized_r": -1.0,
+      "closed_at": "2026-10-07T00:34:01Z"
     }
-  },
-  "completed_trades": []
+  ]
 }
