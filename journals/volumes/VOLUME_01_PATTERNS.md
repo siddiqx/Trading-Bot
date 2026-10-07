@@ -581,3 +581,28 @@
 
 ---
 
+### #22 · XAUUSD (15M) — 🛑 LOSS (-1.00R)
+
+- **Global Sequence**: Trade `#22`
+- **Direction**: `SHORT` | **Outcome**: `BREAK_EVEN` (`+1.0 pips` / `0.0R`)
+- **Execution Range**: Entry ` 4128.85 ` ➔ Exit ` 4128.75 `
+- **Targets**: Stop Loss ` 4128.75 ` | Take Profit ` 4084.78 `
+- **Holding Time**: `4.78 hours` (19 bars)
+- **Window**: `2026-10-07 06:00:00 UTC` ➔ `2026-10-07 10:46:45 UTC`
+
+#### 📊 Excursion & Market Regime
+| Metric | Value | Detail |
+| :--- | :--- | :--- |
+| **Max Favorable Excursion (MFE)** | `+196.2 pips` | Reached `+196.2R` (44.5% of TP) |
+| **Max Adverse Excursion (MAE)** | `-108.1 pips` | Deepest drawdown `-108.1R` |
+| **Session** | `Asian/Tokyo Session` | Institutional Market Timing |
+| **Entry RSI (14)** | `50.0` | Momentum Baseline |
+| **EMA Alignment** | `BEARISH_EXPANDING` | Structural Trend Bias |
+
+#### 🔬 Post-Mortem Diagnosis: `PREMATURE_REVERSAL`
+> **Analysis**: Position reached +196.2 pips (+196.2R / 44.5% of TP) before aggressive counter-trend reversal hit stop-loss.
+>
+> **Actionable Takeaway**: Incorporate a Breakeven Protection rule once position reaches +0.8R or 50% TP distance.
+
+---
+
