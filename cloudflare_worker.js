@@ -1705,7 +1705,7 @@ async function sendStrategyMessage(chatId) {
     `• <b>Forex Majors &amp; Crosses (6 Pairs):</b> EURUSD, USDCAD, GBPUSD, USDJPY, USDCHF, AUDUSD on 20-period Donchian.\n` +
     `• <b>Dual Timeframes:</b> 15M execution confirmed with 1H trend alignment.\n` +
     `• <b>RSI Filter:</b> Longs 40–80, Shorts 20–60 (Anti-exhaustion guard).\n` +
-    `• <b>Toxic Hours Filter:</b> High-volatility stop hunt hours blocked.\n\n` +
+    `• <b>Toxic Hours Filter:</b> Illiquid Asian chop and late-NY rollover hours blocked. Surveillance active strictly 06:00–17:00 UTC (London &amp; NY Institutional Session).\n\n` +
     `<b>3. Model J Risk Management &amp; Profit Targets</b>\n` +
     `• <b>Initial Risk:</b> Strict 1.0% equity risk with dynamic ATR-based SL.\n` +
     `• <b>Stage 1 (+1.0R):</b> <b>50% of position is banked (+0.50R net)</b> and Stop Loss is moved to Breakeven (+1 pip).\n` +

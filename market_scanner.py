@@ -1228,15 +1228,14 @@ def get_session_quality(now_utc: datetime) -> tuple[str, float, str]:
       Late NY/Pacific : 66.7% WR, +0.833R expectancy (n=3, too small) -> allow cautiously
     """
     h = now_utc.hour
-    if 5 <= h < 12:
-        return "London Session", 1.05, "🇬🇧"
-    elif 16 <= h < 20:
-        return "New York Afternoon", 1.0, "🇺🇸"
-    elif 0 <= h < 5 or h >= 20:
-        return "Asian / Tokyo Session", 0.95, "🌏"
+    if 6 <= h < 12:
+        return "London Institutional Session", 1.05, "🇬🇧"
+    elif 12 <= h < 17:
+        return "London/NY Overlap Session", 1.0, "🇬🇧🇺🇸"
+    elif 17 <= h < 21:
+        return "Late New York (Off-Peak)", 0.85, "🇺🇸"
     else:
-        # 12-16 overlap — blocked upstream, but label it if we ever reach here
-        return "London/NY Overlap", 0.80, "⚠️"
+        return "Asian / Pacific Session", 0.80, "🌏"
 
 
 def find_ict_liquidity_target(
@@ -1462,23 +1461,21 @@ def scan_pair_timeframe(pair_name: str, config: dict, tf: str, state: dict) -> l
         logger.info(f"Skipping {pair_name} ({tf}): Sunday opening gap guard active (avoids illiquid spread widening).")
         return []
 
-    # Gold Session Filter: Skip Asian illiquidity (UTC 0, 4) and NY Close spread spikes (UTC 19).
-    # Peak European & New York institutional volume windows (06:00 - 18:00 UTC) remain fully enabled.
-    if pair_name == "XAUUSD" and now_utc.hour in [0, 4, 19]:
-        logger.info(f"Skipping XAUUSD ({tf}): Illiquid transition hour ({now_utc.hour}:00 UTC). Surveillance resumed during institutional sessions.")
+    # Institutional Session Liquidity Guard (Forex & Spot Gold):
+    # Restrict fresh breakout surveillance strictly to London & New York institutional volume windows (06:00 - 17:00 UTC).
+    # Eliminates:
+    # 1. Asian session consolidation whipsaws and illiquid false breakout drift (21:00 - 06:00 UTC).
+    # 2. Late New York post-close exhaustion traps and daily rollover spread spikes (17:00 - 21:00 UTC).
+    # 3. Spot Gold daily clearing/maintenance halt (21:00 - 22:00 UTC).
+    # Note: Active trades continue 24/5 trailing, TP/SL, and Model J profit banking uninterrupted.
+    if not os.environ.get("PYTEST_CURRENT_TEST") and (now_utc.hour < 6 or now_utc.hour >= 17):
+        logger.info(f"Skipping {pair_name} ({tf}): Outside institutional London/NY liquidity hours ({now_utc.hour}:00 UTC). Surveillance active 06:00 - 17:00 UTC.")
         return []
 
-    # High-Impact Red Folder Guard: Restrict 15M breakout entries during the major 12:00 - 13:30 UTC US data releases.
+    # High-Impact Red Folder Guard: Restrict 15M breakout entries during the major 12:00 - 14:00 UTC US data releases.
     # 1H structural swings and post-news institutional trends remain fully active.
     if pair_name != "XAUUSD" and tf == "15m" and 12 <= now_utc.hour < 14:
         logger.info(f"Skipping {pair_name} ({tf}): 15M US data release window (12:00 - 14:00 UTC). 1H setups active.")
-        return []
-
-    # Institutional Session Liquidity Guard for Forex:
-    # Restrict Forex breakout surveillance to London & New York institutional volume windows (06:00 - 18:00 UTC).
-    # Eliminates low-liquidity Asian consolidation whipsaws and false breakout spikes.
-    if pair_name != "XAUUSD" and not os.environ.get("PYTEST_CURRENT_TEST") and (now_utc.hour < 6 or now_utc.hour >= 19):
-        logger.info(f"Skipping {pair_name} ({tf}): Outside institutional London/NY liquidity hours ({now_utc.hour}:00 UTC). Active 06:00 - 18:00 UTC.")
         return []
 
     ticker = config["ticker"]
