@@ -731,3 +731,28 @@
 
 ---
 
+### #28 · USDCHF (1H) — 🎯 WIN (+1.75R)
+
+- **Global Sequence**: Trade `#28`
+- **Direction**: `LONG` | **Outcome**: `WIN` (`+5.3 pips` / `0.16R`)
+- **Execution Range**: Entry ` 0.83313 ` ➔ Exit ` 0.8336600065231323 `
+- **Targets**: Stop Loss ` 0.82987 ` | Take Profit ` 0.83965 `
+- **Holding Time**: `26.79 hours` (27 bars)
+- **Window**: `2026-10-07 08:00:00 UTC` ➔ `2026-10-08 10:47:11 UTC`
+
+#### 📊 Excursion & Market Regime
+| Metric | Value | Detail |
+| :--- | :--- | :--- |
+| **Max Favorable Excursion (MFE)** | `+15.2 pips` | Reached `+0.47R` (23.3% of TP) |
+| **Max Adverse Excursion (MAE)** | `-15.3 pips` | Deepest drawdown `-0.47R` |
+| **Session** | `London Session` | Institutional Market Timing |
+| **Entry RSI (14)** | `50.0` | Momentum Baseline |
+| **EMA Alignment** | `BULLISH_EXPANDING` | Structural Trend Bias |
+
+#### 🔬 Post-Mortem Diagnosis: `HIGH_VELOCITY_BREAKOUT`
+> **Analysis**: Take-profit hit within 1 bar(s). High momentum impulse confirmed structural breakout conviction.
+>
+> **Actionable Takeaway**: Validates the 20-period Donchian channel breakout trigger.
+
+---
+
