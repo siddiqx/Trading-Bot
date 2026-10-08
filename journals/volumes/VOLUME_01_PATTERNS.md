@@ -781,3 +781,28 @@
 
 ---
 
+### #30 · EURUSD (15M) — 🛑 LOSS (-1.00R)
+
+- **Global Sequence**: Trade `#30`
+- **Direction**: `SHORT` | **Outcome**: `LOSS` (`-18.0 pips` / `-1.0R`)
+- **Execution Range**: Entry ` 1.11832 ` ➔ Exit ` 1.12012 `
+- **Targets**: Stop Loss ` 1.12012 ` | Take Profit ` 1.11472 `
+- **Holding Time**: `1.29 hours` (5 bars)
+- **Window**: `2026-10-08 11:15:00 UTC` ➔ `2026-10-08 12:32:34 UTC`
+
+#### 📊 Excursion & Market Regime
+| Metric | Value | Detail |
+| :--- | :--- | :--- |
+| **Max Favorable Excursion (MFE)** | `+7.5 pips` | Reached `+0.42R` (20.9% of TP) |
+| **Max Adverse Excursion (MAE)** | `-18.8 pips` | Deepest drawdown `-1.04R` |
+| **Session** | `London Session` | Institutional Market Timing |
+| **Entry RSI (14)** | `50.0` | Momentum Baseline |
+| **EMA Alignment** | `BEARISH_EXPANDING` | Structural Trend Bias |
+
+#### 🔬 Post-Mortem Diagnosis: `STRUCTURAL_INVALIDATION`
+> **Analysis**: Order block level was invalidated by institutional flow after 1 bar(s). Stop-loss executed disciplined capital preservation.
+>
+> **Actionable Takeaway**: Trade adhered strictly to risk geometry. Invalidation was clean and preserved capital.
+
+---
+
