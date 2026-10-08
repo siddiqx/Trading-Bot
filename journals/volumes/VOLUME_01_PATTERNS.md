@@ -806,3 +806,28 @@
 
 ---
 
+### #31 · GBPUSD (15M) — 🛑 LOSS (-1.00R)
+
+- **Global Sequence**: Trade `#31`
+- **Direction**: `SHORT` | **Outcome**: `LOSS` (`-18.0 pips` / `-1.0R`)
+- **Execution Range**: Entry ` 1.3197 ` ➔ Exit ` 1.3215 `
+- **Targets**: Stop Loss ` 1.3215 ` | Take Profit ` 1.3161 `
+- **Holding Time**: `7.66 hours` (31 bars)
+- **Window**: `2026-10-08 06:00:00 UTC` ➔ `2026-10-08 13:39:42 UTC`
+
+#### 📊 Excursion & Market Regime
+| Metric | Value | Detail |
+| :--- | :--- | :--- |
+| **Max Favorable Excursion (MFE)** | `+11.5 pips` | Reached `+0.64R` (32.0% of TP) |
+| **Max Adverse Excursion (MAE)** | `-18.1 pips` | Deepest drawdown `-1.01R` |
+| **Session** | `Asian/Tokyo Session` | Institutional Market Timing |
+| **Entry RSI (14)** | `50.0` | Momentum Baseline |
+| **EMA Alignment** | `BEARISH_EXPANDING` | Structural Trend Bias |
+
+#### 🔬 Post-Mortem Diagnosis: `LOW_LIQUIDITY_CHOP`
+> **Analysis**: Signal triggered during Asian/Tokyo Session. Lower institutional volume led to whipsaw without sustainable directional continuation.
+>
+> **Actionable Takeaway**: Restrict or weight signal scoring lower during off-peak liquidity windows.
+
+---
+

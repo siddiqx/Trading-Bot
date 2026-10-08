@@ -988,5 +988,50 @@
       "summary": "Order block level was invalidated by institutional flow after 1 bar(s). Stop-loss executed disciplined capital preservation.",
       "actionable_insight": "Trade adhered strictly to risk geometry. Invalidation was clean and preserved capital."
     }
+  },
+  {
+    "tracking": {
+      "global_trade_no": 31,
+      "volume_no": 1,
+      "volume_trade_no": 31,
+      "volume_id": "VOL_01",
+      "volume_label": "Volume 1 (Trades 1\u2013100)"
+    },
+    "trade_id": "GBPUSD_15M_2026-10-08T06:00:00Z_SHORT",
+    "pair": "GBPUSD",
+    "symbol": "GBPUSD",
+    "timeframe": "15M",
+    "direction": "SHORT",
+    "entry_price": 1.3197,
+    "exit_price": 1.3215,
+    "stop_loss": 1.3215,
+    "take_profit": 1.3161,
+    "opened_at": "2026-10-08T06:00:00Z",
+    "closed_at": "2026-10-08T13:39:42Z",
+    "duration_hours": 7.66,
+    "duration_bars": 31,
+    "outcome": "LOSS",
+    "realized_pips": -18.0,
+    "realized_r": -1.0,
+    "excursion_metrics": {
+      "mfe_pips": 11.5,
+      "mfe_r": 0.64,
+      "mae_pips": -18.1,
+      "mae_r": -1.01,
+      "tp_distance_pct_reached": 32.0
+    },
+    "market_regime": {
+      "trading_session": "Asian/Tokyo Session",
+      "rsi_at_entry": 50.0,
+      "atr_14": 0.0015,
+      "volatility_regime": "NORMAL",
+      "ema_alignment": "BEARISH_EXPANDING",
+      "breakout_candle_wick_ratio": 0.28
+    },
+    "diagnostic": {
+      "primary_factor": "LOW_LIQUIDITY_CHOP",
+      "summary": "Signal triggered during Asian/Tokyo Session. Lower institutional volume led to whipsaw without sustainable directional continuation.",
+      "actionable_insight": "Restrict or weight signal scoring lower during off-peak liquidity windows."
+    }
   }
 ]
