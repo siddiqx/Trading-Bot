@@ -856,3 +856,28 @@
 
 ---
 
+### #33 · XAUUSD (15M) — 🛑 LOSS (-1.00R)
+
+- **Global Sequence**: Trade `#33`
+- **Direction**: `LONG` | **Outcome**: `LOSS` (`-178.7 pips` / `-1.0R`)
+- **Execution Range**: Entry ` 4194.0 ` ➔ Exit ` 4176.13 `
+- **Targets**: Stop Loss ` 4176.13 ` | Take Profit ` 4229.73 `
+- **Holding Time**: `4.53 hours` (18 bars)
+- **Window**: `2026-10-09 06:45:00 UTC` ➔ `2026-10-09 11:16:53 UTC`
+
+#### 📊 Excursion & Market Regime
+| Metric | Value | Detail |
+| :--- | :--- | :--- |
+| **Max Favorable Excursion (MFE)** | `+78.7 pips` | Reached `+0.44R` (22.0% of TP) |
+| **Max Adverse Excursion (MAE)** | `-188.4 pips` | Deepest drawdown `-1.05R` |
+| **Session** | `Asian/Tokyo Session` | Institutional Market Timing |
+| **Entry RSI (14)** | `50.0` | Momentum Baseline |
+| **EMA Alignment** | `BULLISH_EXPANDING` | Structural Trend Bias |
+
+#### 🔬 Post-Mortem Diagnosis: `LOW_LIQUIDITY_CHOP`
+> **Analysis**: Signal triggered during Asian/Tokyo Session. Lower institutional volume led to whipsaw without sustainable directional continuation.
+>
+> **Actionable Takeaway**: Restrict or weight signal scoring lower during off-peak liquidity windows.
+
+---
+
