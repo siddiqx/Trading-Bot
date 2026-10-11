@@ -44,9 +44,16 @@ class Settings(BaseSettings):
     DEFAULT_ROC_LOOKBACK: int = 20
     DEFAULT_DONCHIAN_LENGTH: int = 20
     DEFAULT_ATR_PERIOD: int = 14
-    DEFAULT_ATR_MULTIPLIER: float = 1.75
-    DEFAULT_RISK_REWARD: float = 1.75
+    DEFAULT_ATR_MULTIPLIER: float = 1.0
+    DEFAULT_RISK_REWARD: float = 1.5
     MIN_SIGNAL_SCORE: float = 60.0
+
+    # Fixed Trade Exits
+    TAKE_PROFIT_PIPS: float = 15.0
+    STOP_LOSS_PIPS: float = 10.0
+
+    # Gold Exclusion Flag
+    GOLD_ENABLED: bool = False
 
     # Session Filter
     SESSION_FILTER_ENABLED: bool = False
@@ -59,24 +66,17 @@ class Settings(BaseSettings):
     ANTI_WICK_FILTER_ENABLED: bool = True
     MIN_BODY_RATIO: float = 0.65
 
-    # Gold-Specific Adaptive Parameters (Isolated)
-    GOLD_DONCHIAN_LENGTH: int = 8
-    GOLD_RETRACE_FIB: float = 0.382
-    GOLD_SL_ATR_BUFFER: float = 0.35
-    GOLD_TOXIC_HOURS_FILTER: bool = True
-    GOLD_TOXIC_HOURS: List[int] = [0, 4, 15, 16, 19]
-    GOLD_FRIDAY_CUTOFF_HOUR: int = 15
+    # Friday Cutoff Hour
     FOREX_FRIDAY_CUTOFF_HOUR: int = 12
 
-    # Prop Firm Challenge Acceleration Sizing (Asymmetric)
-    PROP_PHASE_1_RISK_PCT: float = 1.25  # Reduces Phase 1 time by ~20-50% safely
-    PROP_PHASE_2_RISK_PCT: float = 1.00  # Conservative drawdown preservation
+    # Prop Firm Challenge Acceleration Sizing
+    PROP_PHASE_1_RISK_PCT: float = 1.0
+    PROP_PHASE_2_RISK_PCT: float = 0.5
 
-    # Asymmetric Post-Loss Pullback Protection (Settlement Windows)
-    GOLD_LOSS_COOLDOWN_HOURS: int = 4    # Pauses 4 hours after SL to let pullbacks exhaust
-    FOREX_LOSS_COOLDOWN_HOURS: int = 6   # Pauses 6 hours after SL on Forex pairs
+    # Post-Loss Pullback Protection
+    FOREX_LOSS_COOLDOWN_HOURS: int = 6
 
-    # Supported Symbols - Strictly Verified Institutional Whitelist
+    # Supported Symbols - Strictly Verified Institutional Forex Whitelist Only (No Gold)
     SUPPORTED_SYMBOLS: List[str] = [
         "EURUSD",
         "GBPUSD",
@@ -84,7 +84,6 @@ class Settings(BaseSettings):
         "USDCAD",
         "USDCHF",
         "AUDUSD",
-        "XAUUSD",
     ]
 
     model_config = SettingsConfigDict(

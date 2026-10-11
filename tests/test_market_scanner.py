@@ -128,14 +128,14 @@ def test_check_active_trades_pending_order_fill(monkeypatch):
     from market_scanner import check_active_trades
 
     t0 = datetime(2026, 9, 30, 15, 30, tzinfo=timezone.utc)
-    # Candle 0 touches entry (high touches 4187.90), but stays above SL
+    # Candle 0 touches entry (high touches 1.10000), but stays below SL
     mock_df = pd.DataFrame({
         "timestamp": [int(t0.timestamp())],
         "time": [t0],
-        "open": [4185.00],
-        "high": [4188.50], # Touches entry 4187.90
-        "low": [4184.00],
-        "close": [4186.00],
+        "open": [1.09950],
+        "high": [1.10005],  # Touches entry 1.10000
+        "low": [1.09940],
+        "close": [1.09980],
         "volume": [100]
     })
 
@@ -148,20 +148,20 @@ def test_check_active_trades_pending_order_fill(monkeypatch):
 
     records = {
         "active_trades": {
-            "XAUUSD": {
-                "trade_id": "XAUUSD_TEST_1",
-                "pair": "XAUUSD",
-                "symbol": "XAUUSD",
-                "ticker": "XAUUSD",
+            "EURUSD": {
+                "trade_id": "EURUSD_TEST_1",
+                "pair": "EURUSD",
+                "symbol": "EURUSD",
+                "ticker": "EURUSD=X",
                 "direction": "SHORT",
-                "entry": 4187.90,
-                "stop_loss": 4220.28,
-                "take_profit": 4131.23,
-                "sl_pips": 323.8,
-                "tp_pips": 566.7,
-                "rr": 1.75,
-                "pip": 0.1,
-                "digits": 2,
+                "entry": 1.10000,
+                "stop_loss": 1.10100,
+                "take_profit": 1.09850,
+                "sl_pips": 10.0,
+                "tp_pips": 15.0,
+                "rr": 1.5,
+                "pip": 0.0001,
+                "digits": 5,
                 "opened_at": "2026-09-30T15:30:00Z",
                 "status": "PENDING",
                 "filled_at": None
@@ -172,7 +172,7 @@ def test_check_active_trades_pending_order_fill(monkeypatch):
 
     check_active_trades(records)
 
-    trade = records["active_trades"]["XAUUSD"]
+    trade = records["active_trades"]["EURUSD"]
     assert trade["status"] == "OPEN"
     assert trade["filled_at"] is not None
     assert any("ORDER FILLED" in a for a in alerts)
@@ -183,14 +183,14 @@ def test_check_active_trades_pending_order_cancellation(monkeypatch):
     from market_scanner import check_active_trades
 
     t0 = datetime(2026, 9, 30, 15, 30, tzinfo=timezone.utc)
-    # Candle breaches SL (4220.28) without touching entry (4187.90) for SHORT
+    # Candle breaches SL (1.10100) without touching entry (1.10000) for SHORT
     mock_df = pd.DataFrame({
         "timestamp": [int(t0.timestamp())],
         "time": [t0],
-        "open": [4200.00],
-        "high": [4225.00], # Breaches SL 4220.28
-        "low": [4195.00],  # Never touches 4187.90
-        "close": [4210.00],
+        "open": [1.10050],
+        "high": [1.10120],  # Breaches SL 1.10100
+        "low": [1.10020],   # Never touches 1.10000
+        "close": [1.10080],
         "volume": [100]
     })
 
@@ -203,20 +203,20 @@ def test_check_active_trades_pending_order_cancellation(monkeypatch):
 
     records = {
         "active_trades": {
-            "XAUUSD": {
-                "trade_id": "XAUUSD_TEST_2",
-                "pair": "XAUUSD",
-                "symbol": "XAUUSD",
-                "ticker": "XAUUSD",
+            "EURUSD": {
+                "trade_id": "EURUSD_TEST_2",
+                "pair": "EURUSD",
+                "symbol": "EURUSD",
+                "ticker": "EURUSD=X",
                 "direction": "SHORT",
-                "entry": 4187.90,
-                "stop_loss": 4220.28,
-                "take_profit": 4131.23,
-                "sl_pips": 323.8,
-                "tp_pips": 566.7,
-                "rr": 1.75,
-                "pip": 0.1,
-                "digits": 2,
+                "entry": 1.10000,
+                "stop_loss": 1.10100,
+                "take_profit": 1.09850,
+                "sl_pips": 10.0,
+                "tp_pips": 15.0,
+                "rr": 1.5,
+                "pip": 0.0001,
+                "digits": 5,
                 "opened_at": "2026-09-30T15:30:00Z",
                 "status": "PENDING",
                 "filled_at": None
@@ -227,7 +227,7 @@ def test_check_active_trades_pending_order_cancellation(monkeypatch):
 
     check_active_trades(records)
 
-    assert "XAUUSD" not in records["active_trades"]
+    assert "EURUSD" not in records["active_trades"]
     assert len(records["completed_trades"]) == 1
     cancelled = records["completed_trades"][0]
     assert cancelled["status"] == "CANCELLED"
@@ -249,10 +249,10 @@ def test_check_active_trades_pending_order_timeout(monkeypatch):
     mock_df = pd.DataFrame({
         "timestamp": [int(t0.timestamp())],
         "time": [t0],
-        "open": [4180.00],
-        "high": [4185.00], # Stays below limit entry 4187.90 (unfilled)
-        "low": [4175.00],  # Stays above TP 4131.23
-        "close": [4180.00],
+        "open": [1.09950],
+        "high": [1.09980],  # Stays below limit entry 1.10000 (unfilled)
+        "low": [1.09920],   # Stays above TP 1.09850
+        "close": [1.09950],
         "volume": [100]
     })
 
@@ -265,21 +265,21 @@ def test_check_active_trades_pending_order_timeout(monkeypatch):
 
     records = {
         "active_trades": {
-            "XAUUSD": {
-                "trade_id": "XAUUSD_TIMEOUT_TEST",
-                "pair": "XAUUSD",
-                "symbol": "XAUUSD",
-                "ticker": "XAUUSD",
+            "EURUSD": {
+                "trade_id": "EURUSD_TIMEOUT_TEST",
+                "pair": "EURUSD",
+                "symbol": "EURUSD",
+                "ticker": "EURUSD=X",
                 "direction": "SHORT",
                 "timeframe": "15M",
-                "entry": 4187.90,
-                "stop_loss": 4220.28,
-                "take_profit": 4131.23,
-                "sl_pips": 323.8,
-                "tp_pips": 566.7,
-                "rr": 1.75,
-                "pip": 0.1,
-                "digits": 2,
+                "entry": 1.10000,
+                "stop_loss": 1.10100,
+                "take_profit": 1.09850,
+                "sl_pips": 10.0,
+                "tp_pips": 15.0,
+                "rr": 1.5,
+                "pip": 0.0001,
+                "digits": 5,
                 "opened_at": old_time,
                 "status": "PENDING",
                 "filled_at": None
@@ -291,7 +291,7 @@ def test_check_active_trades_pending_order_timeout(monkeypatch):
     check_active_trades(records)
 
     # Order must be removed from active and moved to completed as EXPIRED
-    assert "XAUUSD" not in records["active_trades"]
+    assert "EURUSD" not in records["active_trades"]
     assert len(records["completed_trades"]) == 1
     expired = records["completed_trades"][0]
     assert expired["status"] == "EXPIRED"
@@ -305,19 +305,19 @@ def test_find_ict_liquidity_target_long_bsl():
     """Ensure find_ict_liquidity_target correctly targets the nearest overhead BSL pool for longs."""
     from market_scanner import find_ict_liquidity_target
 
-    # Create a series with a clear fractal swing high at bar 4 (high = 1.1450)
-    highs = [1.1380, 1.1400, 1.1420, 1.1440, 1.1450, 1.1430, 1.1410, 1.1390, 1.1400, 1.1410]
+    # Create a series with a clear fractal swing high at bar 4 (high = 1.1437)
+    highs = [1.1380, 1.1400, 1.1420, 1.1430, 1.1437, 1.1420, 1.1410, 1.1390, 1.1400, 1.1410]
     lows = [h - 0.0020 for h in highs]
     df = pd.DataFrame({"high": highs, "low": lows})
 
     entry = 1.1410
     sl_dist = 0.0020 # 20 pips SL
 
-    # BSL at 1.1450 is 40 pips above entry -> 2.0R
+    # BSL at 1.1437 is 27 pips above entry -> 1.35R
     tp, rr, pool_name = find_ict_liquidity_target(df, entry=entry, sl_dist=sl_dist, is_long=True)
 
-    assert tp == 1.1450
-    assert rr == 2.0
+    assert tp == 1.1437
+    assert rr == 1.35
     assert "BSL Pool" in pool_name
 
 
@@ -455,21 +455,23 @@ def test_is_forex_market_open_cases():
     assert is_forex_market_open(sun_open) is True
 
 
-def test_gold_config_uses_mt5_spot_pair():
-    """Ensure Gold configuration strictly uses MT5 spot XAUUSD with calibrated 8-bar Donchian."""
+def test_gold_config_excluded_from_scanner_symbols():
+    """Ensure Gold (XAUUSD) is completely removed from scanner SYMBOLS whitelist."""
     from market_scanner import SYMBOLS
+    from core.instrument_validator import is_gold_symbol
 
-    assert "XAUUSD" in SYMBOLS
-    gold_cfg = SYMBOLS["XAUUSD"]
-    assert gold_cfg["ticker"] == "XAUUSD"
-    assert gold_cfg["pip"] == 0.10
-    assert gold_cfg["digits"] == 2
-    assert gold_cfg["donchian_len"] == 20
+    assert "XAUUSD" not in SYMBOLS
+    assert "GOLD" not in SYMBOLS
+    assert all(not is_gold_symbol(sym) for sym in SYMBOLS)
+    assert "EURUSD" in SYMBOLS
+    assert "GBPUSD" in SYMBOLS
+    assert "USDJPY" in SYMBOLS
 
-    # Ensure no futures or crypto symbols exist in SYMBOLS
+    # Ensure no futures, crypto, or gold symbols exist in SYMBOLS
     for sym, cfg in SYMBOLS.items():
         assert "GC=F" not in cfg["ticker"], f"Found COMEX futures GC=F in {sym}"
         assert "PAXG" not in cfg["ticker"], f"Found crypto PAXG in {sym}"
+        assert "XAU" not in cfg["ticker"], f"Found Gold ticker in {sym}"
 
 
 def test_run_scan_cycle_skips_when_market_closed(monkeypatch, caplog):
@@ -528,24 +530,24 @@ def test_detect_pullback_confirmation():
     assert ob_l <= 101.0
 
 
-def test_model_j_partial_tp_and_breakeven_lock(monkeypatch):
-    """Verify that reaching +1.0R banks 50% profit (+0.50R) and moves SL to Breakeven."""
+def test_fixed_tp_and_sl_trade_resolution(monkeypatch):
+    """Verify that an active EURUSD trade correctly resolves as WIN at +15 pips TP and LOSS at -10 pips SL."""
     from market_scanner import check_active_trades
 
     t_entry = datetime(2026, 9, 28, 10, 0, tzinfo=timezone.utc)
-    mock_df = pd.DataFrame({
-        "time": [t_entry + timedelta(hours=i) for i in range(5)],
-        "open": [2650.0, 2652.0, 2660.0, 2655.0, 2652.0],
-        "high": [2652.0, 2662.0, 2665.0, 2658.0, 2654.0],  # Bar 1 high is 2662 (+12.0 above entry, exceeds 1.0R = 10.0)
-        "low": [2649.0, 2651.0, 2653.0, 2649.0, 2648.0],
-        "close": [2651.0, 2661.0, 2657.0, 2650.0, 2649.0],
-        "volume": [100] * 5,
-        "ema20": [2645.0] * 5,
-        "ema50": [2640.0] * 5
+    mock_df_win = pd.DataFrame({
+        "time": [t_entry + timedelta(hours=i) for i in range(3)],
+        "open": [1.10000, 1.10050, 1.10120],
+        "high": [1.10050, 1.10160, 1.10140],  # Bar 1 touches 1.10160 (+16 pips >= 15 pips TP 1.10150)
+        "low": [1.09980, 1.10020, 1.10090],
+        "close": [1.10040, 1.10140, 1.10110],
+        "volume": [100] * 3,
+        "ema20": [1.09900] * 3,
+        "ema50": [1.09800] * 3
     })
 
     monkeypatch.setattr("market_scanner.is_forex_market_open", lambda *args, **kwargs: True)
-    monkeypatch.setattr("market_scanner.fetch_candles", lambda *args, **kwargs: mock_df)
+    monkeypatch.setattr("market_scanner.fetch_candles", lambda *args, **kwargs: mock_df_win)
     monkeypatch.setattr("market_scanner.send_telegram_alert", lambda *args, **kwargs: None)
     monkeypatch.setattr("market_scanner.sync_worker", lambda *args, **kwargs: None)
     monkeypatch.setattr("market_scanner.save_trade_records", lambda *args, **kwargs: None)
@@ -553,25 +555,23 @@ def test_model_j_partial_tp_and_breakeven_lock(monkeypatch):
 
     records = {
         "active_trades": {
-            "XAUUSD": {
-                "trade_id": "XAUUSD_TEST",
-                "pair": "XAUUSD",
-                "symbol": "XAUUSD",
-                "ticker": "XAUUSD",
+            "EURUSD": {
+                "trade_id": "EURUSD_TEST",
+                "pair": "EURUSD",
+                "symbol": "EURUSD",
+                "ticker": "EURUSD=X",
                 "direction": "LONG",
-                "timeframe": "1H",
-                "entry": 2650.00,
-                "stop_loss": 2640.00,  # 1.0R = $10.00 (100 pips)
-                "take_profit": 2667.50, # 1.75R
-                "sl_pips": 100.0,
-                "tp_pips": 175.0,
-                "rr": 1.75,
-                "pip": 0.10,
-                "digits": 2,
+                "timeframe": "15M",
+                "entry": 1.10000,
+                "stop_loss": 1.09900,  # 10 pips SL
+                "take_profit": 1.10150, # 15 pips TP
+                "sl_pips": 10.0,
+                "tp_pips": 15.0,
+                "rr": 1.5,
+                "pip": 0.0001,
+                "digits": 5,
                 "opened_at": t_entry.strftime("%Y-%m-%dT%H:%M:%SZ"),
                 "status": "OPEN",
-                "be_active": False,
-                "partial_taken": False
             }
         },
         "completed_trades": []
@@ -579,32 +579,28 @@ def test_model_j_partial_tp_and_breakeven_lock(monkeypatch):
 
     check_active_trades(records)
 
-    # In bar 1, high reached 2662.0 (+12.0 > 10.0 initial SL dist), so partial TP must be taken
-    # and SL moved to Breakeven (+1 pip = 2650.10).
-    # Then in bar 3, low dipped to 2649.0, hitting the Breakeven stop loss!
-    # Because Model J locked BE with 50% booked, trade must resolve as WIN (+0.50R banked).
-    assert "XAUUSD" not in records["active_trades"]
+    assert "EURUSD" not in records["active_trades"]
     assert len(records["completed_trades"]) == 1
     completed = records["completed_trades"][0]
     assert completed["status"] == "CLOSED"
     assert completed["outcome"] == "WIN"
-    assert completed["realized_r"] == 0.50
-    assert completed["realized_pips"] == 50.5
+    assert completed["realized_r"] == 1.5
+    assert completed["realized_pips"] == 15.0
 
 
 def test_stage_1_breakeven_lock_at_75_r(monkeypatch):
-    """Verify that reaching +0.75R moves SL to Breakeven (+1 pip), preventing full loss if trade reverses."""
+    """Verify that reaching +0.75R does NOT prematurely strangle trade at BE; position remains active on normal retests."""
     from market_scanner import check_active_trades
 
     t_entry = datetime(2026, 9, 28, 10, 0, tzinfo=timezone.utc)
     # Entry: 1.10000, SL: 1.09800 (SL dist = 20 pips = 0.00200). +0.75R = 15 pips (1.10150).
-    # Bar 1 high reaches 1.10160 (+16 pips, exceeds +0.75R but does NOT reach +1.0R).
-    # Bar 2 price dips to 1.09900 (below entry).
+    # Bar 1 high reaches 1.10160 (+16 pips).
+    # Bar 2 price dips to 1.09900 (above initial SL of 1.09800).
     mock_df = pd.DataFrame({
         "time": [t_entry + timedelta(hours=i) for i in range(3)],
         "open": [1.10000, 1.10050, 1.10100],
         "high": [1.10050, 1.10160, 1.10120],  # Bar 1 high = 1.10160 (+0.80R)
-        "low": [1.09980, 1.10020, 1.09900],   # Bar 2 low dips to 1.09900, hitting BE at 1.10010
+        "low": [1.09980, 1.10020, 1.09900],   # Bar 2 low dips to 1.09900 (above SL 1.09800)
         "close": [1.10040, 1.10110, 1.09920],
         "volume": [100] * 3,
         "ema20": [1.09900] * 3,
@@ -629,10 +625,10 @@ def test_stage_1_breakeven_lock_at_75_r(monkeypatch):
                 "timeframe": "1H",
                 "entry": 1.10000,
                 "stop_loss": 1.09800,  # 20 pips
-                "take_profit": 1.10350, # 1.75R
+                "take_profit": 1.10270, # 1.35R
                 "sl_pips": 20.0,
-                "tp_pips": 35.0,
-                "rr": 1.75,
+                "tp_pips": 27.0,
+                "rr": 1.35,
                 "pip": 0.0001,
                 "digits": 5,
                 "opened_at": t_entry.strftime("%Y-%m-%dT%H:%M:%SZ"),
@@ -646,16 +642,9 @@ def test_stage_1_breakeven_lock_at_75_r(monkeypatch):
 
     check_active_trades(records)
 
-    # In bar 1, high reached 1.10160 (+16 pips >= 15 pips for +0.75R), activating Breakeven lock at 1.10010.
-    # In bar 2, low dipped to 1.09900, hitting the BE stop!
-    # Trade resolves as BREAK_EVEN instead of full loss!
-    assert "EURUSD" not in records["active_trades"]
-    assert len(records["completed_trades"]) == 1
-    completed = records["completed_trades"][0]
-    assert completed["status"] == "CLOSED"
-    assert completed["outcome"] == "BREAK_EVEN"
-    assert completed["realized_r"] >= 0.0
-    assert completed["realized_pips"] > 0.0
+    # Trade must NOT be prematurely stopped out at BE; it remains actively OPEN with breathing room!
+    assert "EURUSD" in records["active_trades"]
+    assert len(records["completed_trades"]) == 0
 
 
 def test_check_daily_circuit_breaker_profit_unlimited():

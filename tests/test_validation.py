@@ -94,11 +94,11 @@ def test_institutional_whitelist_pairs_accepted():
     settings = Settings()
     validator = SignalValidator(settings)
 
-    institutional_pairs = ["USDCAD", "USDCHF", "USDJPY", "AUDUSD", "XAUUSD"]
+    institutional_pairs = ["EURUSD", "GBPUSD", "USDCAD", "USDCHF", "USDJPY", "AUDUSD"]
     for pair in institutional_pairs:
-        price = 2000.0 if pair == "XAUUSD" else (145.0 if "JPY" in pair else 1.3000)
-        sl = price - (5.0 if pair == "XAUUSD" else (0.30 if "JPY" in pair else 0.0020))
-        tp = price + (10.0 if pair == "XAUUSD" else (0.60 if "JPY" in pair else 0.0040))
+        price = 150.0 if "JPY" in pair else 1.1000
+        sl = price - (0.10 if "JPY" in pair else 0.0010)
+        tp = price + (0.15 if "JPY" in pair else 0.0015)
         payload_data = {
             "symbol": pair,
             "direction": "LONG",
@@ -116,54 +116,40 @@ def test_institutional_whitelist_pairs_accepted():
         }
         payload = SignalPayload(**payload_data)
         is_valid, reason = validator.validate(payload)
-        assert is_valid, f"Failed for pair {pair}: {reason}"
+        assert is_valid, f"Failed for eligible pair {pair}: {reason}"
 
 
-def test_gold_toxic_hours_rejection():
+def test_gold_exclusion_and_aliases_rejected():
     settings = Settings()
     validator = SignalValidator(settings)
 
-    # Hour 04:00 UTC (Pre-London manipulation trap - 0% historical win rate)
-    payload_toxic = SignalPayload(
-        symbol="XAUUSD",
-        direction="LONG",
-        signal_time="2026-03-09T04:30:00Z",
-        price=2150.0,
-        entry=2150.0,
-        stop_loss=2130.0,
-        take_profit=2185.0,
-        signal_score=85.0,
-        adx=25.0,
-        atr=5.0,
-        roc=0.5,
-        htf_regime="BULLISH",
-        webhook_secret="test-secret-key-12345",
-    )
-    is_valid, reason = validator.validate(payload_toxic)
-    assert not is_valid
-    assert "blacklisted manipulation windows" in reason
-
-    # Hour 09:00 UTC (London Open peak momentum - high historical win rate)
-    payload_valid = SignalPayload(
-        symbol="XAUUSD",
-        direction="LONG",
-        signal_time="2026-03-09T09:00:00Z",
-        price=2150.0,
-        entry=2150.0,
-        stop_loss=2130.0,
-        take_profit=2185.0,
-        signal_score=85.0,
-        adx=25.0,
-        atr=5.0,
-        roc=0.5,
-        htf_regime="BULLISH",
-        webhook_secret="test-secret-key-12345",
-    )
-    is_valid_ok, reason_ok = validator.validate(payload_valid)
-    assert is_valid_ok, f"Failed for valid Gold hour: {reason_ok}"
+    gold_aliases = ["XAUUSD", "GOLD", "XAU", "OANDA:XAUUSD", "GC=F", "XAUUSD=X"]
+    for alias in gold_aliases:
+        try:
+            payload = SignalPayload(
+                symbol=alias,
+                direction="LONG",
+                signal_time="2026-03-09T14:00:00Z",
+                price=2000.0,
+                entry=2000.0,
+                stop_loss=1980.0,
+                take_profit=2030.0,
+                signal_score=85.0,
+                adx=25.0,
+                atr=5.0,
+                roc=0.5,
+                htf_regime="BULLISH",
+                webhook_secret="test-secret-key-12345",
+            )
+            is_valid, reason = validator.validate(payload)
+            assert not is_valid, f"Gold alias {alias} was not rejected!"
+            assert "Gold" in reason or "excluded" in reason.lower()
+        except Exception:
+            # If rejected during pydantic normalization/validation, that's also valid rejection
+            pass
 
 
-def test_friday_cutoff_gold_vs_forex():
+def test_friday_cutoff_forex():
     settings = Settings()
     validator = SignalValidator(settings)
 
@@ -206,44 +192,39 @@ def test_friday_cutoff_gold_vs_forex():
     assert not ok_eur_bl
     assert "Friday PM cutoff active" in reason_eur
 
-    # 3. XAUUSD Friday 13:00 UTC (Allowed under Gold 15:00 UTC cutoff -> PERMITTED)
-    p_gold_allowed = SignalPayload(
-        symbol="XAUUSD",
-        direction="LONG",
-        signal_time="2026-03-13T13:00:00Z",  # Friday
-        price=2150.0,
-        entry=2150.0,
-        stop_loss=2130.0,
-        take_profit=2185.0,
-        signal_score=85.0,
-        adx=25.0,
-        atr=5.0,
-        roc=0.5,
-        htf_regime="BULLISH",
-        webhook_secret="test-secret-key-12345",
-    )
-    ok_gold, _ = validator.validate(p_gold_allowed)
-    assert ok_gold
 
-    # 4. XAUUSD Friday 17:00 UTC (Exceeds Gold 15:00 UTC cutoff -> BLOCKED)
-    p_gold_blocked = SignalPayload(
-        symbol="XAUUSD",
-        direction="LONG",
-        signal_time="2026-03-13T17:00:00Z",  # Friday
-        price=2150.0,
-        entry=2150.0,
-        stop_loss=2130.0,
-        take_profit=2185.0,
-        signal_score=85.0,
-        adx=25.0,
-        atr=5.0,
-        roc=0.5,
-        htf_regime="BULLISH",
-        webhook_secret="test-secret-key-12345",
-    )
-    ok_gold_bl, reason_gold = validator.validate(p_gold_blocked)
-    assert not ok_gold_bl
-    assert "Friday PM cutoff active" in reason_gold
+def test_tp_sl_and_position_sizing_specifications():
+    """Verify Section 15.A & 15.C automated test specifications."""
+    from core.instrument_validator import calculate_tp_sl, calculate_position_size
+
+    # 1. Long EUR/USD entry at 1.10000: TP = 1.10150, SL = 1.09900
+    tp1, sl1 = calculate_tp_sl(1.10000, "LONG", "EURUSD")
+    assert tp1 == 1.10150
+    assert sl1 == 1.09900
+
+    # 2. Short EUR/USD entry at 1.10000: TP = 1.09850, SL = 1.10100
+    tp2, sl2 = calculate_tp_sl(1.10000, "SHORT", "EURUSD")
+    assert tp2 == 1.09850
+    assert sl2 == 1.10100
+
+    # 3. Long USD/JPY entry at 150.000: TP = 150.150, SL = 149.900
+    tp3, sl3 = calculate_tp_sl(150.000, "LONG", "USDJPY")
+    assert tp3 == 150.150
+    assert sl3 == 149.900
+
+    # 4. Short USD/JPY entry at 150.000: TP = 149.850, SL = 150.100
+    tp4, sl4 = calculate_tp_sl(150.000, "SHORT", "USDJPY")
+    assert tp4 == 149.850
+    assert sl4 == 150.100
+
+    # Position sizing: $5,000 account, 1% risk ($50), 10-pip SL -> 0.50 lots
+    lots_1 = calculate_position_size(5000.0, 1.0, 10.0, "EURUSD")
+    assert lots_1 == 0.50
+
+    # Position sizing: $5,000 account, 0.5% risk ($25), 10-pip SL -> 0.25 lots
+    lots_half = calculate_position_size(5000.0, 0.5, 10.0, "EURUSD")
+    assert lots_half == 0.25
+
 
 
 

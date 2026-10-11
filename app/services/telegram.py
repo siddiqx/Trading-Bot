@@ -58,9 +58,9 @@ class TelegramService:
         icon = "🟢" if direction == "LONG" else "🔴"
         test_banner = "⚠️ <b>[TEST SIGNAL - SIMULATED ENVIRONMENT]</b>\n" if is_test else ""
 
-        # Formatting values safely with dynamic precision for Gold vs FX
-        is_gold = "XAU" in symbol.upper() or (isinstance(entry, (int, float)) and entry > 500)
-        dec_fmt = ".2f" if is_gold else ".5f"
+        # Formatting values safely with dynamic precision for JPY vs non-JPY Forex
+        is_jpy = "JPY" in symbol.upper()
+        dec_fmt = ".3f" if is_jpy else ".5f"
 
         entry_str = f"{float(entry):{dec_fmt}}" if isinstance(entry, (int, float)) else str(entry)
         sl_str = f"{float(stop_loss):{dec_fmt}}" if isinstance(stop_loss, (int, float)) else str(stop_loss)
@@ -203,7 +203,7 @@ class TelegramService:
                         return json.load(f)
                 except Exception:
                     pass
-        return {"tracking_started": "2026-10-06", "active_trades": {}, "completed_trades": []}
+        return {"tracking_started": "2026-10-08", "active_trades": {}, "completed_trades": []}
 
     def generate_command_response(
         self,
@@ -220,10 +220,10 @@ class TelegramService:
 
         if cmd in ["/start", "/help", "/menu"]:
             return (
-                "🤖 <b>Forex & Spot Gold Live Signal Bot v3.1</b>\n\n"
+                "🤖 <b>Institutional Forex Live Signal Bot v3.1</b>\n\n"
                 "<b>Available Commands:</b>\n"
                 "• /active - Currently running trades & floating positions\n"
-                "• /radar - 7-Asset institutional surveillance radar\n"
+                "• /radar - 6-Asset institutional surveillance radar\n"
                 "• /prices - Live market quotes table\n"
                 "• /history - Completed trade ledger history\n"
                 "• /performance - Live forward-testing performance metrics\n"
@@ -232,20 +232,23 @@ class TelegramService:
                 "• /patterns - Volume trade analytics & failure analysis\n"
                 "• /last - Most recent confirmed signal\n"
                 "• /help - Display this command overview\n\n"
-                "<i>Evidence-based forward-testing across 7 institutional pairs. Zero fabricated win rates.</i>"
+                "<i>Two-Phase Pullback Engine with fixed 15-pip TP and 10-pip SL. Evidence-based forward-testing across 6 institutional Forex pairs. Zero Gold.</i>"
             )
 
         elif cmd in ["/strategy", "/rules"]:
             return (
-                "📈 <b>Two-Phase Pullback Engine (v3.1) & Model J</b>\n\n"
-                "• <b>Monitored Assets:</b> 7 Pairs (XAUUSD, EURUSD, USDCAD, GBPUSD, USDJPY, USDCHF, AUDUSD)\n"
+                "📈 <b>Two-Phase Pullback Engine (v3.1) — Institutional Forex Strategy</b>\n\n"
+                "• <b>Monitored Assets:</b> 6 Forex Pairs (EURUSD, USDCAD, GBPUSD, USDJPY, USDCHF, AUDUSD — Zero Gold)\n"
                 "• <b>Primary Timeframe:</b> 15M (Trigger / Execution)\n"
                 "• <b>Anchor Timeframe:</b> 1H (Structural Trend Filter)\n"
-                "• <b>Phase 1:</b> Donchian Breakout Impulse (Gold=8, Forex=20)\n"
-                "• <b>Phase 2:</b> Pullback into 20-EMA / 50% Fib Equilibrium with Confirmation\n"
-                "• <b>Risk Model:</b> SL = Dynamic ATR, Stage 1 = +1.0R (50% Banked + BE Lock), Stage 2 = 2.00R TP\n"
+                "• <b>Phase 1:</b> Donchian Breakout Impulse (20-bar Institutional)\n"
+                "• <b>Phase 2:</b> Pullback into 20-EMA / 50% Fib Equilibrium with Confirmed Rejection\n"
+                "• <b>Take Profit:</b> Fixed 15 Pips from actual entry price\n"
+                "• <b>Stop Loss:</b> Fixed 10 Pips from actual entry price\n"
+                "• <b>Risk/Reward Ratio:</b> 1:1.5 before transaction costs\n"
+                "• <b>Session Filter:</b> 06:00–17:00 UTC Institutional Liquid Window\n"
                 "• <b>Execution:</b> Confirmed bar close only (100% Non-repainting)\n"
-                "• <b>Baseline:</b> <code>2026-10-06</code> (Strict Live Forward Testing)\n"
+                "• <b>Risk Model:</b> $5,000 account, 1.0% ($50) or 0.5% ($25) per trade\n"
             )
 
         elif cmd in ["/active", "/open", "/trades", "/positions"]:
@@ -254,8 +257,8 @@ class TelegramService:
                     "⚡ <b>ACTIVE LIVE TRADES (0)</b>\n"
                     "━━━━━━━━━━━━━━━━━━\n"
                     "<i>No active positions currently running.</i>\n\n"
-                    "Institutional 7-Asset Universe under active surveillance:\n"
-                    "<code>GOLD · EURUSD · USDCAD · GBPUSD · USDJPY · USDCHF · AUDUSD</code>\n\n"
+                    "Institutional 6-Asset Universe under active surveillance:\n"
+                    "<code>EURUSD · USDCAD · GBPUSD · USDJPY · USDCHF · AUDUSD</code>\n\n"
                     "Signals trigger strictly on confirmed candle closes."
                 )
 
@@ -301,12 +304,14 @@ class TelegramService:
             return (
                 "⚡ <b>System Operational Status</b>\n\n"
                 "• <b>Engine Core:</b> Online (v3.1 Two-Phase Pullback Engine)\n"
-                "• <b>Profit Banking:</b> Model J (50% at +1.0R + Breakeven Lock + 2.0R TP)\n"
+                "• <b>TP/SL Model:</b> Fixed 15-Pip TP / 10-Pip SL (1:1.5 RR)\n"
+                "• <b>Eligible Universe:</b> 6 Forex Pairs (Zero Gold)\n"
                 "• <b>Active Positions:</b> <code>" + str(len(active_trades)) + " locked</code>\n"
                 "• <b>Recorded Trades:</b> <code>" + str(len(completed_trades)) + " closed</code>\n"
-                "• <b>Execution Mode:</b> Confirmed Bar Webhook\n"
+                "• <b>Execution Mode:</b> Confirmed Bar Close\n"
                 f"• <b>Last Recorded Signal:</b> <code>{last_sig_text}</code>\n"
                 f"• <b>Telegram Dispatch:</b> {'Configured' if self.is_configured else 'Mock / Unconfigured'}\n"
+                f"• <b>Baseline:</b> <code>2026-10-08</code> (Strategy Reset — Fresh Start)\n"
             )
 
         elif cmd == "/last":
@@ -401,10 +406,10 @@ class TelegramService:
             r_sign = "+" if net_r >= 0 else ""
 
             return (
-                "📈 <b>STRATEGY PERFORMANCE (v3.1 Production)</b>\n"
+                "📈 <b>STRATEGY PERFORMANCE (v3.1 ICT Liquidity Sweep)</b>\n"
                 "━━━━━━━━━━━━━━━━━━\n"
                 f"Scope: <b>{filter_pair}</b>\n"
-                "Baseline: <code>2026-10-06</code> (Strict Live Forward Testing)\n"
+                "Baseline: <code>2026-10-08</code> (Fresh Start — Strategy Reset)\n"
                 "━━━━━━━━━━━━━━━━━━\n\n"
                 "<b>1. TRADE EXECUTION</b>\n"
                 f"• Total Closed: <code>{len(closed)}</code>\n"
@@ -416,9 +421,9 @@ class TelegramService:
                 f"• Net Realized Return: <b>{r_sign}{net_r:.2f} R</b>\n"
                 f"• Expectancy / Trade: <b>{expectancy}</b>\n"
                 f"• Profit Factor: <code>{pf}</code>\n"
-                "• Target R:R: <code>2.00R (Model J Structural)</code>\n\n"
+                "• Target R:R: <code>1:1.5 (Fixed 15-Pip TP / 10-Pip SL)</code>\n\n"
                 "━━━━━━━━━━━━━━━━━━\n"
-                "⚡ <i>100% out-of-sample forward verification. Baseline reset 2026-10-06.</i>"
+                "⚡ <i>100% out-of-sample forward verification. Baseline reset 2026-10-08.</i>"
             )
 
         elif cmd == "/history":

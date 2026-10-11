@@ -5,6 +5,7 @@ from typing import Tuple, List, Optional
 from app.config import Settings
 from app.schemas.signal import SignalPayload
 from app.utils.logging import logger
+from core.instrument_validator import is_gold_symbol, validate_instrument_eligibility
 
 
 class SessionFilter:
@@ -82,25 +83,18 @@ class SignalValidator:
 
     def validate(self, payload: SignalPayload) -> Tuple[bool, str]:
         """Evaluate all system filters and parameter bounds."""
-        # 1. Check supported symbols if list is restricted
-        if payload.symbol not in self.settings.SUPPORTED_SYMBOLS:
-            logger.warning(f"Symbol {payload.symbol} not in configured SUPPORTED_SYMBOLS.")
-            return False, f"Symbol {payload.symbol} rejected: Not in verified institutional pair whitelist ({', '.join(self.settings.SUPPORTED_SYMBOLS)})."
+        # 1. Centralized Instrument Exclusion (Reject Gold unconditionally)
+        if is_gold_symbol(payload.symbol):
+            logger.warning(f"Gold symbol {payload.symbol} rejected: Gold trading is permanently disabled.")
+            return False, f"Symbol {payload.symbol} rejected: Gold (XAUUSD) trading is permanently excluded. Forex pairs only."
 
-        # 1b. Gold-Specific Manipulation Hours Filter (Empirically verified across 2-year tick data)
-        if ("XAU" in payload.symbol or "GOLD" in payload.symbol.upper()) and self.settings.GOLD_TOXIC_HOURS_FILTER:
-            try:
-                sig_str = str(payload.signal_time)
-                if sig_str.isdigit():
-                    dt = datetime.fromtimestamp(int(sig_str) / 1000.0, tz=timezone.utc)
-                else:
-                    dt = datetime.fromisoformat(sig_str.replace("Z", "+00:00"))
-                if dt.hour in self.settings.GOLD_TOXIC_HOURS:
-                    return False, f"Gold signal rejected: UTC hour {dt.hour} is in blacklisted manipulation windows ({self.settings.GOLD_TOXIC_HOURS})."
-            except Exception as e:
-                logger.debug(f"Unable to parse timestamp for Gold toxic hour check: {e}")
+        # 1b. Check eligible forex whitelist
+        is_inst_valid, inst_reason = validate_instrument_eligibility(payload.symbol)
+        if not is_inst_valid:
+            logger.warning(f"Symbol {payload.symbol} failed eligibility check: {inst_reason}")
+            return False, inst_reason
 
-        # 1c. Friday Cutoff Filter (12:00 UTC for Forex, 15:00 UTC for Gold)
+        # 1c. Friday Cutoff Filter (12:00 UTC for Forex)
         try:
             sig_str = str(payload.signal_time)
             if sig_str.isdigit():
@@ -108,8 +102,7 @@ class SignalValidator:
             else:
                 dt = datetime.fromisoformat(sig_str.replace("Z", "+00:00"))
             if dt.weekday() == 4:  # Friday
-                is_gold = "XAU" in payload.symbol or "GOLD" in payload.symbol.upper()
-                cutoff = self.settings.GOLD_FRIDAY_CUTOFF_HOUR if is_gold else self.settings.FOREX_FRIDAY_CUTOFF_HOUR
+                cutoff = self.settings.FOREX_FRIDAY_CUTOFF_HOUR
                 if dt.hour >= cutoff:
                     return False, f"Friday PM cutoff active: Signal at {dt.hour:02d}:00 UTC reaches or exceeds {payload.symbol} Friday cutoff ({cutoff:02d}:00 UTC)."
         except Exception as e:

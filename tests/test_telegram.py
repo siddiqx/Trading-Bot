@@ -168,7 +168,7 @@ def test_telegram_command_responses():
 
     perf_reply = service.generate_command_response("/performance")
     assert "STRATEGY PERFORMANCE" in perf_reply
-    assert "Model J Structural" in perf_reply
+    assert "Fixed 15-Pip TP / 10-Pip SL" in perf_reply
 
     hist_reply = service.generate_command_response("/history")
     assert "COMPLETED TRADE HISTORY" in hist_reply

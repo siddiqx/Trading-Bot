@@ -124,3 +124,20 @@ def test_duplicate_signal_protection(client, valid_long_payload):
     assert resp2.status_code == 200
     assert resp2.json()["status"] == "DUPLICATE_IGNORED"
     assert "Duplicate signal event" in resp2.json()["message"]
+
+
+def test_gold_signal_sent_to_webhook_is_rejected(client, valid_long_payload):
+    """Verify that a gold signal sent directly to the webhook is rejected and never reaches Telegram."""
+    valid_long_payload["symbol"] = "XAUUSD"
+    valid_long_payload["price"] = 2650.00
+    valid_long_payload["entry"] = 2650.00
+    valid_long_payload["stop_loss"] = 2640.00
+    valid_long_payload["take_profit"] = 2665.00
+    valid_long_payload["signal_id"] = "XAUUSD_TEST_WEBHOOK_REJECT"
+
+    response = client.post("/webhook/tradingview", json=valid_long_payload)
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "REJECTED"
+    assert "Gold" in data["message"] or "excluded" in data["message"].lower()
+    assert data["telegram_delivered"] is False
