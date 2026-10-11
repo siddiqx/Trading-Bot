@@ -751,3 +751,115 @@ def test_audusd_elevated_conviction_threshold(monkeypatch):
     signals = scan_pair_timeframe("AUDUSD", cfg, "1h", state)
     assert len(signals) == 0
 
+
+def test_detect_ict_liquidity_sweep_bullish():
+    """Verify detect_ict_liquidity_sweep confirms bullish sweep and reclaim of Asian Low."""
+    from market_scanner import detect_ict_liquidity_sweep
+
+    times = [datetime(2026, 10, 14, 8, 0, tzinfo=timezone.utc) + timedelta(minutes=15 * i) for i in range(20)]
+    df = pd.DataFrame({
+        "time": times,
+        "close_time": [t + timedelta(minutes=15) for t in times],
+        "open": [1.0820] * 19 + [1.0802],
+        "high": [1.0830] * 19 + [1.0810],
+        "low": [1.0810] * 19 + [1.0798],   # Swept 1.0800 Asian low by 2.0 pips
+        "close": [1.0820] * 19 + [1.0808], # Reclaimed above 1.0800, bullish candle
+        "atr": [0.0010] * 20,              # ATR = 10 pips, bar range = 12 pips >= 0.6 ATR
+        "asia_low": [1.0800] * 20,
+        "asia_high": [1.0850] * 20,
+        "sw10_low": [1.0805] * 20,
+        "sw10_high": [1.0845] * 20
+    })
+
+    confirmed, bar_time, swept_lvl, depth_pips, pool_name = detect_ict_liquidity_sweep(
+        df, pip=0.0001, is_long=True
+    )
+    assert confirmed is True
+    assert swept_lvl == 1.0800
+    assert depth_pips == 2.0
+    assert "Asian Session Low" in pool_name
+
+
+def test_detect_ict_liquidity_sweep_bearish():
+    """Verify detect_ict_liquidity_sweep confirms bearish sweep and reclaim of Asian High."""
+    from market_scanner import detect_ict_liquidity_sweep
+
+    times = [datetime(2026, 10, 14, 13, 0, tzinfo=timezone.utc) + timedelta(minutes=15 * i) for i in range(20)]
+    df = pd.DataFrame({
+        "time": times,
+        "close_time": [t + timedelta(minutes=15) for t in times],
+        "open": [1.0880] * 19 + [1.0898],
+        "high": [1.0890] * 19 + [1.0903],  # Swept 1.0900 Asian high by 3.0 pips
+        "low": [1.0870] * 19 + [1.0890],
+        "close": [1.0880] * 19 + [1.0892], # Reclaimed below 1.0900, bearish candle
+        "atr": [0.0010] * 20,              # ATR = 10 pips, bar range = 13 pips >= 0.6 ATR
+        "asia_low": [1.0850] * 20,
+        "asia_high": [1.0900] * 20,
+        "sw10_low": [1.0855] * 20,
+        "sw10_high": [1.0895] * 20
+    })
+
+    confirmed, bar_time, swept_lvl, depth_pips, pool_name = detect_ict_liquidity_sweep(
+        df, pip=0.0001, is_long=False
+    )
+    assert confirmed is True
+    assert swept_lvl == 1.0900
+    assert depth_pips == 3.0
+    assert "Asian Session High" in pool_name
+
+
+def test_detect_ict_liquidity_sweep_rejected_on_small_range():
+    """Verify detect_ict_liquidity_sweep rejects setup if candle range < 0.6 ATR (no displacement)."""
+    from market_scanner import detect_ict_liquidity_sweep
+
+    times = [datetime(2026, 10, 14, 8, 0, tzinfo=timezone.utc) + timedelta(minutes=15 * i) for i in range(20)]
+    df = pd.DataFrame({
+        "time": times,
+        "close_time": [t + timedelta(minutes=15) for t in times],
+        "open": [1.0820] * 19 + [1.0801],
+        "high": [1.0830] * 19 + [1.0804],
+        "low": [1.0810] * 19 + [1.0799],   # 5 pip range vs 15 pip ATR -> 0.33 ATR (< 0.6)
+        "close": [1.0820] * 19 + [1.0803],
+        "atr": [0.0015] * 20,
+        "asia_low": [1.0800] * 20,
+        "asia_high": [1.0850] * 20
+    })
+
+    confirmed, bar_time, swept_lvl, depth_pips, pool_name = detect_ict_liquidity_sweep(
+        df, pip=0.0001, is_long=True
+    )
+    assert confirmed is False
+
+
+def test_format_alert_message_ict():
+    """Verify format_alert_message displays ICT Liquidity Sweep metadata."""
+    from market_scanner import format_alert_message
+
+    sig = {
+        "id": "EURUSD_15M_20261014T080000Z_LONG",
+        "pair": "EURUSD",
+        "timeframe": "15M",
+        "direction": "LONG",
+        "strategy": "ICT Killzone Liquidity Sweep (Turtle Soup)",
+        "phase": "Liquidity Sweep Reclaim (Asian Session Low Liquidity Pool)",
+        "swept_level": 1.08000,
+        "sweep_depth_pips": 2.5,
+        "time": "2026-10-14T08:00:00Z",
+        "entry": 1.08050,
+        "stop_loss": 1.07950,
+        "take_profit": 1.08200,
+        "sl_pips": 10.0,
+        "tp_pips": 15.0,
+        "rr": 1.5,
+        "target_type": "Asian Session Low Liquidity Pool",
+        "rsi": 44.5,
+        "atr": 10.2,
+        "score": 96
+    }
+    msg = format_alert_message(sig)
+    assert "ICT Killzone Liquidity Sweep" in msg
+    assert "1.08" in msg
+    assert "Fixed 15-Pip TP / 10-Pip SL (1:1.5 RR)" in msg
+    assert "$25.00 / trade (0.50% on $5,000 Prop Account · 0.25 Lots)" in msg
+
+
