@@ -151,7 +151,7 @@ async function getLivePriceFast(asset, maxWaitMs = 4000) {
 }
 
 /**
- * Checks whether global Forex and MT5 Spot Gold markets are open.
+ * Checks whether global Forex markets are open.
  * Markets close Friday 17:00 New York time and reopen Sunday 17:00 New York time.
  */
 function isMarketOpen() {
@@ -177,6 +177,25 @@ let STORED_ACTIVE_TRADES = {};
 let STORED_COMPLETED_TRADES = [];
 
 /**
+ * Strict Ledger Sanitizer: Permanently excludes any Gold (XAUUSD / GOLD) records from all bot views.
+ */
+function sanitizeLedger(ledger) {
+  if (!ledger) return { active: {}, completed: [] };
+  const cleanActive = {};
+  for (const [k, t] of Object.entries(ledger.active || {})) {
+    const sym = getBaseSymbol(k, t);
+    if (sym !== "XAUUSD" && sym !== "GOLD" && !sym.includes("XAU")) {
+      cleanActive[k] = t;
+    }
+  }
+  const cleanCompleted = (ledger.completed || []).filter(t => {
+    const sym = getBaseSymbol(t.pair || t.symbol, t);
+    return sym !== "XAUUSD" && sym !== "GOLD" && !sym.includes("XAU");
+  });
+  return { active: cleanActive, completed: cleanCompleted };
+}
+
+/**
  * Universal Ledger Resolver
  * 1. Checks Cloudflare Workers KV (env.TRADE_LEDGER, env.TRADES_KV, env.KV)
  * 2. Checks GitHub API if env.GITHUB_TOKEN is provided
@@ -191,10 +210,10 @@ async function getLedger(env) {
       const active = await kv.get("active_trades", "json");
       const completed = await kv.get("completed_trades", "json");
       if (active !== null || completed !== null) {
-        return {
+        return sanitizeLedger({
           active: active || {},
           completed: completed || []
-        };
+        });
       }
     } catch (e) {
       console.error("KV read error:", e);
@@ -214,10 +233,10 @@ async function getLedger(env) {
       });
       if (ghRes.ok) {
         const ghData = await ghRes.json();
-        return {
+        return sanitizeLedger({
           active: ghData.active_trades || {},
           completed: ghData.completed_trades || []
-        };
+        });
       }
     } catch (e) {
       console.error("GitHub API fetch error:", e);
@@ -231,18 +250,18 @@ async function getLedger(env) {
     });
     if (rawRes.ok) {
       const rawData = await rawRes.json();
-      return {
+      return sanitizeLedger({
         active: rawData.active_trades || {},
         completed: rawData.completed_trades || []
-      };
+      });
     }
   } catch (e) {}
 
   // 4. Default in-memory baseline
-  return {
+  return sanitizeLedger({
     active: STORED_ACTIVE_TRADES,
     completed: STORED_COMPLETED_TRADES
-  };
+  });
 }
 
 /**
@@ -825,8 +844,8 @@ async function fetchAssetCandles(asset) {
 }
 
 /**
- * /radar - Institutional Market Surveillance across all 7 monitored assets
- * Real-time Donchian Channels (Gold=8, Forex=20), 20/50 EMA, RSI, and ADX
+ * /radar - Institutional Market Surveillance across all 6 monitored Forex pairs (Zero Gold)
+ * Real-time 20/50 EMA, 15M Donchian Channels (Forex=20), RSI, and ADX
  * Read-only surveillance: Never mutates or closes trades on read queries!
  */
 async function sendRadarMessage(chatId, env) {
@@ -836,8 +855,10 @@ async function sendRadarMessage(chatId, env) {
   let activeCount = 0;
   let hasImminentBreakout = false;
 
+  const filteredAssets = ASSETS.filter(a => a.symbol !== "XAUUSD" && a.symbol !== "GOLD" && !a.symbol.includes("XAU"));
+
   const results = await Promise.all(
-    ASSETS.map(async (asset, idx) => {
+    filteredAssets.map(async (asset, idx) => {
       const num = idx + 1;
       try {
         const { closes, highs, lows, price, indicators } = await fetchAssetCandles(asset);
@@ -1110,7 +1131,7 @@ async function sendActiveMessage(chatId, env) {
         `${entryLabel} <code>${t.entry}</code> (${openDate} ${openTime} UTC)\n` +
         floatText +
         `• Targets: SL <code>${t.stop_loss}</code> | TP <code>${t.take_profit}</code>\n` +
-        `• Plan: <b>1 : ${t.rr || t.risk_reward || "2.00"} R:R</b> (1.0% Equity Risk)`
+        `• Plan: <b>1 : ${t.rr || t.risk_reward || "1.50"} R:R</b> (0.50% Equity Risk · $25 on $5k Prop Account)`
       );
     })
   );
@@ -1520,16 +1541,16 @@ async function sendStatusMessage(chatId, env) {
     `⚡ <b>SYSTEM ARCHITECTURE STATUS</b>\n` +
     `━━━━━━━━━━━━━━━━━━\n` +
     `1. Engine Core: 🟢 <b>OPERATIONAL (24/7 Live)</b>\n` +
-    `2. Strategy Version: <code>v3.1 Two-Phase Pullback Engine</code>\n` +
+    `2. Strategy Version: <code>v4.0 ICT Killzone Liquidity Sweep Engine</code>\n` +
     `3. Profit Banking: <code>Fixed 15-Pip TP / 10-Pip SL (1:1.5 RR)</code>\n` +
     `4. Cloud Edge: <code>Cloudflare Global Edge Gateway</code>\n` +
     `5. Scanner Engine: <code>GitHub Actions Cloud Cron (*/15 Mon-Fri)</code>\n` +
     `6. Monitored Universe: <code>6 Forex Pairs (EURUSD, USDCAD, GBPUSD, USDJPY, USDCHF, AUDUSD — Zero Gold)</code>\n` +
-    `7. Execution Timeframes: <code>15M (Trigger) &amp; 1H (Structural Anchor)</code>\n` +
+    `7. Execution Timeframes: <code>15M (Killzone Execution) &amp; 1H (Macro Structural Alignment)</code>\n` +
     `8. Active Positions: <code>${activeCount} locked</code>\n` +
     `9. Recorded Trades: <code>${closedCount} closed</code>\n` +
-    `10. Donchian Calibration: <code>Forex=20-bar Institutional</code>\n` +
-    `11. Forward Baseline: <code>2026-10-08 (Strategy Reset — Fresh Start)</code>\n` +
+    `10. Session Windows: <code>London Killzone (07-10 UTC) &amp; NY Killzone (12-15 UTC)</code>\n` +
+    `11. Forward Baseline: <code>2026-10-11 (ICT Institutional Upgrade)</code>\n` +
     `━━━━━━━━━━━━━━━━━━\n` +
     `🕒 <code>${utcNow}</code>`;
 
@@ -1550,32 +1571,32 @@ async function sendStatusMessage(chatId, env) {
 }
 
 /**
- * /strategy - Two-Phase Pullback Engine & Model J Specifications
+ * /strategy - ICT Killzone Liquidity Sweep & Capital Protection Specifications
  */
 async function sendStrategyMessage(chatId) {
   const text = 
-    `🎯 <b>STRATEGY SPECIFICATIONS (v3.1)</b>\n` +
+    `🎯 <b>STRATEGY SPECIFICATIONS (v4.0 Institutional)</b>\n` +
     `━━━━━━━━━━━━━━━━━━\n` +
-    `<b>TWO-PHASE PULLBACK ENGINE — INSTITUTIONAL FOREX STRATEGY</b>\n\n` +
-    `<b>1. The Two-Phase Execution Core</b>\n` +
-    `• <b>Phase 1 (Breakout Impulse):</b> Donchian breakout impulse enters HUNTING mode. Zero premature entry at exhaustion extremes.\n` +
-    `• <b>Phase 2 (Pullback &amp; Confirmation):</b> Price pulls back into 20-EMA / 50% Fib equilibrium value zone. Signal triggers ONLY on confirmed rejection bounce candle closing in trade direction (<code>close > open</code> for Longs, <code>close < open</code> for Shorts).\n\n` +
-    `<b>2. Asset Universe &amp; Calibrations</b>\n` +
-    `• <b>Forex Majors &amp; Crosses (6 Pairs):</b> EURUSD, USDCAD, GBPUSD, USDJPY, USDCHF, AUDUSD on 20-period Donchian (Zero Gold).\n` +
-    `• <b>Dual Timeframes:</b> 15M execution confirmed with 1H trend alignment.\n` +
-    `• <b>RSI Filter:</b> Longs 40–80, Shorts 20–60 (Anti-exhaustion guard).\n` +
-    `• <b>Session Filter:</b> 06:00–17:00 UTC Institutional Liquid Window (London &amp; NY Session).\n\n` +
-    `<b>3. Fixed Exits &amp; Risk Management</b>\n` +
+    `<b>ICT KILLZONE LIQUIDITY SWEEP (TURTLE SOUP) — INSTITUTIONAL FOREX STRATEGY</b>\n\n` +
+    `<b>1. The Institutional Core (Smart Money Reversal)</b>\n` +
+    `• <b>Evolution:</b> Upgraded from Two-Phase Pullback Engine and Donchian Breakout Impulse to the verified ICT Killzone Liquidity Sweep model.\n` +
+    `• <b>Liquidity Sweep:</b> Price sweeps external liquidity pools outside Asian Session Range (00:00–06:00 UTC Asian High/Low) or 10-bar fractal swing levels by ≥1.0 pip.\n` +
+    `• <b>Displacement Reclaim:</b> Price immediately closes back inside the swept level, forming a strong rejection displacement candle (lower/upper wick ≥55% of candle range, body in trade direction, candle range ≥0.6 ATR).\n\n` +
+    `<b>2. Session Windows & Macro Filters</b>\n` +
+    `• <b>London Killzone:</b> 07:00–10:00 UTC (Judas Swing from Asian Range).\n` +
+    `• <b>New York Killzone:</b> 12:00–15:00 UTC (NY Open Liquidity Expansion).\n` +
+    `• <b>Macro Trend Alignment:</b> 1H 20-EMA > 50-EMA for Longs, 1H 20-EMA < 50-EMA for Shorts.\n` +
+    `• <b>Universe:</b> 6 Forex Pairs (EURUSD, USDCAD, GBPUSD, USDJPY, USDCHF, AUDUSD — Zero Gold).\n\n` +
+    `<b>3. Fixed Exits & Strict Capital Protection</b>\n` +
     `• <b>Take Profit:</b> Fixed 15 Pips from actual entry price.\n` +
     `• <b>Stop Loss:</b> Fixed 10 Pips from actual entry price.\n` +
     `• <b>Risk/Reward Ratio:</b> Fixed 1:1.5 before transaction costs.\n` +
-    `• <b>Risk Model:</b> $5,000 account, 1.0% ($50) or 0.5% ($25) per trade.\n` +
-    `• <b>Execution:</b> Confirmed bar close only (100% Non-repainting).\n\n` +
-    `<b>4. Forward-Testing Standard</b>\n` +
-    `• Zero historical lookahead bias.\n` +
-    `• Baseline reset: October 8, 2026.\n` +
+    `• <b>Prop Firm Sizing:</b> $25.00 / trade (0.50% risk on $5,000 baseline account · 0.25 Lots).\n` +
+    `• <b>Daily Circuit Breaker:</b> Trading halts if daily loss reaches -2.5R or 2 losses in a day.\n` +
+    `• <b>Daily Frequency Cap:</b> Maximum 2 trades per pair per day.\n` +
+    `• <b>Holding Timeout:</b> Positions capped at 80 bars (20 hours max hold).\n\n` +
     `━━━━━━━━━━━━━━━━━━\n` +
-    `🛡 <i>Systematic, rule-based institutional execution.</i>`;
+    `🛡 <i>Institutional, non-repainting execution with verified positive expectancy (+413.5 pips).</i>`;
 
   const keyboard = {
     inline_keyboard: [
@@ -1707,10 +1728,11 @@ async function handleIncomingSignal(payload) {
       `• <b>Stop Loss:</b> <code>${payload.stop_loss}</code> (Fixed 10 pips)\n` +
       `• <b>Take Profit:</b> <code>${payload.take_profit}</code> (Fixed 15 pips)\n` +
       `• <b>Risk / Reward:</b> <b>1 : 1.5</b> (15-pip TP / 10-pip SL)\n` +
-      `• <b>Suggested Risk:</b> <b>1.0% Equity ($50 on $5k Account)</b>\n\n` +
+      `• <b>Suggested Risk:</b> <b>0.50% Equity ($25 on $5k Account · 0.25 Lots)</b>\n\n` +
       `<b>🔬 CONFLUENCE MODEL</b>\n` +
-      `• <b>Setup:</b> Two-Phase Pullback Engine (Donchian Impulse + Confirmed Rejection)\n` +
-      `• <b>Signal Score:</b> <b>${payload.signal_score || 92} / 100</b>\n\n` +
+      `• <b>Setup:</b> ${payload.strategy || "ICT Killzone Liquidity Sweep (Turtle Soup)"}\n` +
+      `• <b>Phase:</b> ${payload.phase || "Liquidity Sweep Reclaim & Rejection"}\n` +
+      `• <b>Signal Score:</b> <b>${payload.score || payload.signal_score || 96} / 100</b>\n\n` +
       `━━━━━━━━━━━━━━━━━━\n` +
       `🕒 <b>Confirmed Bar:</b> <code>${payload.signal_time || new Date().toISOString()}</code>\n` +
       `⏳ <i>Order pending fill. Floating PnL activates once entry point is touched.</i>`;

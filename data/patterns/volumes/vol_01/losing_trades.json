@@ -1,1172 +1,170 @@
 [
   {
-    "tracking": {
-      "global_trade_no": 1,
-      "volume_no": 1,
-      "volume_trade_no": 1,
-      "volume_id": "VOL_01",
-      "volume_label": "Volume 1 (Trades 1\u2013100)"
-    },
-    "trade_id": "EURUSD_1H_2026-09-28T14:00:00Z_SHORT",
-    "pair": "EURUSD",
-    "symbol": "EURUSD",
-    "timeframe": "1H",
-    "direction": "SHORT",
-    "entry_price": 1.13662,
-    "exit_price": 1.13849,
-    "stop_loss": 1.13849,
-    "take_profit": 1.13335,
-    "opened_at": "2026-09-28T14:26:26Z",
-    "closed_at": "2026-09-28T16:54:22Z",
-    "duration_hours": 2.47,
-    "duration_bars": 2,
-    "outcome": "LOSS",
-    "realized_pips": -18.7,
-    "realized_r": -1.0,
-    "excursion_metrics": {
-      "mfe_pips": 4.7,
-      "mfe_r": 0.25,
-      "mae_pips": -18.7,
-      "mae_r": -1.0,
-      "tp_distance_pct_reached": 14.3
-    },
-    "market_regime": {
-      "trading_session": "London/New York Overlap",
-      "rsi_at_entry": 50.0,
-      "atr_14": 0.0015,
-      "volatility_regime": "NORMAL",
-      "ema_alignment": "BEARISH_EXPANDING",
-      "breakout_candle_wick_ratio": 0.28
-    },
-    "diagnostic": {
-      "primary_factor": "STRUCTURAL_INVALIDATION",
-      "summary": "Order block level was invalidated by institutional flow after 1 bar(s). Stop-loss executed disciplined capital preservation.",
-      "actionable_insight": "Trade adhered strictly to risk geometry. Invalidation was clean and preserved capital."
-    }
-  },
-  {
-    "tracking": {
-      "global_trade_no": 4,
-      "volume_no": 1,
-      "volume_trade_no": 4,
-      "volume_id": "VOL_01",
-      "volume_label": "Volume 1 (Trades 1\u2013100)"
-    },
-    "trade_id": "USDCAD_1H_2026-09-29T01:00:00Z_LONG",
-    "pair": "USDCAD",
-    "symbol": "USDCAD",
-    "timeframe": "1H",
-    "direction": "LONG",
-    "entry_price": 1.41813,
-    "exit_price": 1.4163,
-    "stop_loss": 1.4163,
-    "take_profit": 1.42133,
-    "opened_at": "2026-09-29T01:40:03Z",
-    "closed_at": "2026-09-30T15:41:15Z",
-    "duration_hours": 38.02,
-    "duration_bars": 38,
-    "outcome": "LOSS",
-    "realized_pips": -18.3,
-    "realized_r": -1.0,
-    "excursion_metrics": {
-      "mfe_pips": 21.8,
-      "mfe_r": 1.19,
-      "mae_pips": -30.3,
-      "mae_r": -1.66,
-      "tp_distance_pct_reached": 68.1
-    },
-    "market_regime": {
-      "trading_session": "Asian/Tokyo Session",
-      "rsi_at_entry": 50.0,
-      "atr_14": 0.0015,
-      "volatility_regime": "NORMAL",
-      "ema_alignment": "BULLISH_EXPANDING",
-      "breakout_candle_wick_ratio": 0.28
-    },
-    "diagnostic": {
-      "primary_factor": "PREMATURE_REVERSAL",
-      "summary": "Position reached +21.8 pips (+1.19R / 68.1% of TP) before aggressive counter-trend reversal hit stop-loss.",
-      "actionable_insight": "Incorporate a Breakeven Protection rule once position reaches +0.8R or 50% TP distance."
-    }
-  },
-  {
-    "tracking": {
-      "global_trade_no": 5,
-      "volume_no": 1,
-      "volume_trade_no": 5,
-      "volume_id": "VOL_01",
-      "volume_label": "Volume 1 (Trades 1\u2013100)"
-    },
-    "trade_id": "USDJPY_1H_2026-09-30T02:00:00Z_SHORT",
-    "pair": "USDJPY",
-    "symbol": "USDJPY",
-    "timeframe": "1H",
-    "direction": "SHORT",
-    "entry_price": 156.746,
-    "exit_price": 157.396,
-    "stop_loss": 157.396,
-    "take_profit": 155.609,
-    "opened_at": "2026-09-30T02:00:00Z",
-    "closed_at": "2026-09-30T23:56:42Z",
-    "duration_hours": 21.95,
-    "duration_bars": 22,
-    "outcome": "LOSS",
-    "realized_pips": -65.0,
-    "realized_r": -1.0,
-    "excursion_metrics": {
-      "mfe_pips": 37.6,
-      "mfe_r": 0.58,
-      "mae_pips": -83.9,
-      "mae_r": -1.29,
-      "tp_distance_pct_reached": 33.1
-    },
-    "market_regime": {
-      "trading_session": "Asian/Tokyo Session",
-      "rsi_at_entry": 50.0,
-      "atr_14": 0.0015,
-      "volatility_regime": "NORMAL",
-      "ema_alignment": "BEARISH_EXPANDING",
-      "breakout_candle_wick_ratio": 0.28
-    },
-    "diagnostic": {
-      "primary_factor": "LOW_LIQUIDITY_CHOP",
-      "summary": "Signal triggered during Asian/Tokyo Session. Lower institutional volume led to whipsaw without sustainable directional continuation.",
-      "actionable_insight": "Restrict or weight signal scoring lower during off-peak liquidity windows."
-    }
-  },
-  {
-    "tracking": {
-      "global_trade_no": 7,
-      "volume_no": 1,
-      "volume_trade_no": 7,
-      "volume_id": "VOL_01",
-      "volume_label": "Volume 1 (Trades 1\u2013100)"
-    },
-    "trade_id": "XAUUSD_15M_2026-09-30T15:30:00Z_SHORT",
-    "pair": "XAUUSD",
-    "symbol": "XAUUSD",
-    "timeframe": "15M",
-    "direction": "SHORT",
-    "entry_price": 4187.9,
-    "exit_price": 4199.10009765625,
-    "stop_loss": 4220.28,
-    "take_profit": 4131.23,
-    "opened_at": "2026-09-30T15:30:00Z",
-    "closed_at": "2026-10-01T05:54:18Z",
-    "duration_hours": 14.4,
-    "duration_bars": 58,
-    "outcome": "LOSS",
-    "realized_pips": -112.0,
-    "realized_r": -0.35,
-    "excursion_metrics": {
-      "mfe_pips": 185.0,
-      "mfe_r": 0.57,
-      "mae_pips": -349.0,
-      "mae_r": -1.08,
-      "tp_distance_pct_reached": 32.6
-    },
-    "market_regime": {
-      "trading_session": "London/New York Overlap",
-      "rsi_at_entry": 50.0,
-      "atr_14": 0.0015,
-      "volatility_regime": "NORMAL",
-      "ema_alignment": "BEARISH_EXPANDING",
-      "breakout_candle_wick_ratio": 0.28
-    },
-    "diagnostic": {
-      "primary_factor": "STRUCTURAL_INVALIDATION",
-      "summary": "Order block level was invalidated by institutional flow after 1 bar(s). Stop-loss executed disciplined capital preservation.",
-      "actionable_insight": "Trade adhered strictly to risk geometry. Invalidation was clean and preserved capital."
-    }
-  },
-  {
-    "tracking": {
-      "global_trade_no": 8,
-      "volume_no": 1,
-      "volume_trade_no": 8,
-      "volume_id": "VOL_01",
-      "volume_label": "Volume 1 (Trades 1\u2013100)"
-    },
-    "trade_id": "XAUUSD_15M_2026-10-01T17:30:00Z_LONG",
-    "pair": "XAUUSD",
-    "symbol": "XAUUSD",
-    "timeframe": "15M",
-    "direction": "LONG",
-    "entry_price": 4181.5,
-    "exit_price": 4160.33,
-    "stop_loss": 4160.33,
-    "take_profit": 4226.9,
-    "opened_at": "2026-10-01T17:30:00Z",
-    "closed_at": "2026-10-02T00:16:18Z",
-    "duration_hours": 6.77,
-    "duration_bars": 27,
-    "outcome": "LOSS",
-    "realized_pips": -211.7,
-    "realized_r": -1.0,
-    "excursion_metrics": {
-      "mfe_pips": 14.0,
-      "mfe_r": 0.07,
-      "mae_pips": -223.0,
-      "mae_r": -1.05,
-      "tp_distance_pct_reached": 3.1
-    },
-    "market_regime": {
-      "trading_session": "New York Afternoon",
-      "rsi_at_entry": 50.0,
-      "atr_14": 0.0015,
-      "volatility_regime": "NORMAL",
-      "ema_alignment": "BULLISH_EXPANDING",
-      "breakout_candle_wick_ratio": 0.28
-    },
-    "diagnostic": {
-      "primary_factor": "STRUCTURAL_INVALIDATION",
-      "summary": "Order block level was invalidated by institutional flow after 1 bar(s). Stop-loss executed disciplined capital preservation.",
-      "actionable_insight": "Trade adhered strictly to risk geometry. Invalidation was clean and preserved capital."
-    }
-  },
-  {
-    "tracking": {
-      "global_trade_no": 9,
-      "volume_no": 1,
-      "volume_trade_no": 9,
-      "volume_id": "VOL_01",
-      "volume_label": "Volume 1 (Trades 1\u2013100)"
-    },
-    "trade_id": "XAUUSD_15M_2026-10-02T06:15:00Z_LONG",
-    "pair": "XAUUSD",
-    "symbol": "XAUUSD",
-    "timeframe": "15M",
-    "direction": "LONG",
-    "entry_price": 4192.4,
-    "exit_price": 4179.48,
-    "stop_loss": 4179.48,
-    "take_profit": 4215.01,
-    "opened_at": "2026-10-02T06:15:00Z",
-    "closed_at": "2026-10-02T06:46:26Z",
-    "duration_hours": 0.52,
-    "duration_bars": 2,
-    "outcome": "LOSS",
-    "realized_pips": -129.2,
-    "realized_r": -1.0,
-    "excursion_metrics": {
-      "mfe_pips": 0.0,
-      "mfe_r": 0.0,
-      "mae_pips": -134.0,
-      "mae_r": -1.04,
-      "tp_distance_pct_reached": 0.0
-    },
-    "market_regime": {
-      "trading_session": "Asian/Tokyo Session",
-      "rsi_at_entry": 50.0,
-      "atr_14": 0.0015,
-      "volatility_regime": "NORMAL",
-      "ema_alignment": "BULLISH_EXPANDING",
-      "breakout_candle_wick_ratio": 0.28
-    },
-    "diagnostic": {
-      "primary_factor": "LOW_LIQUIDITY_CHOP",
-      "summary": "Signal triggered during Asian/Tokyo Session. Lower institutional volume led to whipsaw without sustainable directional continuation.",
-      "actionable_insight": "Restrict or weight signal scoring lower during off-peak liquidity windows."
-    }
-  },
-  {
-    "tracking": {
-      "global_trade_no": 10,
-      "volume_no": 1,
-      "volume_trade_no": 10,
-      "volume_id": "VOL_01",
-      "volume_label": "Volume 1 (Trades 1\u2013100)"
-    },
-    "trade_id": "USDCAD_15M_2026-10-01T19:45:00Z_SHORT",
-    "pair": "USDCAD",
-    "symbol": "USDCAD",
-    "timeframe": "15M",
-    "direction": "SHORT",
-    "entry_price": 1.42258,
-    "exit_price": 1.4226100444793701,
-    "stop_loss": 1.42438,
-    "take_profit": 1.4191,
-    "opened_at": "2026-10-01T19:45:00Z",
-    "closed_at": "2026-10-02T07:46:30Z",
-    "duration_hours": 12.03,
-    "duration_bars": 48,
-    "outcome": "LOSS",
-    "realized_pips": -0.3,
-    "realized_r": -0.02,
-    "excursion_metrics": {
-      "mfe_pips": 20.8,
-      "mfe_r": 1.16,
-      "mae_pips": -9.7,
-      "mae_r": -0.54,
-      "tp_distance_pct_reached": 59.8
-    },
-    "market_regime": {
-      "trading_session": "New York Afternoon",
-      "rsi_at_entry": 50.0,
-      "atr_14": 0.0015,
-      "volatility_regime": "NORMAL",
-      "ema_alignment": "BEARISH_EXPANDING",
-      "breakout_candle_wick_ratio": 0.28
-    },
-    "diagnostic": {
-      "primary_factor": "PREMATURE_REVERSAL",
-      "summary": "Position reached +20.8 pips (+1.16R / 59.8% of TP) before aggressive counter-trend reversal hit stop-loss.",
-      "actionable_insight": "Incorporate a Breakeven Protection rule once position reaches +0.8R or 50% TP distance."
-    }
-  },
-  {
-    "tracking": {
-      "global_trade_no": 11,
-      "volume_no": 1,
-      "volume_trade_no": 11,
-      "volume_id": "VOL_01",
-      "volume_label": "Volume 1 (Trades 1\u2013100)"
-    },
-    "trade_id": "USDCAD_15M_2026-10-02T11:15:00Z_LONG",
-    "pair": "USDCAD",
-    "symbol": "USDCAD",
-    "timeframe": "15M",
-    "direction": "LONG",
-    "entry_price": 1.4239,
-    "exit_price": 1.4221,
-    "stop_loss": 1.4221,
-    "take_profit": 1.42705,
-    "opened_at": "2026-10-02T11:15:00Z",
-    "closed_at": "2026-10-02T12:31:38Z",
-    "duration_hours": 1.28,
-    "duration_bars": 5,
-    "outcome": "LOSS",
-    "realized_pips": -18.0,
-    "realized_r": -1.0,
-    "excursion_metrics": {
-      "mfe_pips": 7.0,
-      "mfe_r": 0.39,
-      "mae_pips": -38.9,
-      "mae_r": -2.16,
-      "tp_distance_pct_reached": 22.2
-    },
-    "market_regime": {
-      "trading_session": "London Session",
-      "rsi_at_entry": 50.0,
-      "atr_14": 0.0015,
-      "volatility_regime": "NORMAL",
-      "ema_alignment": "BULLISH_EXPANDING",
-      "breakout_candle_wick_ratio": 0.28
-    },
-    "diagnostic": {
-      "primary_factor": "STRUCTURAL_INVALIDATION",
-      "summary": "Order block level was invalidated by institutional flow after 1 bar(s). Stop-loss executed disciplined capital preservation.",
-      "actionable_insight": "Trade adhered strictly to risk geometry. Invalidation was clean and preserved capital."
-    }
-  },
-  {
-    "tracking": {
-      "global_trade_no": 12,
-      "volume_no": 1,
-      "volume_trade_no": 12,
-      "volume_id": "VOL_01",
-      "volume_label": "Volume 1 (Trades 1\u2013100)"
-    },
-    "trade_id": "XAUUSD_15M_2026-10-02T12:45:00Z_LONG",
-    "pair": "XAUUSD",
-    "symbol": "XAUUSD",
-    "timeframe": "15M",
-    "direction": "LONG",
-    "entry_price": 4210.2,
-    "exit_price": 4175.2,
-    "stop_loss": 4175.2,
-    "take_profit": 4271.45,
-    "opened_at": "2026-10-02T12:45:00Z",
-    "closed_at": "2026-10-02T14:31:39Z",
-    "duration_hours": 1.78,
-    "duration_bars": 7,
-    "outcome": "LOSS",
-    "realized_pips": -350.0,
-    "realized_r": -1.0,
-    "excursion_metrics": {
-      "mfe_pips": 20.0,
-      "mfe_r": 0.06,
-      "mae_pips": -462.0,
-      "mae_r": -1.32,
-      "tp_distance_pct_reached": 3.3
-    },
-    "market_regime": {
-      "trading_session": "London/New York Overlap",
-      "rsi_at_entry": 50.0,
-      "atr_14": 0.0015,
-      "volatility_regime": "NORMAL",
-      "ema_alignment": "BULLISH_EXPANDING",
-      "breakout_candle_wick_ratio": 0.28
-    },
-    "diagnostic": {
-      "primary_factor": "STRUCTURAL_INVALIDATION",
-      "summary": "Order block level was invalidated by institutional flow after 1 bar(s). Stop-loss executed disciplined capital preservation.",
-      "actionable_insight": "Trade adhered strictly to risk geometry. Invalidation was clean and preserved capital."
-    }
-  },
-  {
-    "tracking": {
-      "global_trade_no": 13,
-      "volume_no": 1,
-      "volume_trade_no": 13,
-      "volume_id": "VOL_01",
-      "volume_label": "Volume 1 (Trades 1\u2013100)"
-    },
-    "trade_id": "EURUSD_1H_2026-10-01T15:00:00Z_SHORT",
-    "pair": "EURUSD",
-    "symbol": "EURUSD",
-    "timeframe": "1H",
-    "direction": "SHORT",
-    "entry_price": 1.12689,
-    "exit_price": 1.1281588077545166,
-    "stop_loss": 1.13076,
-    "take_profit": 1.12011,
-    "opened_at": "2026-10-01T15:00:00Z",
-    "closed_at": "2026-10-02T15:01:35Z",
-    "duration_hours": 24.03,
-    "duration_bars": 24,
-    "outcome": "LOSS",
-    "realized_pips": -12.7,
-    "realized_r": -0.33,
-    "excursion_metrics": {
-      "mfe_pips": 49.3,
-      "mfe_r": 1.27,
-      "mae_pips": -19.1,
-      "mae_r": -0.49,
-      "tp_distance_pct_reached": 72.8
-    },
-    "market_regime": {
-      "trading_session": "London/New York Overlap",
-      "rsi_at_entry": 50.0,
-      "atr_14": 0.0015,
-      "volatility_regime": "NORMAL",
-      "ema_alignment": "BEARISH_EXPANDING",
-      "breakout_candle_wick_ratio": 0.28
-    },
-    "diagnostic": {
-      "primary_factor": "PREMATURE_REVERSAL",
-      "summary": "Position reached +49.3 pips (+1.27R / 72.8% of TP) before aggressive counter-trend reversal hit stop-loss.",
-      "actionable_insight": "Incorporate a Breakeven Protection rule once position reaches +0.8R or 50% TP distance."
-    }
-  },
-  {
-    "tracking": {
-      "global_trade_no": 16,
-      "volume_no": 1,
-      "volume_trade_no": 16,
-      "volume_id": "VOL_01",
-      "volume_label": "Volume 1 (Trades 1\u2013100)"
-    },
-    "trade_id": "EURUSD_15M_2026-10-05T16:30:00Z_SHORT",
-    "pair": "EURUSD",
-    "symbol": "EURUSD",
-    "timeframe": "15M",
-    "direction": "SHORT",
-    "entry_price": 1.1207,
-    "exit_price": 1.1223,
-    "stop_loss": 1.1223,
-    "take_profit": 1.11744,
-    "opened_at": "2026-10-05T16:30:00Z",
-    "closed_at": "2026-10-05T20:47:15Z",
-    "duration_hours": 4.29,
-    "duration_bars": 17,
-    "outcome": "LOSS",
-    "realized_pips": -16.0,
-    "realized_r": -1.0,
-    "excursion_metrics": {
-      "mfe_pips": 6.3,
-      "mfe_r": 0.39,
-      "mae_pips": -17.6,
-      "mae_r": -1.1,
-      "tp_distance_pct_reached": 19.3
-    },
-    "market_regime": {
-      "trading_session": "New York Afternoon",
-      "rsi_at_entry": 50.0,
-      "atr_14": 0.0015,
-      "volatility_regime": "NORMAL",
-      "ema_alignment": "BEARISH_EXPANDING",
-      "breakout_candle_wick_ratio": 0.28
-    },
-    "diagnostic": {
-      "primary_factor": "STRUCTURAL_INVALIDATION",
-      "summary": "Order block level was invalidated by institutional flow after 1 bar(s). Stop-loss executed disciplined capital preservation.",
-      "actionable_insight": "Trade adhered strictly to risk geometry. Invalidation was clean and preserved capital."
-    }
-  },
-  {
-    "tracking": {
-      "global_trade_no": 17,
-      "volume_no": 1,
-      "volume_trade_no": 17,
-      "volume_id": "VOL_01",
-      "volume_label": "Volume 1 (Trades 1\u2013100)"
-    },
-    "trade_id": "GBPUSD_15M_2026-10-05T16:15:00Z_SHORT",
-    "pair": "GBPUSD",
-    "symbol": "GBPUSD",
-    "timeframe": "15M",
-    "direction": "SHORT",
-    "entry_price": 1.32083,
-    "exit_price": 1.32311,
-    "stop_loss": 1.32311,
-    "take_profit": 1.31684,
-    "opened_at": "2026-10-05T16:15:00Z",
-    "closed_at": "2026-10-06T01:46:16Z",
-    "duration_hours": 9.52,
-    "duration_bars": 38,
-    "outcome": "LOSS",
-    "realized_pips": -22.8,
-    "realized_r": -1.0,
-    "excursion_metrics": {
-      "mfe_pips": 2.4,
-      "mfe_r": 0.11,
-      "mae_pips": -23.6,
-      "mae_r": -1.03,
-      "tp_distance_pct_reached": 6.1
-    },
-    "market_regime": {
-      "trading_session": "New York Afternoon",
-      "rsi_at_entry": 50.0,
-      "atr_14": 0.0015,
-      "volatility_regime": "NORMAL",
-      "ema_alignment": "BEARISH_EXPANDING",
-      "breakout_candle_wick_ratio": 0.28
-    },
-    "diagnostic": {
-      "primary_factor": "STRUCTURAL_INVALIDATION",
-      "summary": "Order block level was invalidated by institutional flow after 1 bar(s). Stop-loss executed disciplined capital preservation.",
-      "actionable_insight": "Trade adhered strictly to risk geometry. Invalidation was clean and preserved capital."
-    }
-  },
-  {
-    "tracking": {
-      "global_trade_no": 19,
-      "volume_no": 1,
-      "volume_trade_no": 19,
-      "volume_id": "VOL_01",
-      "volume_label": "Volume 1 (Trades 1\u2013100)"
-    },
-    "trade_id": "USDCAD_1H_2026-10-06T09:00:00Z_LONG",
-    "pair": "USDCAD",
-    "symbol": "USDCAD",
-    "timeframe": "1H",
-    "direction": "LONG",
-    "entry_price": 1.42696,
-    "exit_price": 1.42498,
-    "stop_loss": 1.42498,
-    "take_profit": 1.43043,
-    "opened_at": "2026-10-06T09:00:00Z",
-    "closed_at": "2026-10-06T11:45:47Z",
-    "duration_hours": 2.76,
-    "duration_bars": 3,
-    "outcome": "LOSS",
-    "realized_pips": -19.8,
-    "realized_r": -1.0,
-    "excursion_metrics": {
-      "mfe_pips": 8.1,
-      "mfe_r": 0.41,
-      "mae_pips": -29.6,
-      "mae_r": -1.49,
-      "tp_distance_pct_reached": 23.3
-    },
-    "market_regime": {
-      "trading_session": "London Session",
-      "rsi_at_entry": 50.0,
-      "atr_14": 0.0015,
-      "volatility_regime": "NORMAL",
-      "ema_alignment": "BULLISH_EXPANDING",
-      "breakout_candle_wick_ratio": 0.28
-    },
-    "diagnostic": {
-      "primary_factor": "STRUCTURAL_INVALIDATION",
-      "summary": "Order block level was invalidated by institutional flow after 1 bar(s). Stop-loss executed disciplined capital preservation.",
-      "actionable_insight": "Trade adhered strictly to risk geometry. Invalidation was clean and preserved capital."
-    }
-  },
-  {
-    "tracking": {
-      "global_trade_no": 20,
-      "volume_no": 1,
-      "volume_trade_no": 20,
-      "volume_id": "VOL_01",
-      "volume_label": "Volume 1 (Trades 1\u2013100)"
-    },
-    "trade_id": "XAUUSD_15M_2026-10-06T20:00:00Z_LONG",
-    "pair": "XAUUSD",
-    "symbol": "XAUUSD",
-    "timeframe": "15M",
-    "direction": "LONG",
-    "entry_price": 4170.8,
-    "exit_price": 4155.8,
-    "stop_loss": 4155.8,
-    "take_profit": 4200.8,
-    "opened_at": "2026-10-06T20:00:00Z",
-    "closed_at": "2026-10-07T00:34:01Z",
-    "duration_hours": 4.57,
-    "duration_bars": 18,
-    "outcome": "LOSS",
-    "realized_pips": -150.0,
-    "realized_r": -1.0,
-    "excursion_metrics": {
-      "mfe_pips": 0.0,
-      "mfe_r": 0.0,
-      "mae_pips": -150.7,
-      "mae_r": -1.0,
-      "tp_distance_pct_reached": 0.0
-    },
-    "market_regime": {
-      "trading_session": "New York Afternoon",
-      "rsi_at_entry": 50.0,
-      "atr_14": 0.0015,
-      "volatility_regime": "NORMAL",
-      "ema_alignment": "BULLISH_EXPANDING",
-      "breakout_candle_wick_ratio": 0.28
-    },
-    "diagnostic": {
-      "primary_factor": "STRUCTURAL_INVALIDATION",
-      "summary": "Order block level was invalidated by institutional flow after 1 bar(s). Stop-loss executed disciplined capital preservation.",
-      "actionable_insight": "Trade adhered strictly to risk geometry. Invalidation was clean and preserved capital."
-    }
-  },
-  {
-    "tracking": {
-      "global_trade_no": 21,
-      "volume_no": 1,
-      "volume_trade_no": 21,
-      "volume_id": "VOL_01",
-      "volume_label": "Volume 1 (Trades 1\u2013100)"
-    },
     "trade_id": "GBPUSD_15M_2026-10-06T18:15:00Z_LONG",
     "pair": "GBPUSD",
     "symbol": "GBPUSD",
-    "timeframe": "15M",
+    "ticker": "GBPUSD=X",
     "direction": "LONG",
-    "entry_price": 1.32767,
-    "exit_price": 1.3258,
+    "timeframe": "15M",
+    "entry": 1.32767,
     "stop_loss": 1.3258,
     "take_profit": 1.3314,
+    "sl_pips": 18.7,
+    "tp_pips": 37.3,
+    "rr": 2.0,
+    "pip": 0.0001,
+    "digits": 5,
     "opened_at": "2026-10-06T18:15:00Z",
-    "closed_at": "2026-10-07T02:01:57Z",
-    "duration_hours": 7.78,
-    "duration_bars": 31,
+    "status": "CLOSED",
+    "filled_at": "2026-10-06T18:15:00Z",
+    "exit_price": 1.3258,
     "outcome": "LOSS",
     "realized_pips": -18.7,
     "realized_r": -1.0,
-    "excursion_metrics": {
-      "mfe_pips": 3.7,
-      "mfe_r": 0.2,
-      "mae_pips": -20.3,
-      "mae_r": -1.08,
-      "tp_distance_pct_reached": 9.9
-    },
-    "market_regime": {
-      "trading_session": "New York Afternoon",
-      "rsi_at_entry": 50.0,
-      "atr_14": 0.0015,
-      "volatility_regime": "NORMAL",
-      "ema_alignment": "BULLISH_EXPANDING",
-      "breakout_candle_wick_ratio": 0.28
-    },
-    "diagnostic": {
-      "primary_factor": "STRUCTURAL_INVALIDATION",
-      "summary": "Order block level was invalidated by institutional flow after 1 bar(s). Stop-loss executed disciplined capital preservation.",
-      "actionable_insight": "Trade adhered strictly to risk geometry. Invalidation was clean and preserved capital."
-    }
+    "closed_at": "2026-10-07T02:01:57Z"
   },
   {
-    "tracking": {
-      "global_trade_no": 22,
-      "volume_no": 1,
-      "volume_trade_no": 22,
-      "volume_id": "VOL_01",
-      "volume_label": "Volume 1 (Trades 1\u2013100)"
-    },
-    "trade_id": "XAUUSD_15M_2026-10-07T06:00:00Z_SHORT",
-    "pair": "XAUUSD",
-    "symbol": "XAUUSD",
-    "timeframe": "15M",
-    "direction": "SHORT",
-    "entry_price": 4128.85,
-    "exit_price": 4128.75,
-    "stop_loss": 4128.75,
-    "take_profit": 4084.78,
-    "opened_at": "2026-10-07T06:00:00Z",
-    "closed_at": "2026-10-07T10:46:45Z",
-    "duration_hours": 4.78,
-    "duration_bars": 19,
-    "outcome": "BREAK_EVEN",
-    "realized_pips": 1.0,
-    "realized_r": 0.0,
-    "excursion_metrics": {
-      "mfe_pips": 196.2,
-      "mfe_r": 196.2,
-      "mae_pips": -108.1,
-      "mae_r": -108.1,
-      "tp_distance_pct_reached": 44.5
-    },
-    "market_regime": {
-      "trading_session": "Asian/Tokyo Session",
-      "rsi_at_entry": 50.0,
-      "atr_14": 0.0015,
-      "volatility_regime": "NORMAL",
-      "ema_alignment": "BEARISH_EXPANDING",
-      "breakout_candle_wick_ratio": 0.28
-    },
-    "diagnostic": {
-      "primary_factor": "PREMATURE_REVERSAL",
-      "summary": "Position reached +196.2 pips (+196.2R / 44.5% of TP) before aggressive counter-trend reversal hit stop-loss.",
-      "actionable_insight": "Incorporate a Breakeven Protection rule once position reaches +0.8R or 50% TP distance."
-    }
-  },
-  {
-    "tracking": {
-      "global_trade_no": 23,
-      "volume_no": 1,
-      "volume_trade_no": 23,
-      "volume_id": "VOL_01",
-      "volume_label": "Volume 1 (Trades 1\u2013100)"
-    },
-    "trade_id": "EURUSD_15M_2026-10-07T09:00:00Z_SHORT",
-    "pair": "EURUSD",
-    "symbol": "EURUSD",
-    "timeframe": "15M",
-    "direction": "SHORT",
-    "entry_price": 1.1207,
-    "exit_price": 1.1206,
-    "stop_loss": 1.1206,
-    "take_profit": 1.11428,
-    "opened_at": "2026-10-07T09:00:00Z",
-    "closed_at": "2026-10-07T11:48:02Z",
-    "duration_hours": 2.8,
-    "duration_bars": 11,
-    "outcome": "BREAK_EVEN",
-    "realized_pips": 1.0,
-    "realized_r": 0.03,
-    "excursion_metrics": {
-      "mfe_pips": 27.6,
-      "mfe_r": 27.57,
-      "mae_pips": 0.0,
-      "mae_r": 0.0,
-      "tp_distance_pct_reached": 42.9
-    },
-    "market_regime": {
-      "trading_session": "London Session",
-      "rsi_at_entry": 50.0,
-      "atr_14": 0.0015,
-      "volatility_regime": "NORMAL",
-      "ema_alignment": "BEARISH_EXPANDING",
-      "breakout_candle_wick_ratio": 0.28
-    },
-    "diagnostic": {
-      "primary_factor": "PREMATURE_REVERSAL",
-      "summary": "Position reached +27.6 pips (+27.57R / 42.9% of TP) before aggressive counter-trend reversal hit stop-loss.",
-      "actionable_insight": "Incorporate a Breakeven Protection rule once position reaches +0.8R or 50% TP distance."
-    }
-  },
-  {
-    "tracking": {
-      "global_trade_no": 25,
-      "volume_no": 1,
-      "volume_trade_no": 25,
-      "volume_id": "VOL_01",
-      "volume_label": "Volume 1 (Trades 1\u2013100)"
-    },
     "trade_id": "EURUSD_15M_2026-10-07T14:15:00Z_SHORT",
     "pair": "EURUSD",
     "symbol": "EURUSD",
-    "timeframe": "15M",
+    "ticker": "EURUSD=X",
     "direction": "SHORT",
-    "entry_price": 1.11819,
-    "exit_price": 1.11999,
+    "timeframe": "15M",
+    "entry": 1.11819,
     "stop_loss": 1.11999,
     "take_profit": 1.11459,
+    "sl_pips": 18.0,
+    "tp_pips": 36.0,
+    "rr": 2.0,
+    "pip": 0.0001,
+    "digits": 5,
     "opened_at": "2026-10-07T14:15:00Z",
-    "closed_at": "2026-10-07T15:31:49Z",
-    "duration_hours": 1.28,
-    "duration_bars": 5,
+    "status": "CLOSED",
+    "filled_at": "2026-10-07T14:15:00Z",
+    "exit_price": 1.11999,
     "outcome": "LOSS",
     "realized_pips": -18.0,
     "realized_r": -1.0,
-    "excursion_metrics": {
-      "mfe_pips": 1.2,
-      "mfe_r": 0.07,
-      "mae_pips": -23.8,
-      "mae_r": -1.32,
-      "tp_distance_pct_reached": 3.4
-    },
-    "market_regime": {
-      "trading_session": "London/New York Overlap",
-      "rsi_at_entry": 50.0,
-      "atr_14": 0.0015,
-      "volatility_regime": "NORMAL",
-      "ema_alignment": "BEARISH_EXPANDING",
-      "breakout_candle_wick_ratio": 0.28
-    },
-    "diagnostic": {
-      "primary_factor": "STRUCTURAL_INVALIDATION",
-      "summary": "Order block level was invalidated by institutional flow after 1 bar(s). Stop-loss executed disciplined capital preservation.",
-      "actionable_insight": "Trade adhered strictly to risk geometry. Invalidation was clean and preserved capital."
-    }
+    "closed_at": "2026-10-07T15:31:49Z"
   },
   {
-    "tracking": {
-      "global_trade_no": 26,
-      "volume_no": 1,
-      "volume_trade_no": 26,
-      "volume_id": "VOL_01",
-      "volume_label": "Volume 1 (Trades 1\u2013100)"
-    },
     "trade_id": "GBPUSD_15M_2026-10-07T14:15:00Z_SHORT",
     "pair": "GBPUSD",
     "symbol": "GBPUSD",
-    "timeframe": "15M",
+    "ticker": "GBPUSD=X",
     "direction": "SHORT",
-    "entry_price": 1.32052,
-    "exit_price": 1.32232,
+    "timeframe": "15M",
+    "entry": 1.32052,
     "stop_loss": 1.32232,
     "take_profit": 1.31692,
+    "sl_pips": 18.0,
+    "tp_pips": 36.0,
+    "rr": 2.0,
+    "pip": 0.0001,
+    "digits": 5,
     "opened_at": "2026-10-07T14:15:00Z",
-    "closed_at": "2026-10-07T15:31:50Z",
-    "duration_hours": 1.28,
-    "duration_bars": 5,
+    "status": "CLOSED",
+    "filled_at": "2026-10-07T14:15:00Z",
+    "exit_price": 1.32232,
     "outcome": "LOSS",
     "realized_pips": -18.0,
     "realized_r": -1.0,
-    "excursion_metrics": {
-      "mfe_pips": 1.4,
-      "mfe_r": 0.08,
-      "mae_pips": -19.2,
-      "mae_r": -1.06,
-      "tp_distance_pct_reached": 4.0
-    },
-    "market_regime": {
-      "trading_session": "London/New York Overlap",
-      "rsi_at_entry": 50.0,
-      "atr_14": 0.0015,
-      "volatility_regime": "NORMAL",
-      "ema_alignment": "BEARISH_EXPANDING",
-      "breakout_candle_wick_ratio": 0.28
-    },
-    "diagnostic": {
-      "primary_factor": "STRUCTURAL_INVALIDATION",
-      "summary": "Order block level was invalidated by institutional flow after 1 bar(s). Stop-loss executed disciplined capital preservation.",
-      "actionable_insight": "Trade adhered strictly to risk geometry. Invalidation was clean and preserved capital."
-    }
+    "closed_at": "2026-10-07T15:31:50Z"
   },
   {
-    "tracking": {
-      "global_trade_no": 27,
-      "volume_no": 1,
-      "volume_trade_no": 27,
-      "volume_id": "VOL_01",
-      "volume_label": "Volume 1 (Trades 1\u2013100)"
-    },
-    "trade_id": "XAUUSD_1H_2026-10-07T13:00:00Z_SHORT",
-    "pair": "XAUUSD",
-    "symbol": "XAUUSD",
-    "timeframe": "1H",
-    "direction": "SHORT",
-    "entry_price": 4092.6,
-    "exit_price": 4122.6,
-    "stop_loss": 4122.6,
-    "take_profit": 4032.6,
-    "opened_at": "2026-10-07T13:00:00Z",
-    "closed_at": "2026-10-07T17:16:42Z",
-    "duration_hours": 4.28,
-    "duration_bars": 4,
-    "outcome": "LOSS",
-    "realized_pips": -300.0,
-    "realized_r": -1.0,
-    "excursion_metrics": {
-      "mfe_pips": 101.8,
-      "mfe_r": 0.34,
-      "mae_pips": -344.1,
-      "mae_r": -1.15,
-      "tp_distance_pct_reached": 17.0
-    },
-    "market_regime": {
-      "trading_session": "London/New York Overlap",
-      "rsi_at_entry": 50.0,
-      "atr_14": 0.0015,
-      "volatility_regime": "NORMAL",
-      "ema_alignment": "BEARISH_EXPANDING",
-      "breakout_candle_wick_ratio": 0.28
-    },
-    "diagnostic": {
-      "primary_factor": "STRUCTURAL_INVALIDATION",
-      "summary": "Order block level was invalidated by institutional flow after 1 bar(s). Stop-loss executed disciplined capital preservation.",
-      "actionable_insight": "Trade adhered strictly to risk geometry. Invalidation was clean and preserved capital."
-    }
-  },
-  {
-    "tracking": {
-      "global_trade_no": 29,
-      "volume_no": 1,
-      "volume_trade_no": 29,
-      "volume_id": "VOL_01",
-      "volume_label": "Volume 1 (Trades 1\u2013100)"
-    },
-    "trade_id": "AUDUSD_15M_2026-10-08T06:30:00Z_SHORT",
-    "pair": "AUDUSD",
-    "symbol": "AUDUSD",
-    "timeframe": "15M",
-    "direction": "SHORT",
-    "entry_price": 0.69546,
-    "exit_price": 0.69536,
-    "stop_loss": 0.69536,
-    "take_profit": 0.69186,
-    "opened_at": "2026-10-08T06:30:00Z",
-    "closed_at": "2026-10-08T11:35:15Z",
-    "duration_hours": 5.09,
-    "duration_bars": 20,
-    "outcome": "BREAK_EVEN",
-    "realized_pips": 1.0,
-    "realized_r": 0.06,
-    "excursion_metrics": {
-      "mfe_pips": 16.4,
-      "mfe_r": 16.42,
-      "mae_pips": -9.2,
-      "mae_r": -9.19,
-      "tp_distance_pct_reached": 45.6
-    },
-    "market_regime": {
-      "trading_session": "Asian/Tokyo Session",
-      "rsi_at_entry": 50.0,
-      "atr_14": 0.0015,
-      "volatility_regime": "NORMAL",
-      "ema_alignment": "BEARISH_EXPANDING",
-      "breakout_candle_wick_ratio": 0.28
-    },
-    "diagnostic": {
-      "primary_factor": "PREMATURE_REVERSAL",
-      "summary": "Position reached +16.4 pips (+16.42R / 45.6% of TP) before aggressive counter-trend reversal hit stop-loss.",
-      "actionable_insight": "Incorporate a Breakeven Protection rule once position reaches +0.8R or 50% TP distance."
-    }
-  },
-  {
-    "tracking": {
-      "global_trade_no": 30,
-      "volume_no": 1,
-      "volume_trade_no": 30,
-      "volume_id": "VOL_01",
-      "volume_label": "Volume 1 (Trades 1\u2013100)"
-    },
     "trade_id": "EURUSD_15M_2026-10-08T11:15:00Z_SHORT",
     "pair": "EURUSD",
     "symbol": "EURUSD",
-    "timeframe": "15M",
+    "ticker": "EURUSD=X",
     "direction": "SHORT",
-    "entry_price": 1.11832,
-    "exit_price": 1.12012,
+    "timeframe": "15M",
+    "entry": 1.11832,
     "stop_loss": 1.12012,
     "take_profit": 1.11472,
+    "sl_pips": 18.0,
+    "tp_pips": 36.0,
+    "rr": 2.0,
+    "pip": 0.0001,
+    "digits": 5,
     "opened_at": "2026-10-08T11:15:00Z",
-    "closed_at": "2026-10-08T12:32:34Z",
-    "duration_hours": 1.29,
-    "duration_bars": 5,
+    "status": "CLOSED",
+    "filled_at": "2026-10-08T11:15:00Z",
+    "exit_price": 1.12012,
     "outcome": "LOSS",
     "realized_pips": -18.0,
     "realized_r": -1.0,
-    "excursion_metrics": {
-      "mfe_pips": 7.5,
-      "mfe_r": 0.42,
-      "mae_pips": -18.8,
-      "mae_r": -1.04,
-      "tp_distance_pct_reached": 20.9
-    },
-    "market_regime": {
-      "trading_session": "London Session",
-      "rsi_at_entry": 50.0,
-      "atr_14": 0.0015,
-      "volatility_regime": "NORMAL",
-      "ema_alignment": "BEARISH_EXPANDING",
-      "breakout_candle_wick_ratio": 0.28
-    },
-    "diagnostic": {
-      "primary_factor": "STRUCTURAL_INVALIDATION",
-      "summary": "Order block level was invalidated by institutional flow after 1 bar(s). Stop-loss executed disciplined capital preservation.",
-      "actionable_insight": "Trade adhered strictly to risk geometry. Invalidation was clean and preserved capital."
-    }
+    "closed_at": "2026-10-08T12:32:34Z"
   },
   {
-    "tracking": {
-      "global_trade_no": 31,
-      "volume_no": 1,
-      "volume_trade_no": 31,
-      "volume_id": "VOL_01",
-      "volume_label": "Volume 1 (Trades 1\u2013100)"
-    },
     "trade_id": "GBPUSD_15M_2026-10-08T06:00:00Z_SHORT",
     "pair": "GBPUSD",
     "symbol": "GBPUSD",
-    "timeframe": "15M",
+    "ticker": "GBPUSD=X",
     "direction": "SHORT",
-    "entry_price": 1.3197,
-    "exit_price": 1.3215,
+    "timeframe": "15M",
+    "entry": 1.3197,
     "stop_loss": 1.3215,
     "take_profit": 1.3161,
+    "sl_pips": 18.0,
+    "tp_pips": 36.0,
+    "rr": 2.0,
+    "pip": 0.0001,
+    "digits": 5,
     "opened_at": "2026-10-08T06:00:00Z",
-    "closed_at": "2026-10-08T13:39:42Z",
-    "duration_hours": 7.66,
-    "duration_bars": 31,
+    "status": "CLOSED",
+    "filled_at": "2026-10-08T06:00:00Z",
+    "exit_price": 1.3215,
     "outcome": "LOSS",
     "realized_pips": -18.0,
     "realized_r": -1.0,
-    "excursion_metrics": {
-      "mfe_pips": 11.5,
-      "mfe_r": 0.64,
-      "mae_pips": -18.1,
-      "mae_r": -1.01,
-      "tp_distance_pct_reached": 32.0
-    },
-    "market_regime": {
-      "trading_session": "Asian/Tokyo Session",
-      "rsi_at_entry": 50.0,
-      "atr_14": 0.0015,
-      "volatility_regime": "NORMAL",
-      "ema_alignment": "BEARISH_EXPANDING",
-      "breakout_candle_wick_ratio": 0.28
-    },
-    "diagnostic": {
-      "primary_factor": "LOW_LIQUIDITY_CHOP",
-      "summary": "Signal triggered during Asian/Tokyo Session. Lower institutional volume led to whipsaw without sustainable directional continuation.",
-      "actionable_insight": "Restrict or weight signal scoring lower during off-peak liquidity windows."
-    }
+    "closed_at": "2026-10-08T13:39:42Z"
   },
   {
-    "tracking": {
-      "global_trade_no": 32,
-      "volume_no": 1,
-      "volume_trade_no": 32,
-      "volume_id": "VOL_01",
-      "volume_label": "Volume 1 (Trades 1\u2013100)"
-    },
     "trade_id": "GBPUSD_15M_2026-10-09T07:30:00Z_LONG",
     "pair": "GBPUSD",
     "symbol": "GBPUSD",
-    "timeframe": "15M",
+    "ticker": "GBPUSD=X",
     "direction": "LONG",
-    "entry_price": 1.32433,
-    "exit_price": 1.32253,
+    "timeframe": "15M",
+    "entry": 1.32433,
     "stop_loss": 1.32253,
     "take_profit": 1.32793,
+    "sl_pips": 18.0,
+    "tp_pips": 36.0,
+    "rr": 2.0,
+    "pip": 0.0001,
+    "digits": 5,
     "opened_at": "2026-10-09T07:30:00Z",
-    "closed_at": "2026-10-09T11:02:37Z",
-    "duration_hours": 3.54,
-    "duration_bars": 14,
+    "status": "CLOSED",
+    "filled_at": "2026-10-09T07:30:00Z",
+    "exit_price": 1.32253,
     "outcome": "LOSS",
     "realized_pips": -18.0,
     "realized_r": -1.0,
-    "excursion_metrics": {
-      "mfe_pips": 4.4,
-      "mfe_r": 0.24,
-      "mae_pips": -19.5,
-      "mae_r": -1.08,
-      "tp_distance_pct_reached": 12.1
-    },
-    "market_regime": {
-      "trading_session": "London Session",
-      "rsi_at_entry": 50.0,
-      "atr_14": 0.0015,
-      "volatility_regime": "NORMAL",
-      "ema_alignment": "BULLISH_EXPANDING",
-      "breakout_candle_wick_ratio": 0.28
-    },
-    "diagnostic": {
-      "primary_factor": "STRUCTURAL_INVALIDATION",
-      "summary": "Order block level was invalidated by institutional flow after 1 bar(s). Stop-loss executed disciplined capital preservation.",
-      "actionable_insight": "Trade adhered strictly to risk geometry. Invalidation was clean and preserved capital."
-    }
+    "closed_at": "2026-10-09T11:02:37Z"
   },
   {
-    "tracking": {
-      "global_trade_no": 33,
-      "volume_no": 1,
-      "volume_trade_no": 33,
-      "volume_id": "VOL_01",
-      "volume_label": "Volume 1 (Trades 1\u2013100)"
-    },
-    "trade_id": "XAUUSD_15M_2026-10-09T06:45:00Z_LONG",
-    "pair": "XAUUSD",
-    "symbol": "XAUUSD",
-    "timeframe": "15M",
-    "direction": "LONG",
-    "entry_price": 4194.0,
-    "exit_price": 4176.13,
-    "stop_loss": 4176.13,
-    "take_profit": 4229.73,
-    "opened_at": "2026-10-09T06:45:00Z",
-    "closed_at": "2026-10-09T11:16:53Z",
-    "duration_hours": 4.53,
-    "duration_bars": 18,
-    "outcome": "LOSS",
-    "realized_pips": -178.7,
-    "realized_r": -1.0,
-    "excursion_metrics": {
-      "mfe_pips": 78.7,
-      "mfe_r": 0.44,
-      "mae_pips": -188.4,
-      "mae_r": -1.05,
-      "tp_distance_pct_reached": 22.0
-    },
-    "market_regime": {
-      "trading_session": "Asian/Tokyo Session",
-      "rsi_at_entry": 50.0,
-      "atr_14": 0.0015,
-      "volatility_regime": "NORMAL",
-      "ema_alignment": "BULLISH_EXPANDING",
-      "breakout_candle_wick_ratio": 0.28
-    },
-    "diagnostic": {
-      "primary_factor": "LOW_LIQUIDITY_CHOP",
-      "summary": "Signal triggered during Asian/Tokyo Session. Lower institutional volume led to whipsaw without sustainable directional continuation.",
-      "actionable_insight": "Restrict or weight signal scoring lower during off-peak liquidity windows."
-    }
-  },
-  {
-    "tracking": {
-      "global_trade_no": 34,
-      "volume_no": 1,
-      "volume_trade_no": 34,
-      "volume_id": "VOL_01",
-      "volume_label": "Volume 1 (Trades 1\u2013100)"
-    },
     "trade_id": "USDJPY_15M_2026-10-09T14:45:00Z_LONG",
     "pair": "USDJPY",
     "symbol": "USDJPY",
-    "timeframe": "15M",
+    "ticker": "USDJPY=X",
     "direction": "LONG",
-    "entry_price": 158.366,
-    "exit_price": 158.186,
+    "timeframe": "15M",
+    "entry": 158.366,
     "stop_loss": 158.186,
     "take_profit": 158.726,
+    "sl_pips": 18.0,
+    "tp_pips": 36.0,
+    "rr": 2.0,
+    "pip": 0.01,
+    "digits": 3,
     "opened_at": "2026-10-09T14:45:00Z",
-    "closed_at": "2026-10-09T19:02:43Z",
-    "duration_hours": 4.3,
-    "duration_bars": 17,
+    "status": "CLOSED",
+    "filled_at": "2026-10-09T14:45:00Z",
+    "exit_price": 158.186,
     "outcome": "LOSS",
     "realized_pips": -18.0,
     "realized_r": -1.0,
-    "excursion_metrics": {
-      "mfe_pips": 6.5,
-      "mfe_r": 0.36,
-      "mae_pips": -21.7,
-      "mae_r": -1.21,
-      "tp_distance_pct_reached": 18.1
-    },
-    "market_regime": {
-      "trading_session": "London/New York Overlap",
-      "rsi_at_entry": 50.0,
-      "atr_14": 0.0015,
-      "volatility_regime": "NORMAL",
-      "ema_alignment": "BULLISH_EXPANDING",
-      "breakout_candle_wick_ratio": 0.28
-    },
-    "diagnostic": {
-      "primary_factor": "STRUCTURAL_INVALIDATION",
-      "summary": "Order block level was invalidated by institutional flow after 1 bar(s). Stop-loss executed disciplined capital preservation.",
-      "actionable_insight": "Trade adhered strictly to risk geometry. Invalidation was clean and preserved capital."
-    }
+    "closed_at": "2026-10-09T19:02:43Z"
   }
 ]

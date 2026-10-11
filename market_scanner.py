@@ -1296,7 +1296,12 @@ def detect_ict_liquidity_sweep(
     if bar_rng < 0.6 * atr:
         return False, None, 0.0, 0.0, ""
 
-    bar_time_str = c["close_time"].strftime("%Y-%m-%dT%H:%M:%SZ") if hasattr(c["close_time"], "strftime") else str(c.get("close_time", ""))
+    if "close_time" in c.index and hasattr(c["close_time"], "strftime"):
+        bar_time_str = c["close_time"].strftime("%Y-%m-%dT%H:%M:%SZ")
+    elif "time" in c.index and hasattr(c["time"], "strftime"):
+        bar_time_str = c["time"].strftime("%Y-%m-%dT%H:%M:%SZ")
+    else:
+        bar_time_str = str(c.get("close_time", c.get("time", "")))
 
     if is_long:
         if close <= open_p:

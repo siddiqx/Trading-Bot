@@ -195,15 +195,29 @@ class TelegramService:
         return await self.send_message(message)
 
     def _load_trade_records(self) -> Dict[str, Any]:
-        """Load trade ledger records from trade_records.json."""
+        """Load trade ledger records from trade_records.json, strictly sanitizing gold symbols."""
+        raw = {"tracking_started": "2026-10-11", "active_trades": {}, "completed_trades": []}
         for candidate in [Path("trade_records.json"), Path(__file__).resolve().parents[2] / "trade_records.json"]:
             if candidate.exists():
                 try:
                     with open(candidate, "r", encoding="utf-8") as f:
-                        return json.load(f)
+                        raw = json.load(f)
+                        break
                 except Exception:
                     pass
-        return {"tracking_started": "2026-10-08", "active_trades": {}, "completed_trades": []}
+        clean_active = {
+            k: v for k, v in raw.get("active_trades", {}).items()
+            if not any(g in (v.get("pair") or v.get("symbol") or k).upper() for g in ["XAU", "GOLD"])
+        }
+        clean_completed = [
+            t for t in raw.get("completed_trades", [])
+            if not any(g in (t.get("pair") or t.get("symbol") or "").upper() for g in ["XAU", "GOLD"])
+        ]
+        return {
+            "tracking_started": raw.get("tracking_started", "2026-10-11"),
+            "active_trades": clean_active,
+            "completed_trades": clean_completed,
+        }
 
     def generate_command_response(
         self,
@@ -220,7 +234,7 @@ class TelegramService:
 
         if cmd in ["/start", "/help", "/menu"]:
             return (
-                "🤖 <b>Institutional Forex Live Signal Bot v3.1</b>\n\n"
+                "🤖 <b>Institutional Forex Live Signal Bot v4.0</b>\n\n"
                 "<b>Available Commands:</b>\n"
                 "• /active - Currently running trades & floating positions\n"
                 "• /radar - 6-Asset institutional surveillance radar\n"
@@ -232,23 +246,22 @@ class TelegramService:
                 "• /patterns - Volume trade analytics & failure analysis\n"
                 "• /last - Most recent confirmed signal\n"
                 "• /help - Display this command overview\n\n"
-                "<i>Two-Phase Pullback Engine with fixed 15-pip TP and 10-pip SL. Evidence-based forward-testing across 6 institutional Forex pairs. Zero Gold.</i>"
+                "<i>ICT Killzone Liquidity Sweep Model with fixed 15-pip TP and 10-pip SL. Evidence-based execution across 6 institutional Forex pairs. Zero Gold.</i>"
             )
 
         elif cmd in ["/strategy", "/rules"]:
             return (
-                "📈 <b>Two-Phase Pullback Engine (v3.1) — Institutional Forex Strategy</b>\n\n"
+                "📈 <b>ICT Killzone Liquidity Sweep Model (v4.0) — Institutional Forex Strategy</b>\n\n"
+                "• <b>Evolution:</b> Upgraded from Two-Phase Pullback Engine and Donchian Breakout Impulse to verified ICT liquidity sweeps.\n"
                 "• <b>Monitored Assets:</b> 6 Forex Pairs (EURUSD, USDCAD, GBPUSD, USDJPY, USDCHF, AUDUSD — Zero Gold)\n"
-                "• <b>Primary Timeframe:</b> 15M (Trigger / Execution)\n"
-                "• <b>Anchor Timeframe:</b> 1H (Structural Trend Filter)\n"
-                "• <b>Phase 1:</b> Donchian Breakout Impulse (20-bar Institutional)\n"
-                "• <b>Phase 2:</b> Pullback into 20-EMA / 50% Fib Equilibrium with Confirmed Rejection\n"
-                "• <b>Take Profit:</b> Fixed 15 Pips from actual entry price\n"
-                "• <b>Stop Loss:</b> Fixed 10 Pips from actual entry price\n"
-                "• <b>Risk/Reward Ratio:</b> 1:1.5 before transaction costs\n"
-                "• <b>Session Filter:</b> 06:00–17:00 UTC Institutional Liquid Window\n"
+                "• <b>Execution Timeframe:</b> 15M Chart within London (07:00–10:00 UTC) & NY (12:00–15:00 UTC) Killzones\n"
+                "• <b>Anchor Timeframe:</b> 1H Trend Agreement (EMA20 vs EMA50)\n"
+                "• <b>Liquidity Sweep:</b> Sweeps Asian Range (00:00–06:00 UTC) or 10-bar fractal swing by ≥1.0 pip with immediate displacement reclaim\n"
+                "• <b>Take Profit:</b> Fixed 15 Pips from entry price\n"
+                "• <b>Stop Loss:</b> Fixed 10 Pips from entry price\n"
+                "• <b>Risk/Reward Ratio:</b> Fixed 1:1.5 before transaction costs\n"
+                "• <b>Capital Protection:</b> $25.00 / trade (0.50% on $5,000 account · 0.25 Lots)\n"
                 "• <b>Execution:</b> Confirmed bar close only (100% Non-repainting)\n"
-                "• <b>Risk Model:</b> $5,000 account, 1.0% ($50) or 0.5% ($25) per trade\n"
             )
 
         elif cmd in ["/active", "/open", "/trades", "/positions"]:
