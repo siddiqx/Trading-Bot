@@ -448,5 +448,50 @@
       "summary": "Flawless directional expansion with negligible adverse drawdown (0.16R). Institutional order flow propelled price directly to target.",
       "actionable_insight": "Prime candidate setup for runner scaling or full 1.75R capture."
     }
+  },
+  {
+    "tracking": {
+      "global_trade_no": 40,
+      "volume_no": 1,
+      "volume_trade_no": 40,
+      "volume_id": "VOL_01",
+      "volume_label": "Volume 1 (Trades 1\u2013100)"
+    },
+    "trade_id": "EURUSD_1H_2026-10-12T10:00:00Z_SHORT",
+    "pair": "EURUSD",
+    "symbol": "EURUSD",
+    "timeframe": "1H",
+    "direction": "SHORT",
+    "entry_price": 1.11807,
+    "exit_price": 1.11657,
+    "stop_loss": 1.11907,
+    "take_profit": 1.11657,
+    "opened_at": "2026-10-12T10:00:00Z",
+    "closed_at": "2026-10-12T15:46:33Z",
+    "duration_hours": 5.78,
+    "duration_bars": 6,
+    "outcome": "WIN",
+    "realized_pips": 15.0,
+    "realized_r": 1.5,
+    "excursion_metrics": {
+      "mfe_pips": 21.2,
+      "mfe_r": 2.12,
+      "mae_pips": -7.5,
+      "mae_r": -0.75,
+      "tp_distance_pct_reached": 100.0
+    },
+    "market_regime": {
+      "trading_session": "London Session",
+      "rsi_at_entry": 50.0,
+      "atr_14": 0.0015,
+      "volatility_regime": "NORMAL",
+      "ema_alignment": "BEARISH_EXPANDING",
+      "breakout_candle_wick_ratio": 0.28
+    },
+    "diagnostic": {
+      "primary_factor": "HIGH_VELOCITY_BREAKOUT",
+      "summary": "Take-profit hit within 1 bar(s). High momentum impulse confirmed structural breakout conviction.",
+      "actionable_insight": "Validates the 20-period Donchian channel breakout trigger."
+    }
   }
 ]

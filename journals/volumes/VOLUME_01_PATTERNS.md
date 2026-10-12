@@ -1031,3 +1031,28 @@
 
 ---
 
+### #40 · EURUSD (1H) — 🎯 WIN (+1.75R)
+
+- **Global Sequence**: Trade `#40`
+- **Direction**: `SHORT` | **Outcome**: `WIN` (`+15.0 pips` / `1.5R`)
+- **Execution Range**: Entry ` 1.11807 ` ➔ Exit ` 1.11657 `
+- **Targets**: Stop Loss ` 1.11907 ` | Take Profit ` 1.11657 `
+- **Holding Time**: `5.78 hours` (6 bars)
+- **Window**: `2026-10-12 10:00:00 UTC` ➔ `2026-10-12 15:46:33 UTC`
+
+#### 📊 Excursion & Market Regime
+| Metric | Value | Detail |
+| :--- | :--- | :--- |
+| **Max Favorable Excursion (MFE)** | `+21.2 pips` | Reached `+2.12R` (100.0% of TP) |
+| **Max Adverse Excursion (MAE)** | `-7.5 pips` | Deepest drawdown `-0.75R` |
+| **Session** | `London Session` | Institutional Market Timing |
+| **Entry RSI (14)** | `50.0` | Momentum Baseline |
+| **EMA Alignment** | `BEARISH_EXPANDING` | Structural Trend Bias |
+
+#### 🔬 Post-Mortem Diagnosis: `HIGH_VELOCITY_BREAKOUT`
+> **Analysis**: Take-profit hit within 1 bar(s). High momentum impulse confirmed structural breakout conviction.
+>
+> **Actionable Takeaway**: Validates the 20-period Donchian channel breakout trigger.
+
+---
+
