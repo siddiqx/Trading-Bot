@@ -981,3 +981,28 @@
 
 ---
 
+### #38 · USDCAD (1H) — 🛑 LOSS (-1.00R)
+
+- **Global Sequence**: Trade `#38`
+- **Direction**: `LONG` | **Outcome**: `LOSS` (`-10.0 pips` / `-1.0R`)
+- **Execution Range**: Entry ` 1.42623 ` ➔ Exit ` 1.42523 `
+- **Targets**: Stop Loss ` 1.42523 ` | Take Profit ` 1.42773 `
+- **Holding Time**: `4.78 hours` (5 bars)
+- **Window**: `2026-10-12 09:00:00 UTC` ➔ `2026-10-12 13:46:38 UTC`
+
+#### 📊 Excursion & Market Regime
+| Metric | Value | Detail |
+| :--- | :--- | :--- |
+| **Max Favorable Excursion (MFE)** | `+5.0 pips` | Reached `+0.5R` (33.3% of TP) |
+| **Max Adverse Excursion (MAE)** | `-12.3 pips` | Deepest drawdown `-1.23R` |
+| **Session** | `London Session` | Institutional Market Timing |
+| **Entry RSI (14)** | `50.0` | Momentum Baseline |
+| **EMA Alignment** | `BULLISH_EXPANDING` | Structural Trend Bias |
+
+#### 🔬 Post-Mortem Diagnosis: `STRUCTURAL_INVALIDATION`
+> **Analysis**: Order block level was invalidated by institutional flow after 1 bar(s). Stop-loss executed disciplined capital preservation.
+>
+> **Actionable Takeaway**: Trade adhered strictly to risk geometry. Invalidation was clean and preserved capital.
+
+---
+

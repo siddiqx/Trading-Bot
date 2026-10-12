@@ -1213,5 +1213,50 @@
       "summary": "Order block level was invalidated by institutional flow after 1 bar(s). Stop-loss executed disciplined capital preservation.",
       "actionable_insight": "Trade adhered strictly to risk geometry. Invalidation was clean and preserved capital."
     }
+  },
+  {
+    "tracking": {
+      "global_trade_no": 38,
+      "volume_no": 1,
+      "volume_trade_no": 38,
+      "volume_id": "VOL_01",
+      "volume_label": "Volume 1 (Trades 1\u2013100)"
+    },
+    "trade_id": "USDCAD_1H_2026-10-12T09:00:00Z_LONG",
+    "pair": "USDCAD",
+    "symbol": "USDCAD",
+    "timeframe": "1H",
+    "direction": "LONG",
+    "entry_price": 1.42623,
+    "exit_price": 1.42523,
+    "stop_loss": 1.42523,
+    "take_profit": 1.42773,
+    "opened_at": "2026-10-12T09:00:00Z",
+    "closed_at": "2026-10-12T13:46:38Z",
+    "duration_hours": 4.78,
+    "duration_bars": 5,
+    "outcome": "LOSS",
+    "realized_pips": -10.0,
+    "realized_r": -1.0,
+    "excursion_metrics": {
+      "mfe_pips": 5.0,
+      "mfe_r": 0.5,
+      "mae_pips": -12.3,
+      "mae_r": -1.23,
+      "tp_distance_pct_reached": 33.3
+    },
+    "market_regime": {
+      "trading_session": "London Session",
+      "rsi_at_entry": 50.0,
+      "atr_14": 0.0015,
+      "volatility_regime": "NORMAL",
+      "ema_alignment": "BULLISH_EXPANDING",
+      "breakout_candle_wick_ratio": 0.28
+    },
+    "diagnostic": {
+      "primary_factor": "STRUCTURAL_INVALIDATION",
+      "summary": "Order block level was invalidated by institutional flow after 1 bar(s). Stop-loss executed disciplined capital preservation.",
+      "actionable_insight": "Trade adhered strictly to risk geometry. Invalidation was clean and preserved capital."
+    }
   }
 ]
