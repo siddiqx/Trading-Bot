@@ -931,3 +931,53 @@
 
 ---
 
+### #36 · GBPUSD (1H) — 🎯 WIN (+1.75R)
+
+- **Global Sequence**: Trade `#36`
+- **Direction**: `SHORT` | **Outcome**: `WIN` (`+15.0 pips` / `1.5R`)
+- **Execution Range**: Entry ` 1.3245 ` ➔ Exit ` 1.323 `
+- **Targets**: Stop Loss ` 1.3255 ` | Take Profit ` 1.323 `
+- **Holding Time**: `3.28 hours` (3 bars)
+- **Window**: `2026-10-12 08:00:00 UTC` ➔ `2026-10-12 11:16:36 UTC`
+
+#### 📊 Excursion & Market Regime
+| Metric | Value | Detail |
+| :--- | :--- | :--- |
+| **Max Favorable Excursion (MFE)** | `+17.0 pips` | Reached `+1.7R` (100.0% of TP) |
+| **Max Adverse Excursion (MAE)** | `-1.6 pips` | Deepest drawdown `-0.16R` |
+| **Session** | `London Session` | Institutional Market Timing |
+| **Entry RSI (14)** | `50.0` | Momentum Baseline |
+| **EMA Alignment** | `BEARISH_EXPANDING` | Structural Trend Bias |
+
+#### 🔬 Post-Mortem Diagnosis: `CLEAN_MOMENTUM_EXPANSION`
+> **Analysis**: Flawless directional expansion with negligible adverse drawdown (0.16R). Institutional order flow propelled price directly to target.
+>
+> **Actionable Takeaway**: Prime candidate setup for runner scaling or full 1.75R capture.
+
+---
+
+### #37 · GBPUSD (15M) — 🛑 LOSS (-1.00R)
+
+- **Global Sequence**: Trade `#37`
+- **Direction**: `LONG` | **Outcome**: `LOSS` (`-10.0 pips` / `-1.0R`)
+- **Execution Range**: Entry ` 1.32396 ` ➔ Exit ` 1.32296 `
+- **Targets**: Stop Loss ` 1.32296 ` | Take Profit ` 1.32546 `
+- **Holding Time**: `1.53 hours` (6 bars)
+- **Window**: `2026-10-12 09:45:00 UTC` ➔ `2026-10-12 11:16:37 UTC`
+
+#### 📊 Excursion & Market Regime
+| Metric | Value | Detail |
+| :--- | :--- | :--- |
+| **Max Favorable Excursion (MFE)** | `+0.0 pips` | Reached `+0.0R` (0.0% of TP) |
+| **Max Adverse Excursion (MAE)** | `-11.6 pips` | Deepest drawdown `-1.16R` |
+| **Session** | `London Session` | Institutional Market Timing |
+| **Entry RSI (14)** | `50.0` | Momentum Baseline |
+| **EMA Alignment** | `BULLISH_EXPANDING` | Structural Trend Bias |
+
+#### 🔬 Post-Mortem Diagnosis: `STRUCTURAL_INVALIDATION`
+> **Analysis**: Order block level was invalidated by institutional flow after 1 bar(s). Stop-loss executed disciplined capital preservation.
+>
+> **Actionable Takeaway**: Trade adhered strictly to risk geometry. Invalidation was clean and preserved capital.
+
+---
+
