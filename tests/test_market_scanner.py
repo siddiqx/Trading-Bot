@@ -859,7 +859,199 @@ def test_format_alert_message_ict():
     msg = format_alert_message(sig)
     assert "ICT Killzone Liquidity Sweep" in msg
     assert "1.08" in msg
-    assert "Fixed 15-Pip TP / 10-Pip SL (1:1.5 RR)" in msg
+    assert "Model J: Bank 60% @ +1.0R, advance SL to Breakeven (+0.5p buffer)" in msg
     assert "$25.00 / trade (0.50% on $5,000 Prop Account · 0.25 Lots)" in msg
+
+
+def test_model_j_partial_profit_banking_at_1r(monkeypatch):
+    """Verify that reaching +1.0R banks 60% profit and advances SL to Breakeven (+0.5p buffer)."""
+    from market_scanner import check_active_trades
+
+    t_entry = datetime(2026, 9, 28, 10, 0, tzinfo=timezone.utc)
+    # Entry: 1.10000, SL: 1.09840 (16 pips = 0.00160). Target 1R = 1.10160.
+    # Bar 1 high reaches 1.10170 (+1.06R). Bar 1 close is 1.10120 (does not reach 1.5R TP 1.10240).
+    mock_df = pd.DataFrame({
+        "time": [t_entry + timedelta(minutes=15 * i) for i in range(2)],
+        "open": [1.10000, 1.10080],
+        "high": [1.10050, 1.10170],  # Reaches +1.0R target (1.10160)
+        "low": [1.09980, 1.10050],
+        "close": [1.10040, 1.10120],
+        "volume": [100] * 2,
+        "ema20": [1.09900] * 2,
+        "ema50": [1.09800] * 2
+    })
+
+    alerts = []
+    monkeypatch.setattr("market_scanner.is_forex_market_open", lambda *args, **kwargs: True)
+    monkeypatch.setattr("market_scanner.fetch_candles", lambda *args, **kwargs: mock_df)
+    monkeypatch.setattr("market_scanner.send_telegram_alert", lambda msg: alerts.append(msg))
+    monkeypatch.setattr("market_scanner.sync_worker", lambda *args, **kwargs: None)
+    monkeypatch.setattr("market_scanner.save_trade_records", lambda *args, **kwargs: None)
+
+    records = {
+        "active_trades": {
+            "EURUSD": {
+                "trade_id": "EURUSD_MODEL_J",
+                "pair": "EURUSD",
+                "symbol": "EURUSD",
+                "ticker": "EURUSD=X",
+                "direction": "LONG",
+                "timeframe": "15M",
+                "entry": 1.10000,
+                "stop_loss": 1.09840,
+                "take_profit": 1.10240,
+                "sl_pips": 16.0,
+                "tp_pips": 24.0,
+                "rr": 1.5,
+                "bank_pct": 0.60,
+                "partial_taken": False,
+                "be_active": False,
+                "pip": 0.0001,
+                "digits": 5,
+                "opened_at": t_entry.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "status": "OPEN",
+            }
+        },
+        "completed_trades": []
+    }
+
+    check_active_trades(records)
+
+    trade = records["active_trades"]["EURUSD"]
+    assert trade["partial_taken"] is True
+    assert trade["be_active"] is True
+    assert trade["partial_banked_r"] == 0.60
+    assert trade["partial_banked_pips"] == 9.6
+    # SL should be moved to Breakeven + 0.5 pip buffer: 1.10000 + 0.00005 = 1.10005
+    assert trade["stop_loss"] == 1.10005
+    assert any("PARTIAL PROFIT SECURED" in a for a in alerts)
+
+
+def test_model_j_runner_stopped_at_be_retains_win(monkeypatch):
+    """Verify that a position that banked 60% @ 1R and stopped at BE completes with WIN and +0.60R."""
+    from market_scanner import check_active_trades
+
+    t_entry = datetime(2026, 9, 28, 10, 0, tzinfo=timezone.utc)
+    # Entry: 1.10000, SL advanced to BE buffer 1.10005. Bar dips to 1.09990.
+    mock_df = pd.DataFrame({
+        "time": [t_entry + timedelta(minutes=15)],
+        "open": [1.10050],
+        "high": [1.10080],
+        "low": [1.09990],  # Hits BE SL at 1.10005
+        "close": [1.10000],
+        "volume": [100],
+        "ema20": [1.09900],
+        "ema50": [1.09800]
+    })
+
+    alerts = []
+    monkeypatch.setattr("market_scanner.is_forex_market_open", lambda *args, **kwargs: True)
+    monkeypatch.setattr("market_scanner.fetch_candles", lambda *args, **kwargs: mock_df)
+    monkeypatch.setattr("market_scanner.send_telegram_alert", lambda msg: alerts.append(msg))
+    monkeypatch.setattr("market_scanner.sync_worker", lambda *args, **kwargs: None)
+    monkeypatch.setattr("market_scanner.save_trade_records", lambda *args, **kwargs: None)
+    monkeypatch.setattr("market_scanner.record_trade_post_mortem", lambda *args, **kwargs: None)
+
+    records = {
+        "active_trades": {
+            "EURUSD": {
+                "trade_id": "EURUSD_BE_WIN",
+                "pair": "EURUSD",
+                "symbol": "EURUSD",
+                "ticker": "EURUSD=X",
+                "direction": "LONG",
+                "timeframe": "15M",
+                "entry": 1.10000,
+                "stop_loss": 1.10005,  # BE SL
+                "take_profit": 1.10240,
+                "sl_pips": 16.0,
+                "tp_pips": 24.0,
+                "rr": 1.5,
+                "bank_pct": 0.60,
+                "partial_taken": True,
+                "partial_banked_r": 0.60,
+                "partial_banked_pips": 9.6,
+                "be_active": True,
+                "pip": 0.0001,
+                "digits": 5,
+                "opened_at": t_entry.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "status": "OPEN",
+            }
+        },
+        "completed_trades": []
+    }
+
+    check_active_trades(records)
+
+    assert "EURUSD" not in records["active_trades"]
+    assert len(records["completed_trades"]) == 1
+    completed = records["completed_trades"][0]
+    assert completed["outcome"] == "WIN"
+    assert completed["realized_r"] == 0.60
+    assert completed["realized_pips"] == 9.6
+
+
+def test_stop_loss_priority_over_take_profit_on_volatile_bar(monkeypatch):
+    """Ensure that when a volatile candle reaches both SL and TP thresholds, Stop Loss takes absolute precedence."""
+    from market_scanner import check_active_trades
+
+    t_entry = datetime(2026, 10, 13, 8, 45, tzinfo=timezone.utc)
+    # USDJPY Short: Entry: 158.103, SL: 158.203 (+10 pips), TP: 157.953 (-15 pips)
+    # Candle: High 158.385 (breaches SL by 18.2 pips), Low 157.917 (touches TP)
+    mock_df = pd.DataFrame({
+        "time": [t_entry],
+        "open": [158.042],
+        "high": [158.385],  # Touches SL
+        "low": [157.917],   # Also touches TP
+        "close": [158.004],
+        "volume": [500],
+        "ema20": [158.100],
+        "ema50": [158.150]
+    })
+
+    alerts = []
+    monkeypatch.setattr("market_scanner.is_forex_market_open", lambda *args, **kwargs: True)
+    monkeypatch.setattr("market_scanner.fetch_candles", lambda *args, **kwargs: mock_df)
+    monkeypatch.setattr("market_scanner.send_telegram_alert", lambda msg: alerts.append(msg))
+    monkeypatch.setattr("market_scanner.sync_worker", lambda *args, **kwargs: None)
+    monkeypatch.setattr("market_scanner.save_trade_records", lambda *args, **kwargs: None)
+    monkeypatch.setattr("market_scanner.record_trade_post_mortem", lambda *args, **kwargs: None)
+
+    records = {
+        "active_trades": {
+            "USDJPY_15M": {
+                "trade_id": "USDJPY_15M_VOLATILE_BAR",
+                "pair": "USDJPY",
+                "symbol": "USDJPY",
+                "ticker": "USDJPY=X",
+                "direction": "SHORT",
+                "timeframe": "15M",
+                "entry": 158.103,
+                "stop_loss": 158.203,
+                "take_profit": 157.953,
+                "sl_pips": 10.0,
+                "tp_pips": 15.0,
+                "rr": 1.5,
+                "pip": 0.01,
+                "digits": 3,
+                "opened_at": t_entry.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "status": "OPEN",
+            }
+        },
+        "completed_trades": []
+    }
+
+    check_active_trades(records)
+
+    assert "USDJPY_15M" not in records["active_trades"]
+    assert len(records["completed_trades"]) == 1
+    completed = records["completed_trades"][0]
+    # Must be recorded as LOSS, not false positive WIN
+    assert completed["outcome"] == "LOSS"
+    assert completed["exit_price"] == 158.203
+    assert completed["realized_r"] == -1.0
+    assert completed["realized_pips"] == -10.0
+
+
 
 

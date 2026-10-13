@@ -529,10 +529,10 @@
       "opened_at": "2026-10-13T08:45:00Z",
       "status": "CLOSED",
       "filled_at": "2026-10-13T08:45:00Z",
-      "exit_price": 157.953,
-      "outcome": "WIN",
-      "realized_pips": 15.0,
-      "realized_r": 1.5,
+      "exit_price": 158.203,
+      "outcome": "LOSS",
+      "realized_pips": -10.0,
+      "realized_r": -1.0,
       "closed_at": "2026-10-13T11:03:19Z"
     },
     {
