@@ -1131,3 +1131,28 @@
 
 ---
 
+### #44 · USDJPY (15M) — 🎯 WIN (+1.75R)
+
+- **Global Sequence**: Trade `#44`
+- **Direction**: `SHORT` | **Outcome**: `WIN` (`+15.0 pips` / `1.5R`)
+- **Execution Range**: Entry ` 158.103 ` ➔ Exit ` 157.953 `
+- **Targets**: Stop Loss ` 158.203 ` | Take Profit ` 157.953 `
+- **Holding Time**: `2.31 hours` (9 bars)
+- **Window**: `2026-10-13 08:45:00 UTC` ➔ `2026-10-13 11:03:19 UTC`
+
+#### 📊 Excursion & Market Regime
+| Metric | Value | Detail |
+| :--- | :--- | :--- |
+| **Max Favorable Excursion (MFE)** | `+27.8 pips` | Reached `+2.78R` (100.0% of TP) |
+| **Max Adverse Excursion (MAE)** | `-28.2 pips` | Deepest drawdown `-2.82R` |
+| **Session** | `London Session` | Institutional Market Timing |
+| **Entry RSI (14)** | `50.0` | Momentum Baseline |
+| **EMA Alignment** | `BEARISH_EXPANDING` | Structural Trend Bias |
+
+#### 🔬 Post-Mortem Diagnosis: `HIGH_VELOCITY_BREAKOUT`
+> **Analysis**: Take-profit hit within 1 bar(s). High momentum impulse confirmed structural breakout conviction.
+>
+> **Actionable Takeaway**: Validates the 20-period Donchian channel breakout trigger.
+
+---
+
