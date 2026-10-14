@@ -1206,3 +1206,53 @@
 
 ---
 
+### #45 · EURUSD (1H) — 🎯 WIN (+1.75R)
+
+- **Global Sequence**: Trade `#45`
+- **Direction**: `SHORT` | **Outcome**: `WIN` (`+19.2 pips` / `1.2R`)
+- **Execution Range**: Entry ` 1.11982 ` ➔ Exit ` 1.11742 `
+- **Targets**: Stop Loss ` 1.11977 ` | Take Profit ` 1.11742 `
+- **Holding Time**: `3.52 hours` (4 bars)
+- **Window**: `2026-10-14 09:00:00 UTC` ➔ `2026-10-14 12:31:19 UTC`
+
+#### 📊 Excursion & Market Regime
+| Metric | Value | Detail |
+| :--- | :--- | :--- |
+| **Max Favorable Excursion (MFE)** | `+25.0 pips` | Reached `+50.03R` (100.0% of TP) |
+| **Max Adverse Excursion (MAE)** | `-2.5 pips` | Deepest drawdown `-5.04R` |
+| **Session** | `London Session` | Institutional Market Timing |
+| **Entry RSI (14)** | `50.0` | Momentum Baseline |
+| **EMA Alignment** | `BEARISH_EXPANDING` | Structural Trend Bias |
+
+#### 🔬 Post-Mortem Diagnosis: `HIGH_VELOCITY_BREAKOUT`
+> **Analysis**: Take-profit hit within 1 bar(s). High momentum impulse confirmed structural breakout conviction.
+>
+> **Actionable Takeaway**: Validates the 20-period Donchian channel breakout trigger.
+
+---
+
+### #46 · USDCHF (15M) — 🎯 WIN (+1.75R)
+
+- **Global Sequence**: Trade `#46`
+- **Direction**: `LONG` | **Outcome**: `WIN` (`+8.4 pips` / `0.6R`)
+- **Execution Range**: Entry ` 0.83341 ` ➔ Exit ` 0.83346 `
+- **Targets**: Stop Loss ` 0.83346 ` | Take Profit ` 0.83551 `
+- **Holding Time**: `2.27 hours` (9 bars)
+- **Window**: `2026-10-14 10:15:00 UTC` ➔ `2026-10-14 12:31:20 UTC`
+
+#### 📊 Excursion & Market Regime
+| Metric | Value | Detail |
+| :--- | :--- | :--- |
+| **Max Favorable Excursion (MFE)** | `+30.0 pips` | Reached `+60.0R` (100.0% of TP) |
+| **Max Adverse Excursion (MAE)** | `-5.6 pips` | Deepest drawdown `-11.2R` |
+| **Session** | `London Session` | Institutional Market Timing |
+| **Entry RSI (14)** | `50.0` | Momentum Baseline |
+| **EMA Alignment** | `BULLISH_EXPANDING` | Structural Trend Bias |
+
+#### 🔬 Post-Mortem Diagnosis: `HIGH_VELOCITY_BREAKOUT`
+> **Analysis**: Take-profit hit within 1 bar(s). High momentum impulse confirmed structural breakout conviction.
+>
+> **Actionable Takeaway**: Validates the 20-period Donchian channel breakout trigger.
+
+---
+

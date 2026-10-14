@@ -538,5 +538,95 @@
       "summary": "Take-profit hit within 1 bar(s). High momentum impulse confirmed structural breakout conviction.",
       "actionable_insight": "Validates the 20-period Donchian channel breakout trigger."
     }
+  },
+  {
+    "tracking": {
+      "global_trade_no": 45,
+      "volume_no": 1,
+      "volume_trade_no": 45,
+      "volume_id": "VOL_01",
+      "volume_label": "Volume 1 (Trades 1\u2013100)"
+    },
+    "trade_id": "EURUSD_1H_2026-10-14T09:00:00Z_SHORT",
+    "pair": "EURUSD",
+    "symbol": "EURUSD",
+    "timeframe": "1H",
+    "direction": "SHORT",
+    "entry_price": 1.11982,
+    "exit_price": 1.11742,
+    "stop_loss": 1.11977,
+    "take_profit": 1.11742,
+    "opened_at": "2026-10-14T09:00:00Z",
+    "closed_at": "2026-10-14T12:31:19Z",
+    "duration_hours": 3.52,
+    "duration_bars": 4,
+    "outcome": "WIN",
+    "realized_pips": 19.2,
+    "realized_r": 1.2,
+    "excursion_metrics": {
+      "mfe_pips": 25.0,
+      "mfe_r": 50.03,
+      "mae_pips": -2.5,
+      "mae_r": -5.04,
+      "tp_distance_pct_reached": 100.0
+    },
+    "market_regime": {
+      "trading_session": "London Session",
+      "rsi_at_entry": 50.0,
+      "atr_14": 0.0015,
+      "volatility_regime": "NORMAL",
+      "ema_alignment": "BEARISH_EXPANDING",
+      "breakout_candle_wick_ratio": 0.28
+    },
+    "diagnostic": {
+      "primary_factor": "HIGH_VELOCITY_BREAKOUT",
+      "summary": "Take-profit hit within 1 bar(s). High momentum impulse confirmed structural breakout conviction.",
+      "actionable_insight": "Validates the 20-period Donchian channel breakout trigger."
+    }
+  },
+  {
+    "tracking": {
+      "global_trade_no": 46,
+      "volume_no": 1,
+      "volume_trade_no": 46,
+      "volume_id": "VOL_01",
+      "volume_label": "Volume 1 (Trades 1\u2013100)"
+    },
+    "trade_id": "USDCHF_15M_2026-10-14T10:15:00Z_LONG",
+    "pair": "USDCHF",
+    "symbol": "USDCHF",
+    "timeframe": "15M",
+    "direction": "LONG",
+    "entry_price": 0.83341,
+    "exit_price": 0.83346,
+    "stop_loss": 0.83346,
+    "take_profit": 0.83551,
+    "opened_at": "2026-10-14T10:15:00Z",
+    "closed_at": "2026-10-14T12:31:20Z",
+    "duration_hours": 2.27,
+    "duration_bars": 9,
+    "outcome": "WIN",
+    "realized_pips": 8.4,
+    "realized_r": 0.6,
+    "excursion_metrics": {
+      "mfe_pips": 30.0,
+      "mfe_r": 60.0,
+      "mae_pips": -5.6,
+      "mae_r": -11.2,
+      "tp_distance_pct_reached": 100.0
+    },
+    "market_regime": {
+      "trading_session": "London Session",
+      "rsi_at_entry": 50.0,
+      "atr_14": 0.0015,
+      "volatility_regime": "NORMAL",
+      "ema_alignment": "BULLISH_EXPANDING",
+      "breakout_candle_wick_ratio": 0.28
+    },
+    "diagnostic": {
+      "primary_factor": "HIGH_VELOCITY_BREAKOUT",
+      "summary": "Take-profit hit within 1 bar(s). High momentum impulse confirmed structural breakout conviction.",
+      "actionable_insight": "Validates the 20-period Donchian channel breakout trigger."
+    }
   }
 ]
