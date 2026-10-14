@@ -1256,3 +1256,28 @@
 
 ---
 
+### #47 · AUDUSD (15M) — 🛑 LOSS (-1.00R)
+
+- **Global Sequence**: Trade `#47`
+- **Direction**: `LONG` | **Outcome**: `LOSS` (`-12.0 pips` / `-1.0R`)
+- **Execution Range**: Entry ` 0.70033 ` ➔ Exit ` 0.69913 `
+- **Targets**: Stop Loss ` 0.69913 ` | Take Profit ` 0.70213 `
+- **Holding Time**: `6.29 hours` (25 bars)
+- **Window**: `2026-10-14 06:15:00 UTC` ➔ `2026-10-14 12:32:19 UTC`
+
+#### 📊 Excursion & Market Regime
+| Metric | Value | Detail |
+| :--- | :--- | :--- |
+| **Max Favorable Excursion (MFE)** | `+11.8 pips` | Reached `+0.98R` (65.5% of TP) |
+| **Max Adverse Excursion (MAE)** | `-14.7 pips` | Deepest drawdown `-1.22R` |
+| **Session** | `Asian/Tokyo Session` | Institutional Market Timing |
+| **Entry RSI (14)** | `50.0` | Momentum Baseline |
+| **EMA Alignment** | `BULLISH_EXPANDING` | Structural Trend Bias |
+
+#### 🔬 Post-Mortem Diagnosis: `PREMATURE_REVERSAL`
+> **Analysis**: Position reached +11.8 pips (+0.98R / 65.5% of TP) before aggressive counter-trend reversal hit stop-loss.
+>
+> **Actionable Takeaway**: Incorporate a Breakeven Protection rule once position reaches +0.8R or 50% TP distance.
+
+---
+
