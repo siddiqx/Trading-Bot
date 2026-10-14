@@ -571,5 +571,50 @@
       "summary": "Position reached +11.8 pips (+0.98R / 65.5% of TP) before aggressive counter-trend reversal hit stop-loss.",
       "actionable_insight": "Incorporate a Breakeven Protection rule once position reaches +0.8R or 50% TP distance."
     }
+  },
+  {
+    "tracking": {
+      "global_trade_no": 48,
+      "volume_no": 1,
+      "volume_trade_no": 48,
+      "volume_id": "VOL_01",
+      "volume_label": "Volume 1 (Trades 1\u2013100)"
+    },
+    "trade_id": "USDJPY_15M_2026-10-14T15:15:00Z_LONG",
+    "pair": "USDJPY",
+    "symbol": "USDJPY",
+    "timeframe": "15M",
+    "direction": "LONG",
+    "entry_price": 158.928,
+    "exit_price": 158.748,
+    "stop_loss": 158.748,
+    "take_profit": 159.198,
+    "opened_at": "2026-10-14T15:15:00Z",
+    "closed_at": "2026-10-14T19:00:20Z",
+    "duration_hours": 3.76,
+    "duration_bars": 15,
+    "outcome": "LOSS",
+    "realized_pips": -18.0,
+    "realized_r": -1.0,
+    "excursion_metrics": {
+      "mfe_pips": 0.7,
+      "mfe_r": 0.04,
+      "mae_pips": -88.7,
+      "mae_r": -4.93,
+      "tp_distance_pct_reached": 2.6
+    },
+    "market_regime": {
+      "trading_session": "London/New York Overlap",
+      "rsi_at_entry": 50.0,
+      "atr_14": 0.0015,
+      "volatility_regime": "NORMAL",
+      "ema_alignment": "BULLISH_EXPANDING",
+      "breakout_candle_wick_ratio": 0.28
+    },
+    "diagnostic": {
+      "primary_factor": "STRUCTURAL_INVALIDATION",
+      "summary": "Order block level was invalidated by institutional flow after 1 bar(s). Stop-loss executed disciplined capital preservation.",
+      "actionable_insight": "Trade adhered strictly to risk geometry. Invalidation was clean and preserved capital."
+    }
   }
 ]
