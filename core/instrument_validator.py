@@ -137,7 +137,7 @@ def validate_instrument_eligibility(symbol: str) -> Tuple[bool, str]:
 def get_symbol_spec(symbol: str) -> Dict[str, Any]:
     """
     Retrieve instrument specifications including pip size, broker display digits,
-    and contract specifications.
+    contract specifications, and both baseline & calibrated risk/reward parameters.
     """
     norm = normalize_symbol_string(symbol)
     is_jpy = "JPY" in norm
@@ -145,6 +145,11 @@ def get_symbol_spec(symbol: str) -> Dict[str, Any]:
     pip_size = 0.01 if is_jpy else 0.0001
     digits = 3 if is_jpy else 5
     contract_size = 100_000.0  # Standard forex lot
+
+    sched = PAIR_SCHEDULES.get(norm, {})
+    cal_sl = float(sched.get("sl_pips", FIXED_STOP_LOSS_PIPS))
+    cal_rr = float(sched.get("tp_rr", FIXED_RISK_REWARD_RATIO))
+    cal_tp = round(cal_sl * cal_rr, 1)
 
     return {
         "symbol": norm,
@@ -155,6 +160,11 @@ def get_symbol_spec(symbol: str) -> Dict[str, Any]:
         "default_tp_pips": FIXED_TAKE_PROFIT_PIPS,
         "default_sl_pips": FIXED_STOP_LOSS_PIPS,
         "rr_ratio": FIXED_RISK_REWARD_RATIO,
+        "calibrated_tp_pips": cal_tp,
+        "calibrated_sl_pips": cal_sl,
+        "calibrated_rr": cal_rr,
+        "bank_pct": sched.get("bank_pct", 0.60),
+        "hours": sched.get("hours", list(range(6, 17))),
     }
 
 

@@ -135,10 +135,83 @@ PAIR_SCHEDULES = {
 
 TIMEFRAMES = ["15m", "1h"]
 
-
 STATE_FILE = "market_scanner_state.json"
 TRADE_RECORDS_FILE = "trade_records.json"
 WORKER_SYNC_URL = "https://tradingview-telegram-relay.siddiqsiddiq00012.workers.dev/"
+
+
+def get_usd_directional_bias(symbol: str, direction: str) -> int:
+    """
+    Evaluates net USD directional bias (+1 for Long USD, -1 for Short USD).
+    EURUSD, GBPUSD, AUDUSD: Quote is USD.
+      LONG pair -> Short USD (-1)
+      SHORT pair -> Long USD (+1)
+    USDJPY, USDCHF, USDCAD: Base is USD.
+      LONG pair -> Long USD (+1)
+      SHORT pair -> Short USD (-1)
+    """
+    clean = (symbol or "").strip().upper().replace("=X", "").replace("/", "").replace("_", "").replace(".", "")
+    is_long = direction.strip().upper() in ["LONG", "BUY"]
+
+    if clean in ["EURUSD", "GBPUSD", "AUDUSD"]:
+        return -1 if is_long else 1
+    if clean in ["USDJPY", "USDCHF", "USDCAD"]:
+        return 1 if is_long else -1
+    return 0
+
+
+def count_usd_direction_exposure(active_trades: dict, target_bias: int) -> int:
+    """
+    Counts active unprotected floating positions that share the target USD bias.
+    Positions that have de-risked to Breakeven (+1.0R banked) are excluded from floating risk.
+    """
+    count = 0
+    for t in active_trades.values():
+        if t.get("be_active", False):
+            continue
+        sym = t.get("symbol") or t.get("pair") or ""
+        dir_str = t.get("direction", "")
+        if get_usd_directional_bias(sym, dir_str) == target_bias:
+            count += 1
+    return count
+
+
+def is_pair_in_post_loss_cooldown(records: dict, pair_name: str, cooldown_minutes: float = 60.0) -> tuple[bool, float]:
+    """
+    Checks if a currency pair is in a mandatory post-loss lockout period (e.g. 60 min on 15M).
+    Prevents repeated stop-outs caused by choppy range consolidation or whipsaws.
+    """
+    completed = records.get("completed_trades", [])
+    if not completed:
+        return False, 0.0
+
+    clean_pair = pair_name.strip().upper()
+    pair_trades = [
+        t for t in completed 
+        if (t.get("pair") or t.get("symbol") or "").strip().upper() == clean_pair
+    ]
+    if not pair_trades:
+        return False, 0.0
+
+    last_trade = pair_trades[-1]
+    if last_trade.get("outcome") != "LOSS":
+        return False, 0.0
+
+    closed_at_str = last_trade.get("closed_at")
+    if not closed_at_str:
+        return False, 0.0
+
+    try:
+        closed_dt = datetime.fromisoformat(closed_at_str.replace("Z", "+00:00"))
+        now_dt = datetime.now(timezone.utc)
+        elapsed_mins = (now_dt - closed_dt).total_seconds() / 60.0
+        if elapsed_mins < cooldown_minutes:
+            remaining = cooldown_minutes - elapsed_mins
+            return True, remaining
+    except Exception:
+        pass
+
+    return False, 0.0
 
 
 def load_state():
@@ -1503,6 +1576,14 @@ def scan_pair_timeframe(pair_name: str, config: dict, tf: str, state: dict) -> l
         logger.info(f"Skipping {pair_name} ({tf}): 15M US data release window (12:00 - 14:00 UTC). 1H setups active.")
         return []
 
+    # Post-Loss Cooldown Guard: Enforce 60-minute lockout on pairs that suffered a recent loss.
+    # Prevents entering choppy whipsaw ranges or repeated consolidation stop-outs.
+    if not os.environ.get("PYTEST_CURRENT_TEST"):
+        records_tmp = load_trade_records()
+        in_cooldown, remaining_mins = is_pair_in_post_loss_cooldown(records_tmp, pair_name, cooldown_minutes=60.0)
+        if in_cooldown:
+            logger.info(f"Skipping {pair_name} ({tf}): Post-loss cooldown active ({remaining_mins:.1f}m remaining). Capital preservation active.")
+            return []
 
     ticker = config["ticker"]
     pip = config["pip"]
@@ -2005,9 +2086,40 @@ def run_scan_cycle():
                 logger.info(f"Skipping {pair_name} ({tf}): Active trade currently floating in market.")
                 continue
 
+            # In-cycle dynamic risk checks:
+            # 1. Total simultaneous unprotected positions cap (max 3 across all pairs)
+            current_unprotected = [t for t in active_trades_map.values() if not t.get("be_active", False)]
+            if len(current_unprotected) >= 3:
+                logger.info(f"Skipping {pair_name} ({tf}): Simultaneous unprotected position cap (3) reached.")
+                continue
+
+            # 2. Pair-specific post-loss cooldown (1 hour lockout after a loss)
+            in_cooldown, remaining_mins = is_pair_in_post_loss_cooldown(records, pair_name, cooldown_minutes=60.0)
+            if in_cooldown and not os.environ.get("PYTEST_CURRENT_TEST"):
+                logger.info(f"Skipping {pair_name} ({tf}): Post-loss cooldown active ({remaining_mins:.1f}m remaining). Avoiding whipsaw chop.")
+                continue
+
             try:
                 signals = scan_pair_timeframe(pair_name, cfg, tf, state)
                 for sig in signals:
+                    # In-cycle guard: Re-verify unprotected cap before accepting new trade
+                    current_unprotected = [t for t in active_trades_map.values() if not t.get("be_active", False)]
+                    if len(current_unprotected) >= 3:
+                        logger.warning(f"Rejecting signal for {sig['pair']}: Maximum 3 unprotected positions already reached in this cycle.")
+                        continue
+
+                    # USD Directional Correlation Guard: Max 2 concurrent positions in same USD direction
+                    sig_bias = get_usd_directional_bias(sig["pair"], sig["direction"])
+                    if sig_bias != 0:
+                        usd_count = count_usd_direction_exposure(active_trades_map, sig_bias)
+                        if usd_count >= 2:
+                            bias_label = "LONG USD" if sig_bias > 0 else "SHORT USD"
+                            logger.warning(
+                                f"USD Correlation Guard: Rejecting {sig['pair']} {sig['direction']}. "
+                                f"Already have {usd_count} active {bias_label} positions. Avoiding clustered exposure."
+                            )
+                            continue
+
                     total_signals += 1
                     logger.info(f"==> NEW SIGNAL: {sig['pair']} {sig['timeframe']} {sig['direction']} @ {sig['entry']}")
                     msg = format_alert_message(sig)

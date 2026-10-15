@@ -1053,5 +1053,209 @@ def test_stop_loss_priority_over_take_profit_on_volatile_bar(monkeypatch):
     assert completed["realized_pips"] == -10.0
 
 
+def test_usd_directional_bias_and_exposure_counter():
+    """Verify USD directional exposure mapping across institutional universe."""
+    from market_scanner import get_usd_directional_bias, count_usd_direction_exposure
+
+    # Base pairs: LONG = Long USD (+1), SHORT = Short USD (-1)
+    assert get_usd_directional_bias("USDJPY", "LONG") == 1
+    assert get_usd_directional_bias("USDJPY", "SHORT") == -1
+    assert get_usd_directional_bias("USDCHF", "LONG") == 1
+    assert get_usd_directional_bias("USDCHF", "SHORT") == -1
+    assert get_usd_directional_bias("USDCAD", "LONG") == 1
+    assert get_usd_directional_bias("USDCAD", "SHORT") == -1
+
+    # Quote pairs: LONG = Short USD (-1), SHORT = Long USD (+1)
+    assert get_usd_directional_bias("EURUSD", "LONG") == -1
+    assert get_usd_directional_bias("EURUSD", "SHORT") == 1
+    assert get_usd_directional_bias("GBPUSD", "LONG") == -1
+    assert get_usd_directional_bias("GBPUSD", "SHORT") == 1
+    assert get_usd_directional_bias("AUDUSD", "LONG") == -1
+    assert get_usd_directional_bias("AUDUSD", "SHORT") == 1
+
+    # Test count_usd_direction_exposure
+    mock_active = {
+        "EURUSD_15M": {"pair": "EURUSD", "direction": "SHORT", "be_active": False},  # Long USD (+1)
+        "USDCAD_15M": {"pair": "USDCAD", "direction": "LONG", "be_active": False},   # Long USD (+1)
+        "USDCHF_15M": {"pair": "USDCHF", "direction": "LONG", "be_active": True},    # De-risked to BE (ignored)
+        "AUDUSD_15M": {"pair": "AUDUSD", "direction": "LONG", "be_active": False},   # Short USD (-1)
+    }
+    # Long USD count should be 2 (EURUSD SHORT + USDCAD LONG; USDCHF LONG is BE so ignored)
+    assert count_usd_direction_exposure(mock_active, 1) == 2
+    # Short USD count should be 1 (AUDUSD LONG)
+    assert count_usd_direction_exposure(mock_active, -1) == 1
+
+
+def test_post_loss_cooldown_locks_pair():
+    """Verify pair-specific post-loss cooldown locks out pair for 60 minutes after a stop-loss."""
+    from market_scanner import is_pair_in_post_loss_cooldown
+
+    now_utc = datetime.now(timezone.utc)
+    recent_closed = (now_utc - timedelta(minutes=25)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    old_closed = (now_utc - timedelta(minutes=90)).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    records_with_recent_loss = {
+        "completed_trades": [
+            {"pair": "GBPUSD", "outcome": "LOSS", "closed_at": recent_closed}
+        ]
+    }
+    in_cd, remaining = is_pair_in_post_loss_cooldown(records_with_recent_loss, "GBPUSD", cooldown_minutes=60.0)
+    assert in_cd is True
+    assert 30.0 <= remaining <= 40.0
+
+    # Trade completed 90 mins ago: cooldown should be expired
+    records_with_old_loss = {
+        "completed_trades": [
+            {"pair": "GBPUSD", "outcome": "LOSS", "closed_at": old_closed}
+        ]
+    }
+    in_cd, remaining = is_pair_in_post_loss_cooldown(records_with_old_loss, "GBPUSD", cooldown_minutes=60.0)
+    assert in_cd is False
+    assert remaining == 0.0
+
+    # Trade was a WIN: no cooldown
+    records_with_win = {
+        "completed_trades": [
+            {"pair": "GBPUSD", "outcome": "WIN", "closed_at": recent_closed}
+        ]
+    }
+    in_cd, remaining = is_pair_in_post_loss_cooldown(records_with_win, "GBPUSD", cooldown_minutes=60.0)
+    assert in_cd is False
+
+
+def test_in_cycle_usd_correlation_guard_and_unprotected_cap(monkeypatch):
+    """Ensure run_scan_cycle rejects a 3rd Long-USD position and caps total unprotected trades at 3."""
+    from market_scanner import run_scan_cycle
+
+    # Simulate already having 2 Long-USD positions: EURUSD SHORT and USDCHF LONG
+    records_state = {
+        "active_trades": {
+            "EURUSD_15M": {"pair": "EURUSD", "direction": "SHORT", "be_active": False},
+            "USDCHF_15M": {"pair": "USDCHF", "direction": "LONG", "be_active": False},
+        },
+        "completed_trades": []
+    }
+
+    monkeypatch.setattr("market_scanner.is_forex_market_open", lambda *args, **kwargs: True)
+    monkeypatch.setattr("market_scanner.check_active_trades", lambda *args, **kwargs: None)
+    monkeypatch.setattr("market_scanner.check_daily_circuit_breaker", lambda *args, **kwargs: (False, "OK"))
+    monkeypatch.setattr("market_scanner.load_trade_records", lambda: records_state)
+    monkeypatch.setattr("market_scanner.save_trade_records", lambda rec: records_state.update(rec))
+    monkeypatch.setattr("market_scanner.load_state", lambda: {"alerted_signals": []})
+    monkeypatch.setattr("market_scanner.save_state", lambda *args, **kwargs: None)
+    monkeypatch.setattr("market_scanner.sync_worker", lambda *args, **kwargs: None)
+    monkeypatch.setattr("market_scanner.send_telegram_alert", lambda *args, **kwargs: None)
+
+    # Mock scan_pair_timeframe returning a 3rd Long-USD signal: USDCAD LONG
+    # And a Short-USD signal: AUDUSD LONG
+    def mock_scan(pair_name, cfg, tf, state):
+        if pair_name == "USDCAD" and tf == "15m":
+            return [{
+                "id": "USDCAD_15M_CORR_TEST",
+                "pair": "USDCAD",
+                "timeframe": "15M",
+                "direction": "LONG",  # Long USD (+1) -> Must be rejected by correlation guard!
+                "time": "2026-10-15T12:00:00Z",
+                "entry": 1.4250,
+                "stop_loss": 1.4234,
+                "take_profit": 1.4274,
+                "sl_pips": 16.0,
+                "tp_pips": 24.0,
+                "rr": 1.5,
+                "bank_pct": 0.60
+            }]
+        elif pair_name == "AUDUSD" and tf == "15m":
+            return [{
+                "id": "AUDUSD_15M_CORR_TEST",
+                "pair": "AUDUSD",
+                "timeframe": "15M",
+                "direction": "LONG",  # Short USD (-1) -> Must be accepted!
+                "time": "2026-10-15T12:00:00Z",
+                "entry": 0.6950,
+                "stop_loss": 0.6938,
+                "take_profit": 0.6968,
+                "sl_pips": 12.0,
+                "tp_pips": 18.0,
+                "rr": 1.5,
+                "rsi": 52.0,
+                "atr": 12.0,
+                "score": 92,
+                "bank_pct": 0.60
+            }]
+        return []
+
+    monkeypatch.setattr("market_scanner.scan_pair_timeframe", mock_scan)
+
+    # Run scan cycle
+    dispatched = run_scan_cycle()
+
+    # USDCAD LONG was rejected because 2 Long-USD positions already existed.
+    # AUDUSD LONG was accepted because Short-USD count was 0.
+    assert "USDCAD_15M" not in records_state["active_trades"]
+    assert "AUDUSD_15M" in records_state["active_trades"]
+    assert dispatched == 1
+
+
+def test_in_cycle_max_unprotected_cap(monkeypatch):
+    """Ensure run_scan_cycle strictly rejects signals once 3 unprotected trades are active."""
+    from market_scanner import run_scan_cycle
+
+    # Simulate 3 active floating unprotected trades
+    records_state = {
+        "active_trades": {
+            "EURUSD_15M": {"pair": "EURUSD", "direction": "SHORT", "be_active": False},
+            "USDCHF_15M": {"pair": "USDCHF", "direction": "LONG", "be_active": False},
+            "AUDUSD_15M": {"pair": "AUDUSD", "direction": "LONG", "be_active": False},
+        },
+        "completed_trades": []
+    }
+
+    monkeypatch.setattr("market_scanner.is_forex_market_open", lambda *args, **kwargs: True)
+    monkeypatch.setattr("market_scanner.check_active_trades", lambda *args, **kwargs: None)
+    monkeypatch.setattr("market_scanner.check_daily_circuit_breaker", lambda *args, **kwargs: (False, "OK"))
+    monkeypatch.setattr("market_scanner.load_trade_records", lambda: records_state)
+    monkeypatch.setattr("market_scanner.save_trade_records", lambda rec: records_state.update(rec))
+    monkeypatch.setattr("market_scanner.load_state", lambda: {"alerted_signals": []})
+    monkeypatch.setattr("market_scanner.save_state", lambda *args, **kwargs: None)
+    monkeypatch.setattr("market_scanner.sync_worker", lambda *args, **kwargs: None)
+
+    # Mock returning a signal for GBPUSD 15M
+    def mock_scan(pair_name, cfg, tf, state):
+        if pair_name == "GBPUSD" and tf == "15m":
+            return [{
+                "id": "GBPUSD_15M_CAP_TEST",
+                "pair": "GBPUSD",
+                "timeframe": "15M",
+                "direction": "LONG",
+                "time": "2026-10-15T12:00:00Z",
+                "entry": 1.3200,
+                "stop_loss": 1.3180,
+                "take_profit": 1.3230,
+                "sl_pips": 20.0,
+                "tp_pips": 30.0,
+                "rr": 1.5,
+                "rsi": 55.0,
+                "atr": 18.0,
+                "score": 95,
+                "bank_pct": 0.60
+            }]
+        return []
+
+    monkeypatch.setattr("market_scanner.scan_pair_timeframe", mock_scan)
+
+    dispatched = run_scan_cycle()
+    # Must dispatch 0 signals because 3 unprotected positions are already floating
+    assert dispatched == 0
+    assert "GBPUSD_15M" not in records_state["active_trades"]
+
+    # Now simulate EURUSD de-risked to Breakeven (+1.0R partial banked)
+    records_state["active_trades"]["EURUSD_15M"]["be_active"] = True
+    dispatched_after_be = run_scan_cycle()
+    # Now that floating unprotected count is 2 (< 3), GBPUSD should be accepted!
+    assert dispatched_after_be == 1
+    assert "GBPUSD_15M" in records_state["active_trades"]
+
+
+
 
 
