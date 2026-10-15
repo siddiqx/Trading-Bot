@@ -343,5 +343,50 @@
       "summary": "Take-profit hit within 1 bar(s). High momentum impulse confirmed structural breakout conviction.",
       "actionable_insight": "Validates the 20-period Donchian channel breakout trigger."
     }
+  },
+  {
+    "tracking": {
+      "global_trade_no": 49,
+      "volume_no": 1,
+      "volume_trade_no": 49,
+      "volume_id": "VOL_01",
+      "volume_label": "Volume 1 (Trades 1\u2013100)"
+    },
+    "trade_id": "AUDUSD_1H_2026-10-15T09:00:00Z_SHORT",
+    "pair": "AUDUSD",
+    "symbol": "AUDUSD",
+    "timeframe": "1H",
+    "direction": "SHORT",
+    "entry_price": 0.69314,
+    "exit_price": 0.69309,
+    "stop_loss": 0.69309,
+    "take_profit": 0.69134,
+    "opened_at": "2026-10-15T09:00:00Z",
+    "closed_at": "2026-10-15T10:31:19Z",
+    "duration_hours": 1.52,
+    "duration_bars": 2,
+    "outcome": "WIN",
+    "realized_pips": 7.2,
+    "realized_r": 0.6,
+    "excursion_metrics": {
+      "mfe_pips": 14.3,
+      "mfe_r": 28.67,
+      "mae_pips": -1.5,
+      "mae_r": -2.98,
+      "tp_distance_pct_reached": 79.6
+    },
+    "market_regime": {
+      "trading_session": "London Session",
+      "rsi_at_entry": 50.0,
+      "atr_14": 0.0015,
+      "volatility_regime": "NORMAL",
+      "ema_alignment": "BEARISH_EXPANDING",
+      "breakout_candle_wick_ratio": 0.28
+    },
+    "diagnostic": {
+      "primary_factor": "HIGH_VELOCITY_BREAKOUT",
+      "summary": "Take-profit hit within 1 bar(s). High momentum impulse confirmed structural breakout conviction.",
+      "actionable_insight": "Validates the 20-period Donchian channel breakout trigger."
+    }
   }
 ]
