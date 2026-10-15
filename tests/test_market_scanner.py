@@ -859,21 +859,21 @@ def test_format_alert_message_ict():
     msg = format_alert_message(sig)
     assert "ICT Killzone Liquidity Sweep" in msg
     assert "1.08" in msg
-    assert "Model J: Bank 60% @ +1.0R, advance SL to Breakeven (+0.5p buffer)" in msg
+    assert "Pure Binary 1:1.50 Target (100% Runner to TP / SL, Zero Partials)" in msg
     assert "$25.00 / trade (0.50% on $5,000 Prop Account · 0.25 Lots)" in msg
 
 
-def test_model_j_partial_profit_banking_at_1r(monkeypatch):
-    """Verify that reaching +1.0R banks 60% profit and advances SL to Breakeven (+0.5p buffer)."""
+def test_binary_target_execution_no_partial_banking_at_1r(monkeypatch):
+    """Verify that reaching +1.0R does NOT bank partial profit or move SL to Breakeven (binary target execution)."""
     from market_scanner import check_active_trades
 
     t_entry = datetime(2026, 9, 28, 10, 0, tzinfo=timezone.utc)
-    # Entry: 1.10000, SL: 1.09840 (16 pips = 0.00160). Target 1R = 1.10160.
-    # Bar 1 high reaches 1.10170 (+1.06R). Bar 1 close is 1.10120 (does not reach 1.5R TP 1.10240).
+    # Entry: 1.10000, SL: 1.09840 (16 pips). TP: 1.10240 (24 pips = 1.5R).
+    # Bar 1 reaches 1.10170 (+1.06R). Does not reach 1.5R TP (1.10240).
     mock_df = pd.DataFrame({
         "time": [t_entry + timedelta(minutes=15 * i) for i in range(2)],
         "open": [1.10000, 1.10080],
-        "high": [1.10050, 1.10170],  # Reaches +1.0R target (1.10160)
+        "high": [1.10050, 1.10170],  # Reaches +1.0R excursion
         "low": [1.09980, 1.10050],
         "close": [1.10040, 1.10120],
         "volume": [100] * 2,
@@ -891,7 +891,7 @@ def test_model_j_partial_profit_banking_at_1r(monkeypatch):
     records = {
         "active_trades": {
             "EURUSD": {
-                "trade_id": "EURUSD_MODEL_J",
+                "trade_id": "EURUSD_BINARY",
                 "pair": "EURUSD",
                 "symbol": "EURUSD",
                 "ticker": "EURUSD=X",
@@ -903,7 +903,7 @@ def test_model_j_partial_profit_banking_at_1r(monkeypatch):
                 "sl_pips": 16.0,
                 "tp_pips": 24.0,
                 "rr": 1.5,
-                "bank_pct": 0.60,
+                "bank_pct": 0.0,
                 "partial_taken": False,
                 "be_active": False,
                 "pip": 0.0001,
@@ -918,27 +918,24 @@ def test_model_j_partial_profit_banking_at_1r(monkeypatch):
     check_active_trades(records)
 
     trade = records["active_trades"]["EURUSD"]
-    assert trade["partial_taken"] is True
-    assert trade["be_active"] is True
-    assert trade["partial_banked_r"] == 0.60
-    assert trade["partial_banked_pips"] == 9.6
-    # SL should be moved to Breakeven + 0.5 pip buffer: 1.10000 + 0.00005 = 1.10005
-    assert trade["stop_loss"] == 1.10005
-    assert any("PARTIAL PROFIT SECURED" in a for a in alerts)
+    # Trade remains open with initial SL completely untouched
+    assert trade["stop_loss"] == 1.09840
+    assert trade.get("partial_taken") is False
+    assert not any("PARTIAL PROFIT SECURED" in a for a in alerts)
 
 
-def test_model_j_runner_stopped_at_be_retains_win(monkeypatch):
-    """Verify that a position that banked 60% @ 1R and stopped at BE completes with WIN and +0.60R."""
+def test_binary_target_execution_reaches_full_tp_for_win(monkeypatch):
+    """Verify that reaching full TP completes with pure WIN and 1.50R without partial deductions."""
     from market_scanner import check_active_trades
 
     t_entry = datetime(2026, 9, 28, 10, 0, tzinfo=timezone.utc)
-    # Entry: 1.10000, SL advanced to BE buffer 1.10005. Bar dips to 1.09990.
+    # Entry: 1.10000, SL: 1.09840, TP: 1.10240. Bar high reaches 1.10250 (TP hit).
     mock_df = pd.DataFrame({
         "time": [t_entry + timedelta(minutes=15)],
         "open": [1.10050],
-        "high": [1.10080],
-        "low": [1.09990],  # Hits BE SL at 1.10005
-        "close": [1.10000],
+        "high": [1.10250],  # Hits TP
+        "low": [1.10020],
+        "close": [1.10240],
         "volume": [100],
         "ema20": [1.09900],
         "ema50": [1.09800]
@@ -955,23 +952,21 @@ def test_model_j_runner_stopped_at_be_retains_win(monkeypatch):
     records = {
         "active_trades": {
             "EURUSD": {
-                "trade_id": "EURUSD_BE_WIN",
+                "trade_id": "EURUSD_FULL_TP",
                 "pair": "EURUSD",
                 "symbol": "EURUSD",
                 "ticker": "EURUSD=X",
                 "direction": "LONG",
                 "timeframe": "15M",
                 "entry": 1.10000,
-                "stop_loss": 1.10005,  # BE SL
+                "stop_loss": 1.09840,
                 "take_profit": 1.10240,
                 "sl_pips": 16.0,
                 "tp_pips": 24.0,
                 "rr": 1.5,
-                "bank_pct": 0.60,
-                "partial_taken": True,
-                "partial_banked_r": 0.60,
-                "partial_banked_pips": 9.6,
-                "be_active": True,
+                "bank_pct": 0.0,
+                "partial_taken": False,
+                "be_active": False,
                 "pip": 0.0001,
                 "digits": 5,
                 "opened_at": t_entry.strftime("%Y-%m-%dT%H:%M:%SZ"),
@@ -987,8 +982,8 @@ def test_model_j_runner_stopped_at_be_retains_win(monkeypatch):
     assert len(records["completed_trades"]) == 1
     completed = records["completed_trades"][0]
     assert completed["outcome"] == "WIN"
-    assert completed["realized_r"] == 0.60
-    assert completed["realized_pips"] == 9.6
+    assert completed["realized_r"] == 1.50
+    assert completed["realized_pips"] == 24.0
 
 
 def test_stop_loss_priority_over_take_profit_on_volatile_bar(monkeypatch):

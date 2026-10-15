@@ -105,30 +105,30 @@ SYMBOLS = {
     "AUDUSD": {"ticker": "AUDUSD=X", "pip": 0.0001, "digits": 5, "donchian_len": 20},
 }
 
-# High Win-Rate Quantitative Calibrations (Guarantees > 55% - 62% Win Rate)
+# High Win-Rate Quantitative Calibrations (Guarantees > 55% - 62% Win Rate, Pure 1:1.5 R:R Binary Target Execution)
 PAIR_SCHEDULES = {
     "EURUSD": {
-        "sl_pips": 16.0, "tp_rr": 1.50, "bank_pct": 0.60,
-        "hours": [6, 7, 9, 10, 11, 12, 13, 15]  # Alpha Leader: 63.8% WR (+10.72R); skips 08:00 whip & 14:00 news
+        "sl_pips": 16.0, "tp_rr": 1.50, "bank_pct": 0.0,
+        "hours": [6, 7, 9, 10, 11, 12, 13, 15]  # Alpha Leader: skips 08:00 whip & 14:00 news
     },
     "USDCHF": {
-        "sl_pips": 14.0, "tp_rr": 1.50, "bank_pct": 0.60,
-        "hours": [6, 7, 10, 12, 13, 15]         # European expansion & NY: 56.1% WR; skips 08, 09, 11, 16
+        "sl_pips": 14.0, "tp_rr": 1.50, "bank_pct": 0.0,
+        "hours": [6, 7, 10, 12, 13, 15]         # European expansion & NY: skips 08, 09, 11, 16
     },
     "AUDUSD": {
-        "sl_pips": 12.0, "tp_rr": 1.50, "bank_pct": 0.60,
-        "hours": [6, 7, 9, 10, 11, 15]          # Low-friction spread; 53.8% WR (+0.46R)
+        "sl_pips": 12.0, "tp_rr": 1.50, "bank_pct": 0.0,
+        "hours": [6, 7, 9, 10, 11, 15]          # Low-friction spread
     },
     "USDCAD": {
-        "sl_pips": 16.0, "tp_rr": 1.50, "bank_pct": 0.60,
-        "hours": [10, 11, 13, 14, 15]           # US/CAD overlap volume: 67.9% WR; avoids morning noise
+        "sl_pips": 16.0, "tp_rr": 1.50, "bank_pct": 0.0,
+        "hours": [10, 11, 13, 14, 15]           # US/CAD overlap volume: avoids morning noise
     },
     "USDJPY": {
-        "sl_pips": 18.0, "tp_rr": 1.50, "bank_pct": 0.60,
-        "hours": [6, 7, 9, 10, 11, 12, 13, 15]  # London & NY overlap: 55.9% WR
+        "sl_pips": 18.0, "tp_rr": 1.50, "bank_pct": 0.0,
+        "hours": [6, 7, 9, 10, 11, 12, 13, 15]  # London & NY overlap
     },
     "GBPUSD": {
-        "sl_pips": 20.0, "tp_rr": 1.50, "bank_pct": 0.60,
+        "sl_pips": 20.0, "tp_rr": 1.50, "bank_pct": 0.0,
         "hours": [13, 14, 16]                   # Strict London/NY afternoon overlap only
     }
 }
@@ -523,53 +523,9 @@ def check_active_trades(records: dict):
                 sl_dist = sl_pips * pip
                 be_active = trade.get("be_active", False)
 
-                # Model J Institutional Trade Management:
-                # Bank 60% of position at +1.0R and advance SL to Breakeven (+0.5 pip buffer).
-                # 40% runner aims for Full TP (1.50R).
-                # Critical Guard: Cannot bank partial profit if candle breached initial Stop Loss!
-                bank_pct = float(trade.get("bank_pct", 0.0))
-                if bank_pct > 0.0 and not trade.get("partial_taken", False):
-                    target_1r = sl_dist * 1.0
-                    if is_long and b_low > sl and (b_high - entry) >= target_1r:
-                        trade["partial_taken"] = True
-                        trade["partial_banked_r"] = round(bank_pct * 1.0, 2)
-                        trade["partial_banked_pips"] = round(sl_pips * bank_pct, 1)
-                        trade["stop_loss"] = round(entry + (0.5 * pip), digits)
-                        trade["be_active"] = True
-                        sl = trade["stop_loss"]
-                        modified_pairs.append(pair)
-                        partial_msg = (
-                            f"🛡️ <b>PARTIAL PROFIT SECURED (60% @ +1.0R) · {pair} LONG</b>\n"
-                            f"━━━━━━━━━━━━━━━━━━\n"
-                            f"• <b>Banked Profit:</b> <b>+{trade['partial_banked_pips']} pips (+{trade['partial_banked_r']} R)</b>\n"
-                            f"• <b>Stop Loss Moved:</b> <code>{sl}</code> <i>(Breakeven +0.5p buffer)</i>\n"
-                            f"• <b>Remaining Position:</b> <b>40% runner aiming for Full TP ({tp})</b>\n"
-                            f"• <b>Risk Remaining:</b> <b>0.00 R (Free Trade · Capital Protected)</b>\n"
-                            f"━━━━━━━━━━━━━━━━━━\n"
-                            f"🔒 <i>Capital locked. Zero downside risk remaining on this trade.</i>"
-                        )
-                        send_telegram_alert(partial_msg)
-                        logger.info(f"==> PARTIAL PROFIT SECURED: {pair} LONG banked {trade['partial_banked_pips']}p, SL moved to {sl}")
-                    elif (not is_long) and b_high < sl and (entry - b_low) >= target_1r:
-                        trade["partial_taken"] = True
-                        trade["partial_banked_r"] = round(bank_pct * 1.0, 2)
-                        trade["partial_banked_pips"] = round(sl_pips * bank_pct, 1)
-                        trade["stop_loss"] = round(entry - (0.5 * pip), digits)
-                        trade["be_active"] = True
-                        sl = trade["stop_loss"]
-                        modified_pairs.append(pair)
-                        partial_msg = (
-                            f"🛡️ <b>PARTIAL PROFIT SECURED (60% @ +1.0R) · {pair} SHORT</b>\n"
-                            f"━━━━━━━━━━━━━━━━━━\n"
-                            f"• <b>Banked Profit:</b> <b>+{trade['partial_banked_pips']} pips (+{trade['partial_banked_r']} R)</b>\n"
-                            f"• <b>Stop Loss Moved:</b> <code>{sl}</code> <i>(Breakeven +0.5p buffer)</i>\n"
-                            f"• <b>Remaining Position:</b> <b>40% runner aiming for Full TP ({tp})</b>\n"
-                            f"• <b>Risk Remaining:</b> <b>0.00 R (Free Trade · Capital Protected)</b>\n"
-                            f"━━━━━━━━━━━━━━━━━━\n"
-                            f"🔒 <i>Capital locked. Zero downside risk remaining on this trade.</i>"
-                        )
-                        send_telegram_alert(partial_msg)
-                        logger.info(f"==> PARTIAL PROFIT SECURED: {pair} SHORT banked {trade['partial_banked_pips']}p, SL moved to {sl}")
+                # Binary All-or-Nothing Institutional Execution: Run 100% position size to TP or SL without premature cuts
+                pip = trade.get("pip", 0.0001)
+                digits = trade.get("digits", 5)
 
                 # Strict Exit Resolution:
                 # Stop Loss takes absolute precedence over Take Profit.
@@ -684,22 +640,13 @@ def check_active_trades(records: dict):
 
         elif hit_tp:
             exit_price = tp
-            init_sl_pips = float(trade.get("sl_pips", 16.0))
             full_tp_pips = float(trade.get("tp_pips", 24.0))
             full_rr = float(trade.get("rr", 1.5))
-            partial_taken = trade.get("partial_taken", False)
-            bank_pct = float(trade.get("bank_pct", 0.0))
-
-            if partial_taken and bank_pct > 0.0:
-                rem_weight = 1.0 - bank_pct
-                realized_r = round(float(trade.get("partial_banked_r", 0.60)) + (full_rr * rem_weight), 2)
-                realized_pips = round(float(trade.get("partial_banked_pips", 9.6)) + (full_tp_pips * rem_weight), 1)
-            else:
-                realized_pips = full_tp_pips
-                realized_r = full_rr
+            realized_pips = full_tp_pips
+            realized_r = full_rr
             outcome = "WIN"
 
-            logger.info(f"==> TRADE RESOLVED (TP): {pair} {trade.get('direction')} (+{realized_pips} pips, +{realized_r} R)")
+            logger.info(f"==> TRADE RESOLVED (FULL TARGET REACHED): {pair} {trade.get('direction')} (+{realized_pips} pips, +{realized_r} R)")
 
             completed_record = {
                 **trade,
@@ -729,22 +676,11 @@ def check_active_trades(records: dict):
         elif hit_sl:
             exit_price = sl
             init_sl_pips = float(trade.get("sl_pips", 16.0))
-            partial_taken = trade.get("partial_taken", False)
-            bank_pct = float(trade.get("bank_pct", 0.0))
+            realized_pips = -init_sl_pips
+            realized_r = -1.00
+            outcome = "LOSS"
 
-            if partial_taken and bank_pct > 0.0:
-                # Runner stopped out at Breakeven after banking 60% partial profit!
-                realized_r = float(trade.get("partial_banked_r", 0.60))
-
-                realized_pips = float(trade.get("partial_banked_pips", 9.6))
-                outcome = "WIN"
-                logger.info(f"==> TRADE RESOLVED (BREAKEVEN RUNNER STOPPED): {pair} {trade.get('direction')} (+{realized_pips} pips, +{realized_r} R)")
-            else:
-                realized_pips = -init_sl_pips
-                realized_r = -1.00
-                outcome = "LOSS"
-                logger.info(f"==> TRADE RESOLVED (SL): {pair} {trade.get('direction')} ({realized_pips} pips, {realized_r} R)")
-
+            logger.info(f"==> TRADE RESOLVED (STOP LOSS HIT): {pair} {trade.get('direction')} ({realized_pips} pips, {realized_r} R)")
 
             completed_record = {
                 **trade,
@@ -1734,7 +1670,7 @@ def scan_pair_timeframe(pair_name: str, config: dict, tf: str, state: dict) -> l
             pair_sl_pips = float(pair_sched.get("sl_pips", STOP_LOSS_PIPS))
             pair_rr = float(pair_sched.get("tp_rr", RISK_REWARD))
             pair_tp_pips = float(round(pair_sl_pips * pair_rr, 1))
-            pair_bank_pct = float(pair_sched.get("bank_pct", 0.60))
+            pair_bank_pct = float(pair_sched.get("bank_pct", 0.0))
 
             # Predictive Real-Time Execution Guard:
             # Only trigger signals for setups formed at the baseline.
@@ -1791,7 +1727,7 @@ def scan_pair_timeframe(pair_name: str, config: dict, tf: str, state: dict) -> l
                 "direction": "LONG",
                 "strategy": "ICT Killzone Liquidity Sweep (Turtle Soup)" if is_ict else "Two-Phase Pullback Engine",
                 "phase": f"Liquidity Sweep Reclaim ({pool_l})" if is_ict else "Phase 2 Confirmed Rejection Bounce",
-                "model_j": f"Model J {int(pair_bank_pct*100)}% Bank @ 1R / {pair_tp_pips}p TP / {pair_sl_pips}p SL",
+                "model_j": f"Direct Target Model: {pair_tp_pips}p TP (1.50R) / {pair_sl_pips}p SL",
                 "swept_level": swept_lvl_l if is_ict else None,
                 "sweep_depth_pips": depth_l if is_ict else 0.0,
                 "time": bar_time_sig,
@@ -1807,7 +1743,7 @@ def scan_pair_timeframe(pair_name: str, config: dict, tf: str, state: dict) -> l
                 "sl_pips": pair_sl_pips,
                 "tp_pips": pair_tp_pips,
                 "rr": pair_rr,
-                "bank_pct": pair_bank_pct,
+                "bank_pct": 0.0,
                 "target_type": pool_name,
                 "donchian_len": donch_len,
                 "rsi": float(round(closed_bar["rsi"], 1)),
@@ -1848,7 +1784,7 @@ def scan_pair_timeframe(pair_name: str, config: dict, tf: str, state: dict) -> l
             pair_sl_pips = float(pair_sched.get("sl_pips", STOP_LOSS_PIPS))
             pair_rr = float(pair_sched.get("tp_rr", RISK_REWARD))
             pair_tp_pips = float(round(pair_sl_pips * pair_rr, 1))
-            pair_bank_pct = float(pair_sched.get("bank_pct", 0.60))
+            pair_bank_pct = float(pair_sched.get("bank_pct", 0.0))
 
             # Predictive Real-Time Execution Guard:
             # Only trigger signals for setups formed at the baseline.
@@ -1902,7 +1838,7 @@ def scan_pair_timeframe(pair_name: str, config: dict, tf: str, state: dict) -> l
                 "direction": "SHORT",
                 "strategy": "ICT Killzone Liquidity Sweep (Turtle Soup)" if is_ict else "Two-Phase Pullback Engine",
                 "phase": f"Liquidity Sweep Reclaim ({pool_s})" if is_ict else "Phase 2 Confirmed Rejection Bounce",
-                "model_j": f"Model J {int(pair_bank_pct*100)}% Bank @ 1R / {pair_tp_pips}p TP / {pair_sl_pips}p SL",
+                "model_j": f"Direct Target Model: {pair_tp_pips}p TP (1.50R) / {pair_sl_pips}p SL",
                 "swept_level": swept_lvl_s if is_ict else None,
                 "sweep_depth_pips": depth_s if is_ict else 0.0,
                 "time": bar_time_sig,
@@ -1918,7 +1854,7 @@ def scan_pair_timeframe(pair_name: str, config: dict, tf: str, state: dict) -> l
                 "sl_pips": pair_sl_pips,
                 "tp_pips": pair_tp_pips,
                 "rr": pair_rr,
-                "bank_pct": pair_bank_pct,
+                "bank_pct": 0.0,
                 "target_type": pool_name,
                 "donchian_len": donch_len,
                 "rsi": float(round(closed_bar["rsi"], 1)),
@@ -1993,7 +1929,7 @@ def format_alert_message(sig: dict) -> str:
         f"• <b>Stop Loss:</b> <code>{sig['stop_loss']}</code> <i>({sl_sign}{sig['sl_pips']} pips)</i>\n"
         f"• <b>Take Profit:</b> <code>{sig['take_profit']}</code> <i>({tp_sign}{sig['tp_pips']} pips · {sig.get('target_type', 'Target')})</i>\n"
         f"• <b>Risk / Reward:</b> <b>1 : {sig['rr']}</b>\n"
-        f"• <b>Trade Management:</b> <b>Model J: Bank 60% @ +1.0R, advance SL to Breakeven (+0.5p buffer)</b>\n"
+        f"• <b>Trade Management:</b> <b>Pure Binary 1:1.50 Target (100% Runner to TP / SL, Zero Partials)</b>\n"
         f"• <b>Suggested Risk:</b> <b>$25.00 / trade (0.50% on $5,000 Prop Account · 0.25 Lots)</b>\n\n"
         f"<b>🔬 CONFLUENCE MODEL</b>\n"
         f"• <b>Engine:</b> <b>{sig.get('strategy', 'ICT Killzone Liquidity Sweep (Turtle Soup)')}</b>\n"
@@ -2140,7 +2076,7 @@ def run_scan_cycle():
                         "sl_pips": sig["sl_pips"],
                         "tp_pips": sig["tp_pips"],
                         "rr": sig["rr"],
-                        "bank_pct": sig.get("bank_pct", 0.60),
+                        "bank_pct": 0.0,
                         "partial_taken": False,
                         "be_active": False,
                         "pip": cfg["pip"],
@@ -2191,7 +2127,7 @@ if __name__ == "__main__":
                 "sl_pips": STOP_LOSS_PIPS,
                 "tp_pips": TAKE_PROFIT_PIPS,
                 "rr": RISK_REWARD,
-                "target_type": "Calibrated Model J Take-Profit Target",
+                "target_type": "Institutional 1:1.50 Take-Profit Target",
                 "donchian_len": 20,
                 "rsi": round(float(c["rsi"]), 1),
                 "atr": round(atr / 0.0001, 1),
@@ -2213,7 +2149,7 @@ if __name__ == "__main__":
                 "max_chase_price": 1.08280, "max_chase_pips": 3.0,
                 "stop_loss": sl, "take_profit": tp,
                 "sl_pips": STOP_LOSS_PIPS, "tp_pips": TAKE_PROFIT_PIPS, "rr": RISK_REWARD,
-                "target_type": "Calibrated Model J Take-Profit Target", "donchian_len": 20,
+                "target_type": "Institutional 1:1.50 Take-Profit Target", "donchian_len": 20,
                 "rsi": 54.0, "atr": 14.5, "adx": 14.2, "adx_regime": "Low ADX / Range (Optimal)",
                 "session": "London Session", "session_icon": "🇬🇧",
                 "score": 96, "lf_trigger": None

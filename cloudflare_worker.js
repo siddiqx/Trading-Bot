@@ -51,12 +51,12 @@ function getBaseSymbol(key, trade = null) {
 }
 
 const PAIR_SCHEDULES = {
-  "EURUSD": { sl_pips: 16.0, tp_rr: 1.50, bank_pct: 0.60, hours: [6, 7, 9, 10, 11, 12, 13, 15] },
-  "USDCHF": { sl_pips: 14.0, tp_rr: 1.50, bank_pct: 0.60, hours: [6, 7, 10, 12, 13, 15] },
-  "AUDUSD": { sl_pips: 12.0, tp_rr: 1.50, bank_pct: 0.60, hours: [6, 7, 9, 10, 11, 15] },
-  "USDCAD": { sl_pips: 16.0, tp_rr: 1.50, bank_pct: 0.60, hours: [10, 11, 13, 14, 15] },
-  "USDJPY": { sl_pips: 18.0, tp_rr: 1.50, bank_pct: 0.60, hours: [6, 7, 9, 10, 11, 12, 13, 15] },
-  "GBPUSD": { sl_pips: 20.0, tp_rr: 1.50, bank_pct: 0.60, hours: [13, 14, 16] }
+  "EURUSD": { sl_pips: 16.0, tp_rr: 1.50, bank_pct: 0.0, hours: [6, 7, 9, 10, 11, 12, 13, 15] },
+  "USDCHF": { sl_pips: 14.0, tp_rr: 1.50, bank_pct: 0.0, hours: [6, 7, 10, 12, 13, 15] },
+  "AUDUSD": { sl_pips: 12.0, tp_rr: 1.50, bank_pct: 0.0, hours: [6, 7, 9, 10, 11, 15] },
+  "USDCAD": { sl_pips: 16.0, tp_rr: 1.50, bank_pct: 0.0, hours: [10, 11, 13, 14, 15] },
+  "USDJPY": { sl_pips: 18.0, tp_rr: 1.50, bank_pct: 0.0, hours: [6, 7, 9, 10, 11, 12, 13, 15] },
+  "GBPUSD": { sl_pips: 20.0, tp_rr: 1.50, bank_pct: 0.0, hours: [13, 14, 16] }
 };
 
 /**
@@ -78,7 +78,7 @@ function getAssetConfig(symbolOrKey, trade = null) {
     symbol: sym,
     sl_pips: trade?.sl_pips || sched.sl_pips || 16.0,
     tp_rr: trade?.rr || sched.tp_rr || 1.50,
-    bank_pct: trade?.bank_pct || sched.bank_pct || 0.60
+    bank_pct: 0.0
   };
 }
 
@@ -532,7 +532,7 @@ async function runActiveTradeChecks(env) {
             `📊 <b>Asset:</b> <b>${t.pair || symbol}</b> (${t.timeframe || "15M"})\n` +
             `🧭 <b>Position:</b> <b>${t.direction} CLOSED</b>\n` +
             `━━━━━━━━━━━━━━━━━━\n\n` +
-            `<b>📋 EXECUTION OUTCOME (MODEL J)</b>\n` +
+            `<b>📋 EXECUTION OUTCOME</b>\n` +
             `• <b>Entry Price:</b> <code>${t.entry}</code>\n` +
             `• <b>Exit Price:</b> <code>${exitPrice}</code>\n` +
             `• <b>Net Realized:</b> <b>${sign}${finalPips.toFixed(1)} pips</b>\n` +
@@ -1436,7 +1436,7 @@ async function sendPerformanceMessage(chatId, filterPair = "ALL", env) {
     `• Net Realized Return: <b>${rSign}${netR.toFixed(2)} R</b>\n` +
     `• Expectancy / Trade: <b>${expSign}${expectancy} R</b>\n` +
     `• Profit Factor: <code>${profitFactor}</code>\n` +
-    `• Target R:R: <code>1:1.5 (Calibrated SL & Model J 60% Banking @ +1.0R)</code>\n\n` +
+    `• Target R:R: <code>1:1.50 (Calibrated SL & 100% Position Runner to Pure TP)</code>\n\n` +
     `━━━━━━━━━━━━━━━━━━\n` +
     `⚡ <i>100% out-of-sample forward verification. Baseline reset 2026-10-08.</i>\n` +
     `🕒 <code>${utcNow}</code>`;
@@ -1641,8 +1641,8 @@ async function sendStatusMessage(chatId, env) {
     `⚡ <b>SYSTEM ARCHITECTURE STATUS</b>\n` +
     `━━━━━━━━━━━━━━━━━━\n` +
     `1. Engine Core: 🟢 <b>OPERATIONAL (24/7 Live)</b>\n` +
-    `2. Strategy Version: <code>v5.0 High-Yield Quant Alpha (Core Quad &amp; Model J)</code>\n` +
-    `3. Profit Banking: <code>Model J (Bank 60% @ 1.0R, BE Lock, 40% Runner to 1.50R)</code>\n` +
+    `2. Strategy Version: <code>v5.0 High-Yield Quant Alpha (Core Quad &amp; Pure 1:1.50 R:R)</code>\n` +
+    `3. Target Execution: <code>Pure Binary 1:1.50 (100% Runner to TP/SL, Zero Partials)</code>\n` +
     `4. Cloud Edge: <code>Cloudflare Global Edge Gateway</code>\n` +
     `5. Scanner Engine: <code>GitHub Actions Cloud Cron (*/15 Mon-Fri)</code>\n` +
     `6. Core Quad Universe: <code>EURUSD · USDCHF · USDCAD · GBPUSD (Zero Gold)</code>\n` +
@@ -1678,7 +1678,7 @@ async function sendStrategyMessage(chatId) {
   const text = 
     `🎯 <b>STRATEGY SPECIFICATIONS (v5.0 High-Yield Quant Alpha)</b>\n` +
     `━━━━━━━━━━━━━━━━━━\n` +
-    `<b>INSTITUTIONAL CORE QUAD & MODEL J TRADE MANAGEMENT</b>\n\n` +
+    `<b>INSTITUTIONAL CORE QUAD & BINARY 1:1.50 R:R EXECUTION</b>\n\n` +
     `<b>1. Performance Metrics (6-Month Historical Verification)</b>\n` +
     `• <b>Win Rate:</b> <b>67.52%</b> (79 Wins / 38 Losses across 117 executed trades)\n` +
     `• <b>Net Realized:</b> <b>+31.31 R</b> (a 3.8x yield increase over baseline)\n` +
@@ -1690,11 +1690,11 @@ async function sendStrategyMessage(chatId) {
     `• <b>USDCHF:</b> 06–07, 10, 12–15 UTC (skips 08–09 whip & 16 close) · <b>72.0% WR (+8.76R)</b>\n` +
     `• <b>USDCAD:</b> 09–11, 13–16 UTC (North American volume focus) · <b>61.0% WR (+4.79R)</b>\n` +
     `• <b>GBPUSD:</b> 09, 13–14, 16 UTC (London Mid-Morning & NY overlap) · <b>57.7% WR (+2.48R)</b>\n\n` +
-    `<b>3. Model J Trade Management (Partial Profit Banking)</b>\n` +
-    `• <b>+1.0R Milestone:</b> Bank 60% position size into cash immediately.\n` +
-    `• <b>Stop Loss Advance:</b> Move Stop Loss to Breakeven (+0.5 pip buffer) — Risk is locked at 0.00R!\n` +
-    `• <b>Runner Target:</b> Remaining 40% aims for Full Take Profit (1.50R).\n` +
-    `• <b>Win Lock:</b> Even if price pulls back to entry, trade is logged as a WIN (+0.60R banked profit)!\n\n` +
+    `<b>3. Binary Target Execution (Zero Partial Cutting)</b>\n` +
+    `• <b>100% Position Runner:</b> Full position size runs unhindered to either Pure TP or initial SL.\n` +
+    `• <b>Target R:R:</b> Fixed 1:1.50 calibrated liquidity pool take-profit (+1.50R).\n` +
+    `• <b>No Breakeven Noise:</b> Stop Loss remains firmly at structural invalidation (-1.00R) to eliminate whip-outs.\n` +
+    `• <b>Full Upside Retention:</b> Eliminates partial profit banking to let trade reach full mathematical edge.\n\n` +
     `<b>4. Risk & Prop Firm Sizing</b>\n` +
     `• <b>$5,000 GFT Standard:</b> $40–$50/trade (0.80%–1.00% risk) · Max 2 trades/day.\n` +
     `• <b>$1,000 GOAT $1:</b> $6.00/trade (0.60% risk) · Passes trailing DD with 0 breaches.\n` +
