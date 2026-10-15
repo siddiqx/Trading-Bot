@@ -143,8 +143,8 @@ def test_telegram_command_responses():
     assert "Available Commands" in help_reply
 
     strat_reply = service.generate_command_response("/strategy")
-    assert "Two-Phase Pullback Engine" in strat_reply
-    assert "Donchian Breakout Impulse" in strat_reply
+    assert "INSTITUTIONAL STRATEGY SPECIFICATION" in strat_reply
+    assert "ICT KILLZONE LIQUIDITY SWEEP" in strat_reply
 
     stats_reply = service.generate_command_response(
         "/stats",
@@ -163,8 +163,8 @@ def test_telegram_command_responses():
     assert "ACTIVE LIVE TRADES" in active_reply
 
     status_reply = service.generate_command_response("/status")
-    assert "System Operational Status" in status_reply
-    assert "v3.1 Two-Phase Pullback Engine" in status_reply
+    assert "SYSTEM OPERATIONAL STATUS" in status_reply
+    assert "INFRASTRUCTURE &amp; HEALTH" in status_reply
 
     perf_reply = service.generate_command_response("/performance")
     assert "STRATEGY PERFORMANCE" in perf_reply

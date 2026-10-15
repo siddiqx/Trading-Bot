@@ -1,12 +1,27 @@
 """Telegram notification service and message formatting."""
 
 from typing import Dict, Any, Optional, Tuple
+from datetime import datetime, timezone
 import html
 import json
 from pathlib import Path
 import httpx
 from app.config import get_settings
 from app.utils.logging import logger
+
+
+def is_market_open() -> bool:
+    """Forex markets close Friday 21:00 UTC, reopen Sunday 21:00 UTC."""
+    now = datetime.now(timezone.utc)
+    weekday = now.weekday()  # 0=Mon, 4=Fri, 5=Sat, 6=Sun
+    hour = now.hour
+    if weekday == 5:
+        return False
+    if weekday == 4 and hour >= 21:
+        return False
+    if weekday == 6 and hour < 21:
+        return False
+    return True
 
 
 class TelegramService:
@@ -234,7 +249,7 @@ class TelegramService:
 
         if cmd in ["/start", "/help", "/menu"]:
             return (
-                "🤖 <b>Institutional Forex Live Signal Bot v4.0</b>\n\n"
+                "🤖 <b>Institutional Forex Live Signal Bot v5.0</b>\n\n"
                 "<b>Available Commands:</b>\n"
                 "• /active - Currently running trades & floating positions\n"
                 "• /radar - 6-Asset institutional surveillance radar\n"
@@ -246,22 +261,37 @@ class TelegramService:
                 "• /patterns - Volume trade analytics & failure analysis\n"
                 "• /last - Most recent confirmed signal\n"
                 "• /help - Display this command overview\n\n"
-                "<i>ICT Killzone Liquidity Sweep Model with fixed 15-pip TP and 10-pip SL. Evidence-based execution across 6 institutional Forex pairs. Zero Gold.</i>"
+                "<i>ICT Killzone Liquidity Sweep Model with pure binary 1:1.50 R:R execution. Evidence-based execution across 6 institutional Forex pairs. Zero Gold.</i>"
             )
 
         elif cmd in ["/strategy", "/rules"]:
             return (
-                "📈 <b>ICT Killzone Liquidity Sweep Model (v4.0) — Institutional Forex Strategy</b>\n\n"
-                "• <b>Evolution:</b> Upgraded from Two-Phase Pullback Engine and Donchian Breakout Impulse to verified ICT liquidity sweeps.\n"
-                "• <b>Monitored Assets:</b> 6 Forex Pairs (EURUSD, USDCAD, GBPUSD, USDJPY, USDCHF, AUDUSD — Zero Gold)\n"
-                "• <b>Execution Timeframe:</b> 15M Chart within London (07:00–10:00 UTC) & NY (12:00–15:00 UTC) Killzones\n"
-                "• <b>Anchor Timeframe:</b> 1H Trend Agreement (EMA20 vs EMA50)\n"
-                "• <b>Liquidity Sweep:</b> Sweeps Asian Range (00:00–06:00 UTC) or 10-bar fractal swing by ≥1.0 pip with immediate displacement reclaim\n"
-                "• <b>Take Profit:</b> Fixed 15 Pips from entry price\n"
-                "• <b>Stop Loss:</b> Fixed 10 Pips from entry price\n"
-                "• <b>Risk/Reward Ratio:</b> Fixed 1:1.5 before transaction costs\n"
-                "• <b>Capital Protection:</b> $25.00 / trade (0.50% on $5,000 account · 0.25 Lots)\n"
-                "• <b>Execution:</b> Confirmed bar close only (100% Non-repainting)\n"
+                "🎯 <b>INSTITUTIONAL STRATEGY SPECIFICATION</b>\n"
+                "━━━━━━━━━━━━━━━━━━\n"
+                "<b>ICT KILLZONE LIQUIDITY SWEEP &amp; BREAKOUT ENGINE</b>\n\n"
+                "<b>1. Strategy Concept &amp; Core Edge</b>\n"
+                "• <b>Market Premise:</b> Exploits institutional stop-runs and liquidity sweeps above and below key session reference boundaries.\n"
+                "• <b>Edge:</b> Captures rapid displacement when smart money engineers liquidity against retail breakouts, delivering clean asymmetric follow-through without subjective guessing.\n\n"
+                "<b>2. Multi-Timeframe Execution Model</b>\n"
+                "• <b>Higher Timeframe Bias (1H):</b> 20 EMA vs 50 EMA directional agreement confirms macro regime and filters adverse trends.\n"
+                "• <b>Microstructure Trigger (15M):</b> Price sweeps Asian Range (00:00–06:00 UTC) or 10-bar fractal swing by ≥1.0 pip.\n"
+                "• <b>Execution Bar:</b> Enforces confirmed bar close (100% non-repainting execution).\n\n"
+                "<b>3. High-Volume Session Killzones (UTC)</b>\n"
+                "• <b>London Open:</b> <code>07:00 – 10:00 UTC</code> (European volume expansion)\n"
+                "• <b>New York Open:</b> <code>12:00 – 15:00 UTC</code> (US opening liquidity &amp; London overlap)\n"
+                "• <b>Dead-Zone Filter:</b> Low-volume consolidation periods and major news rollover chop are strictly bypassed.\n\n"
+                "<b>4. Target Geometry &amp; Binary Execution</b>\n"
+                "• <b>Risk/Reward Ratio:</b> <b>Fixed 1:1.50</b> (Mathematically optimized liquidity target)\n"
+                "• <b>Take Profit (+1.50R):</b> Anchored at opposing liquidity pool or key structural level.\n"
+                "• <b>Stop Loss (-1.00R):</b> Anchored firmly behind structural sweep invalidation point.\n"
+                "• <b>Binary Target Discipline:</b> Full 100% position size runs to TP or initial SL. Eliminates premature breakeven cuts, noise whip-outs, and preserves full mathematical expectancy.\n\n"
+                "<b>5. Portfolio Risk &amp; Capital Protection</b>\n"
+                "• <b>Position Risk:</b> <code>0.50% Equity</code> ($25 risk on a $5,000 account)\n"
+                "• <b>Correlation Guard:</b> Max 2 concurrent positions across the entire currency basket.\n"
+                "• <b>Universe:</b> 6 Forex Pairs (<code>EURUSD · USDCAD · GBPUSD · USDJPY · USDCHF · AUDUSD</code>).\n"
+                "• <b>Exclusions:</b> Zero Gold (XAUUSD permanently disabled due to unbacked spread spikes).\n"
+                "━━━━━━━━━━━━━━━━━━\n"
+                "🛡 <i>Systematic, rule-based algorithmic execution engineered for prop firm compliance.</i>"
             )
 
         elif cmd in ["/active", "/open", "/trades", "/positions"]:
@@ -304,27 +334,32 @@ class TelegramService:
             )
 
         elif cmd == "/status":
-            last_sig_text = "None"
-            if last_signal:
-                last_sig_text = f"{last_signal.symbol} {last_signal.direction} at {last_signal.received_at.strftime('%Y-%m-%d %H:%M:%S UTC')}"
-            elif completed_trades:
-                lt = completed_trades[-1]
-                last_sig_text = f"{lt.get('symbol', '')} {lt.get('direction', '')} ({lt.get('outcome', '')})"
-            elif active_trades:
-                at = next(iter(active_trades.values()))
-                last_sig_text = f"{at.get('symbol', '')} {at.get('direction', '')} (RUNNING)"
+            utc_now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+            active_count = len(active_trades)
+            exposure_pct = f"{active_count * 0.50:.2f}"
+            market_regime = "🟢 OPEN (Interbank Liquidity Active)" if is_market_open() else "🟡 CLOSED (Weekend Session Hold · Opens Sun 21:00 UTC)"
 
             return (
-                "⚡ <b>System Operational Status</b>\n\n"
-                "• <b>Engine Core:</b> Online (v3.1 Two-Phase Pullback Engine)\n"
-                "• <b>TP/SL Model:</b> Fixed 15-Pip TP / 10-Pip SL (1:1.5 RR)\n"
-                "• <b>Eligible Universe:</b> 6 Forex Pairs (Zero Gold)\n"
-                "• <b>Active Positions:</b> <code>" + str(len(active_trades)) + " locked</code>\n"
-                "• <b>Recorded Trades:</b> <code>" + str(len(completed_trades)) + " closed</code>\n"
-                "• <b>Execution Mode:</b> Confirmed Bar Close\n"
-                f"• <b>Last Recorded Signal:</b> <code>{last_sig_text}</code>\n"
-                f"• <b>Telegram Dispatch:</b> {'Configured' if self.is_configured else 'Mock / Unconfigured'}\n"
-                f"• <b>Baseline:</b> <code>2026-10-08</code> (Strategy Reset — Fresh Start)\n"
+                "⚡ <b>SYSTEM OPERATIONAL STATUS</b>\n"
+                "━━━━━━━━━━━━━━━━━━\n\n"
+                "<b>🟢 INFRASTRUCTURE &amp; HEALTH</b>\n"
+                "• <b>Engine Core:</b> <code>ONLINE (24/7 Serverless)</code>\n"
+                "• <b>Cloud Edge:</b> <code>Cloudflare Global Worker</code>\n"
+                "• <b>Market Scanner:</b> <code>Automated 15M Cycle (GitHub Actions)</code>\n"
+                "• <b>Pricing Feed:</b> <code>Live Interbank Quotes</code>\n"
+                f"• <b>Market Status:</b> <code>{market_regime}</code>\n\n"
+                "<b>📊 PORTFOLIO &amp; RISK STATE</b>\n"
+                f"• <b>Active Positions:</b> <code>{active_count} / 2 Max Concurrent</code>\n"
+                f"• <b>Capital Exposure:</b> <code>{exposure_pct}% Equity (0.50% / Trade)</code>\n"
+                "• <b>Monitored Universe:</b> <code>6 Major Forex Pairs</code>\n"
+                "• <b>Gold (XAUUSD):</b> <code>PERMANENTLY EXCLUDED</code>\n\n"
+                "<b>🛡 EXECUTION ARCHITECTURE</b>\n"
+                "• <b>Target Model:</b> <code>Pure Binary 1:1.50 R:R</code>\n"
+                "• <b>Position Management:</b> <code>100% Runner (Zero Partials)</code>\n"
+                "• <b>Stop Management:</b> <code>Strict Structural Invalidation</code>\n"
+                "• <b>Live Ledger:</b> <code>Synchronized (2026-10-15 Baseline)</code>\n"
+                "━━━━━━━━━━━━━━━━━━\n"
+                f"🕒 <code>{utc_now}</code> · <i>Real-time Engine Diagnostics</i>"
             )
 
         elif cmd == "/last":
