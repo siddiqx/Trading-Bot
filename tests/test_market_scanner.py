@@ -1251,6 +1251,113 @@ def test_in_cycle_max_unprotected_cap(monkeypatch):
     assert "GBPUSD_15M" in records_state["active_trades"]
 
 
+def test_signal_strictly_uses_live_price_not_stale_5m(monkeypatch):
+    """Ensure signals quote the actual live price, never overriding with a stale 5M candle close."""
+    from market_scanner import scan_pair_timeframe
+
+    cfg = {"ticker": "GBPUSD=X", "pip": 0.0001, "digits": 5, "donchian_len": 20}
+    state = {"alerted_signals": []}
+
+    # Create mock 15M candles where the last candle is a valid ICT liquidity sweep reclaim
+    now_utc = datetime(2026, 10, 15, 8, 30, tzinfo=timezone.utc)
+    t0 = now_utc - timedelta(minutes=15 * 50)
+    times = [t0 + timedelta(minutes=15 * i) for i in range(50)]
+    
+    # Prices: downward trend, then a bullish sweep reclaim on the last bar
+    closes = [1.3250 - (i * 0.0002) for i in range(49)] + [1.3160]
+    highs = [c + 0.0005 for c in closes]
+    lows = [c - 0.0005 for c in closes]
+    # Make last bar a strong rejection sweep reclaim
+    lows[-1] = 1.3140  # Deep sweep
+    highs[-1] = 1.3165
+    opens = [c - 0.0001 for c in closes]
+    opens[-1] = 1.3145
+
+    df = pd.DataFrame({
+        "timestamp": [int(t.timestamp()) for t in times],
+        "time": times,
+        "open": opens,
+        "high": highs,
+        "low": lows,
+        "close": closes,
+        "volume": [1000] * 50
+    })
+
+    live_executable_price = 1.31610  # Live tick right now (within 1 pip of 1.3160 bar close)
+    stale_5m_price = 1.31520         # Old 5M candle close from minutes ago
+
+    monkeypatch.setenv("PYTEST_CURRENT_TEST", "1")
+    monkeypatch.setattr("market_scanner.is_forex_market_open", lambda *a, **kw: True)
+    monkeypatch.setattr("market_scanner.fetch_candles", lambda *a, **kw: df)
+    monkeypatch.setattr("market_scanner.check_htf_alignment", lambda *a, **kw: (True, "HTF Aligned"))
+    monkeypatch.setattr("market_scanner.detect_ict_liquidity_sweep", lambda *a, **kw: (True, "2026-10-15T08:30:00Z", 1.3150, 10.0, "Asian Low Pool"))
+    monkeypatch.setattr("market_scanner.get_live_price", lambda *a, **kw: live_executable_price)
+    # Mock 5M trigger returning a stale 5M precision_entry
+    monkeypatch.setattr("market_scanner.fetch_5m_entry_trigger", lambda *a, **kw: {
+        "trigger_type": "5M Rejection Wick",
+        "precision_entry": stale_5m_price,
+        "confidence": 92,
+        "action_text": "Bullish pin bar on 5M",
+        "bar_close_time": "08:25 UTC"
+    })
+
+    signals = scan_pair_timeframe("GBPUSD", cfg, "15m", state)
+    assert len(signals) == 1
+    sig = signals[0]
+    # The entry MUST strictly be the live executable price, NOT the stale 5M price!
+    assert sig["entry"] == live_executable_price
+    assert sig["entry"] != stale_5m_price
+    # Stop loss and take profit must be calculated from the live entry
+    assert sig["stop_loss"] < sig["entry"]
+    assert sig["take_profit"] > sig["entry"]
+
+
+def test_chase_guard_rejects_extended_moves(monkeypatch):
+    """Ensure signals are rejected if live price has already drifted > 1.5 pips from bar close."""
+    from market_scanner import scan_pair_timeframe
+
+    cfg = {"ticker": "GBPUSD=X", "pip": 0.0001, "digits": 5, "donchian_len": 20}
+    state = {"alerted_signals": []}
+
+    now_utc = datetime(2026, 10, 15, 8, 30, tzinfo=timezone.utc)
+    t0 = now_utc - timedelta(minutes=15 * 50)
+    times = [t0 + timedelta(minutes=15 * i) for i in range(50)]
+    closes = [1.3160] * 50
+
+    df = pd.DataFrame({
+        "timestamp": [int(t.timestamp()) for t in times],
+        "time": times,
+        "open": closes,
+        "high": [c + 0.0005 for c in closes],
+        "low": [c - 0.0005 for c in closes],
+        "close": closes,
+        "volume": [1000] * 50
+    })
+
+    monkeypatch.setenv("PYTEST_CURRENT_TEST", "1")
+    monkeypatch.setattr("market_scanner.is_forex_market_open", lambda *a, **kw: True)
+    monkeypatch.setattr("market_scanner.fetch_candles", lambda *a, **kw: df)
+    monkeypatch.setattr("market_scanner.check_htf_alignment", lambda *a, **kw: (True, "HTF Aligned"))
+    monkeypatch.setattr("market_scanner.detect_ict_liquidity_sweep", lambda *a, **kw: (True, "2026-10-15T08:30:00Z", 1.3150, 10.0, "Asian Low Pool"))
+    
+    # Case 1: Live price is 1.31620 (2.0 pips above bar close 1.3160) -> exceeds 1.5 pip max chase!
+    monkeypatch.setattr("market_scanner.get_live_price", lambda *a, **kw: 1.31620)
+    signals = scan_pair_timeframe("GBPUSD", cfg, "15m", state)
+    assert len(signals) == 0
+
+    # Case 2: Live price is 1.31580 (2.0 pips below bar close 1.3160) -> adverse drift > 1.5 pips!
+    monkeypatch.setattr("market_scanner.get_live_price", lambda *a, **kw: 1.31580)
+    signals_adverse = scan_pair_timeframe("GBPUSD", cfg, "15m", state)
+    assert len(signals_adverse) == 0
+
+    # Case 3: Live price is 1.31610 (1.0 pip above bar close) -> valid baseline entry!
+    monkeypatch.setattr("market_scanner.get_live_price", lambda *a, **kw: 1.31610)
+    signals_valid = scan_pair_timeframe("GBPUSD", cfg, "15m", state)
+    assert len(signals_valid) == 1
+    assert signals_valid[0]["entry"] == 1.31610
+
+
+
 
 
 

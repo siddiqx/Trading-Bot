@@ -1549,9 +1549,9 @@ def scan_pair_timeframe(pair_name: str, config: dict, tf: str, state: dict) -> l
     prev_bar = closed_bars.iloc[-2]
     
     # Predictive Real-Time Freshness Guard:
-    # Restricts signal alerts to bars that closed within 10 minutes on 15M (or 30 minutes on 1H).
+    # Restricts signal alerts to bars that closed within 3 minutes on 15M (or 10 minutes on 1H).
     # Prevents triggering alerts on stale historical candles where price has already run.
-    max_age_seconds = 600 if tf == "15m" else 1800
+    max_age_seconds = 180 if tf == "15m" else 600
     seconds_since_close = (now_utc - closed_bar["close_time"]).total_seconds()
     if not os.environ.get("PYTEST_CURRENT_TEST") and seconds_since_close > max_age_seconds:
         logger.info(f"Skipping {pair_name} ({tf}): Bar closed {int(seconds_since_close)}s ago (exceeds {max_age_seconds}s real-time freshness limit). Move may already be underway.")
@@ -1674,19 +1674,25 @@ def scan_pair_timeframe(pair_name: str, config: dict, tf: str, state: dict) -> l
 
             # Predictive Real-Time Execution Guard:
             # Only trigger signals for setups formed at the baseline.
-            # Never alert on a move that is already underway or has drifted >2.0 pips.
-            max_chase_pips = 2.0
+            # Never alert on a move that is already underway or has drifted >1.5 pips.
+            max_chase_pips = 1.5
             max_chase_price_check = bar_close_price + (max_chase_pips * pip)
             if live_price > max_chase_price_check:
                 logger.info(f"Skipping {pair_name} ({tf}) LONG: Live price {live_price} extended {round((live_price - bar_close_price)/pip, 1)}p above bar close. Move is already underway; skipping late entry.")
                 return signals
 
-            # Proximity Guard: If live price has already travelled >= 25% towards full TP, skip
-            if (live_price - bar_close_price) >= (0.25 * pair_tp_pips * pip):
-                logger.info(f"Skipping {pair_name} ({tf}) LONG: Price already advanced >=25% towards target. Expansion already commenced.")
+            # Adverse drift guard: If price dropped >1.5 pips below bar close, momentum has stalled
+            if live_price < bar_close_price - (max_chase_pips * pip):
+                logger.info(f"Skipping {pair_name} ({tf}) LONG: Live price {live_price} dropped {round((bar_close_price - live_price)/pip, 1)}p below bar close. Momentum stalled; skipping entry.")
                 return signals
 
-            entry = live_price
+            # Proximity Guard: If live price has already travelled >= 15% towards full TP, skip
+            if (live_price - bar_close_price) >= (0.15 * pair_tp_pips * pip):
+                logger.info(f"Skipping {pair_name} ({tf}) LONG: Price already advanced >=15% towards target. Expansion already commenced.")
+                return signals
+
+            # Strict live market execution entry — never quote historical bar closes
+            entry = round(live_price, digits)
 
             take_profit, stop_loss = calculate_tp_sl(entry, "LONG", pair_name, tp_pips=pair_tp_pips, sl_pips=pair_sl_pips)
             calc_rr = pair_rr
@@ -1699,14 +1705,10 @@ def scan_pair_timeframe(pair_name: str, config: dict, tf: str, state: dict) -> l
             valid_zone_low = round(min(ote_entry, closed_bar["close"]), digits)
             valid_zone_high = round(max_chase_price, digits)
 
-            # ICT 5M Precision Entry Trigger (lower-timeframe confirmation)
+            # ICT 5M Lower-Timeframe Confirmation (confluence scoring only, never overrides live entry)
             lf_trigger = fetch_5m_entry_trigger(
                 ticker, "LONG", valid_zone_low, valid_zone_high, bar_close_price, pip, digits
             )
-            if lf_trigger and lf_trigger.get("precision_entry"):
-                entry = lf_trigger["precision_entry"]
-                take_profit, stop_loss = calculate_tp_sl(entry, "LONG", pair_name, tp_pips=pair_tp_pips, sl_pips=pair_sl_pips)
-                calc_rr = pair_rr
 
             # Signal Score Calculation (0-100)
             sig_score = 96 if is_ict else 94
@@ -1788,19 +1790,25 @@ def scan_pair_timeframe(pair_name: str, config: dict, tf: str, state: dict) -> l
 
             # Predictive Real-Time Execution Guard:
             # Only trigger signals for setups formed at the baseline.
-            # Never alert on a move that is already underway or has drifted >2.0 pips.
-            max_chase_pips = 2.0
+            # Never alert on a move that is already underway or has drifted >1.5 pips.
+            max_chase_pips = 1.5
             max_chase_price_check = bar_close_price - (max_chase_pips * pip)
             if live_price < max_chase_price_check:
                 logger.info(f"Skipping {pair_name} ({tf}) SHORT: Live price {live_price} extended {round((bar_close_price - live_price)/pip, 1)}p below bar close. Move is already underway; skipping late entry.")
                 return signals
 
-            # Proximity Guard: If live price has already travelled >= 25% towards full TP, skip
-            if (bar_close_price - live_price) >= (0.25 * pair_tp_pips * pip):
-                logger.info(f"Skipping {pair_name} ({tf}) SHORT: Price already advanced >=25% towards target. Expansion already commenced.")
+            # Adverse drift guard: If price rallied >1.5 pips above bar close, momentum has stalled
+            if live_price > bar_close_price + (max_chase_pips * pip):
+                logger.info(f"Skipping {pair_name} ({tf}) SHORT: Live price {live_price} rallied {round((live_price - bar_close_price)/pip, 1)}p above bar close. Momentum stalled; skipping entry.")
                 return signals
 
-            entry = live_price
+            # Proximity Guard: If live price has already travelled >= 15% towards full TP, skip
+            if (bar_close_price - live_price) >= (0.15 * pair_tp_pips * pip):
+                logger.info(f"Skipping {pair_name} ({tf}) SHORT: Price already advanced >=15% towards target. Expansion already commenced.")
+                return signals
+
+            # Strict live market execution entry — never quote historical bar closes
+            entry = round(live_price, digits)
 
             take_profit, stop_loss = calculate_tp_sl(entry, "SHORT", pair_name, tp_pips=pair_tp_pips, sl_pips=pair_sl_pips)
             calc_rr = pair_rr
@@ -1812,13 +1820,10 @@ def scan_pair_timeframe(pair_name: str, config: dict, tf: str, state: dict) -> l
             valid_zone_low = round(max_chase_price, digits)
             valid_zone_high = round(max(ote_entry, closed_bar["close"]), digits)
 
+            # ICT 5M Lower-Timeframe Confirmation (confluence scoring only, never overrides live entry)
             lf_trigger = fetch_5m_entry_trigger(
                 ticker, "SHORT", valid_zone_low, valid_zone_high, bar_close_price, pip, digits
             )
-            if lf_trigger and lf_trigger.get("precision_entry"):
-                entry = lf_trigger["precision_entry"]
-                take_profit, stop_loss = calculate_tp_sl(entry, "SHORT", pair_name, tp_pips=pair_tp_pips, sl_pips=pair_sl_pips)
-                calc_rr = pair_rr
 
             sig_score = 96 if is_ict else 94
             if lf_trigger:
@@ -1891,25 +1896,17 @@ def format_alert_message(sig: dict) -> str:
     tf_label = "1-HOUR (1H)" if sig["timeframe"] == "1H" else "15-MINUTE (15M)"
     setup_len = sig.get("donchian_len", 20)
 
-    # --- 5M Precision Entry Block ---
+    # --- Lower-Timeframe Confluence Block ---
     lf = sig.get("lf_trigger")  # May be None if no 5M trigger found
     if lf:
         lf_block = (
-            f"\n<b>⚡ 5M PRECISION ENTRY TRIGGER</b>\n"
-            f"• <b>Pattern:</b> <b>{lf['trigger_type']}</b> (Confidence: {lf['confidence']}%)\n"
-            f"• <b>Action:</b> {lf['action_text']}\n"
-            f"• <b>5M Bar Closed:</b> <code>{lf['bar_close_time']}</code>\n"
-            f"• <b>⚠️ Use this entry NOW</b> — 5M structure confirmed 15M signal\n\n"
+            f"<b>⚡ 5M CONFLUENCE CONFIRMATION</b>\n"
+            f"• <b>Structure:</b> <b>{lf['trigger_type']}</b> (Confidence: {lf['confidence']}%)\n"
+            f"• <b>Trigger Bar:</b> <code>{lf.get('bar_close_time', 'Confirmed')}</code>\n"
+            f"• <b>Confluence:</b> Lower-timeframe confirms 15M momentum conviction\n\n"
         )
-        immediate_entry = lf["precision_entry"]
     else:
-        lf_block = (
-            f"\n<b>⚡ 5M ENTRY TRIGGER</b>\n"
-            f"• No 5M reversal pattern detected yet in OTE zone\n"
-            f"• Wait for next 5M bar close near <code>{sig.get('ote_entry', sig['entry'])}</code>\n"
-            f"  and look for rejection wick or engulfing before entering\n\n"
-        )
-        immediate_entry = sig["entry"]
+        lf_block = ""
 
     return (
         f"{icon} <b>NEW TRADE SIGNAL · {display_pair}</b>\n"
@@ -1917,18 +1914,15 @@ def format_alert_message(sig: dict) -> str:
         f"🧭 <b>Direction:</b> <b>{action_text}</b>\n"
         f"⏱ <b>Timeframe:</b> <b>{tf_label}</b>\n"
         f"━━━━━━━━━━━━━━━━━━\n\n"
-        f"<b>🚀 IMMEDIATE ENTRY PRICE: <code>{immediate_entry}</code></b>\n"
-        f"<i>Enter at market within 3 minutes of this alert</i>\n\n"
+        f"<b>⚡ MARKET EXECUTION (LIVE FILL)</b>\n"
+        f"• <b>Live Entry:</b> <code>{sig['entry']}</code> <i>(Real-Time Executable Price)</i>\n"
+        f"• <b>Trigger Bar Close:</b> <code>{sig.get('bar_close_price', sig['entry'])}</code>\n"
+        f"• <b>Max Chase Cutoff:</b> <code>{sig.get('max_chase_price', sig['entry'])}</code> <i>(Hard Limit · ±{sig.get('max_chase_pips', 1.5)} pips)</i>\n\n"
         f"{lf_block}"
-        f"<b>📋 ICT ENTRY ZONE (15M)</b>\n"
-        f"• <b>15M Bar Close:</b> <code>{sig['entry']}</code>\n"
-        f"• <b>OTE Zone (50% CE):</b> <code>{sig.get('ote_entry', sig['entry'])}</code> <i>(ideal pullback entry)</i>\n"
-        f"• <b>Valid Zone:</b> <code>{sig.get('valid_zone_low', sig['entry'])} — {sig.get('valid_zone_high', sig['entry'])}</code>\n"
-        f"• <b>Max Chase:</b> <code>{sig.get('max_chase_price', sig['entry'])}</code> <i>(hard limit — skip beyond this)</i>\n\n"
-        f"<b>🎯 TARGETS & RISK</b>\n"
-        f"• <b>Stop Loss:</b> <code>{sig['stop_loss']}</code> <i>({sl_sign}{sig['sl_pips']} pips)</i>\n"
-        f"• <b>Take Profit:</b> <code>{sig['take_profit']}</code> <i>({tp_sign}{sig['tp_pips']} pips · {sig.get('target_type', 'Target')})</i>\n"
-        f"• <b>Risk / Reward:</b> <b>1 : {sig['rr']}</b>\n"
+        f"<b>🎯 TARGETS & RISK (1:1.50 R:R)</b>\n"
+        f"• <b>Stop Loss:</b> <code>{sig['stop_loss']}</code> <i>({sl_sign}{sig['sl_pips']} pips · -1.00R)</i>\n"
+        f"• <b>Take Profit:</b> <code>{sig['take_profit']}</code> <i>({tp_sign}{sig['tp_pips']} pips · +1.50R · {sig.get('target_type', 'Target')})</i>\n"
+        f"• <b>Risk / Reward:</b> <b>1 : {sig['rr']}</b> (Pure Binary Target · 100% Runner)\n"
         f"• <b>Trade Management:</b> <b>Pure Binary 1:1.50 Target (100% Runner to TP / SL, Zero Partials)</b>\n"
         f"• <b>Suggested Risk:</b> <b>$25.00 / trade (0.50% on $5,000 Prop Account · 0.25 Lots)</b>\n\n"
         f"<b>🔬 CONFLUENCE MODEL</b>\n"
@@ -1946,9 +1940,9 @@ def format_alert_message(sig: dict) -> str:
         f"━━━━━━━━━━━━━━━━━━\n"
         f"🕒 <b>Confirmed Bar:</b> <code>{sig['time']}</code>\n"
         f"💡 <b>Execution Rules:</b>\n"
-        f"1️⃣ <b>Immediate (0–3 min):</b> Enter at <code>{immediate_entry}</code> — market order NOW.\n"
-        f"2️⃣ <b>Delayed (3–10 min):</b> If price is inside zone <code>{sig.get('valid_zone_low', sig['entry'])} — {sig.get('valid_zone_high', sig['entry'])}</code>, enter market.\n"
-        f"3️⃣ <b>Late / Missed:</b> Set limit at OTE <code>{sig.get('ote_entry', sig['entry'])}</code> — wait for pullback. Never chase beyond <code>{sig.get('max_chase_price', sig['entry'])}</code>."
+        f"1️⃣ <b>Market Execution:</b> Enter at market <code>{sig['entry']}</code> within 3 min of this alert.\n"
+        f"2️⃣ <b>Pullback Limit (Optional):</b> Place pending limit at OTE <code>{sig.get('ote_entry', sig['entry'])}</code>.\n"
+        f"3️⃣ <b>Slippage Gate:</b> Never chase if live price has already exceeded <code>{sig.get('max_chase_price', sig['entry'])}</code>."
     )
 
 

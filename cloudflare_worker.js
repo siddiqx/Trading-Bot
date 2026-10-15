@@ -1739,6 +1739,13 @@ async function handleIncomingSignal(payload, env) {
     const tpPipDist = payload.tp_pips || (tpPrice && entryPrice ? Math.abs(tpPrice - entryPrice) / (pairConfig.pip || 0.0001) : slPipDist * 1.5);
     const barTime = payload.signal_time || payload.time || new Date().toISOString();
 
+    const isPending = (payload.status === "PENDING");
+    const orderStateText = isPending ? "⏳ <b>PENDING LIMIT ORDER (OTE Retest)</b>" : "⚡ <b>MARKET EXECUTION (LIVE FILL)</b>";
+    const entryLabel = isPending ? "Entry Target:" : "Live Entry:";
+    const executionNote = isPending 
+      ? "⏳ <i>Order pending fill at limit price. Floating PnL activates once entry point is touched.</i>"
+      : "⚡ <i>Market order executed at live price. Floating PnL is now actively tracked.</i>";
+
     alertMessage = 
       marketWarning +
       `${icon} <b>NEW TRADE SIGNAL · ${displayPair}</b>\n` +
@@ -1747,8 +1754,8 @@ async function handleIncomingSignal(payload, env) {
       `⏱ <b>Timeframe:</b> <b>${timeframe}</b>\n` +
       `━━━━━━━━━━━━━━━━━━\n\n` +
       `<b>📋 TRADE PARAMETERS (PURE 1:1.50 R:R)</b>\n` +
-      `• <b>Entry Target:</b> <code>${entryPrice}</code> <i>(Executed Fill Level)</i>\n` +
-      `• <b>Order State:</b> ⏳ <b>PENDING ENTRY FILL</b>\n` +
+      `• <b>${entryLabel}</b> <code>${entryPrice}</code> <i>(${isPending ? "Limit Order" : "Live Executable Price"})</i>\n` +
+      `• <b>Order State:</b> ${orderStateText}\n` +
       `• <b>Stop Loss:</b> <code>${slPrice}</code> (${slPipDist.toFixed(1)} pips · -1.00R)\n` +
       `• <b>Take Profit:</b> <code>${tpPrice}</code> (${tpPipDist.toFixed(1)} pips · +1.50R)\n` +
       `• <b>Risk / Reward:</b> <b>1 : ${(tpPipDist / slPipDist).toFixed(2)}</b> (Pure Binary Target · 100% Runner)\n` +
@@ -1759,7 +1766,7 @@ async function handleIncomingSignal(payload, env) {
       `• <b>Signal Score:</b> <b>${payload.score || payload.signal_score || 96} / 100</b>\n\n` +
       `━━━━━━━━━━━━━━━━━━\n` +
       `🕒 <b>Confirmed Bar:</b> <code>${barTime}</code>\n` +
-      `⏳ <i>Order pending fill. Floating PnL activates once entry point is touched.</i>`;
+      `${executionNote}`;
 
     // Persist to active trade ledger in KV & in-memory cache
     const newTradeEntry = {
@@ -1781,8 +1788,8 @@ async function handleIncomingSignal(payload, env) {
       pip: pairConfig.pip,
       digits: pairConfig.digits,
       opened_at: barTime,
-      status: "OPEN",
-      filled_at: barTime
+      status: isPending ? "PENDING" : "OPEN",
+      filled_at: isPending ? null : barTime
     };
 
     const kv = env && (env.TRADE_LEDGER || env.TRADES_KV || env.KV);
