@@ -422,7 +422,7 @@ class TelegramService:
                 "📈 <b>STRATEGY PERFORMANCE (v3.1 ICT Liquidity Sweep)</b>\n"
                 "━━━━━━━━━━━━━━━━━━\n"
                 f"Scope: <b>{filter_pair}</b>\n"
-                "Baseline: <code>2026-10-08</code> (Fresh Start — Strategy Reset)\n"
+                "Baseline: <code>2026-10-15</code> (Fresh Start — Strategy Reset)\n"
                 "━━━━━━━━━━━━━━━━━━\n\n"
                 "<b>1. TRADE EXECUTION</b>\n"
                 f"• Total Closed: <code>{len(closed)}</code>\n"
@@ -436,7 +436,7 @@ class TelegramService:
                 f"• Profit Factor: <code>{pf}</code>\n"
                 "• Target R:R: <code>1:1.5 (Fixed 15-Pip TP / 10-Pip SL)</code>\n\n"
                 "━━━━━━━━━━━━━━━━━━\n"
-                "⚡ <i>100% out-of-sample forward verification. Baseline reset 2026-10-08.</i>"
+                "⚡ <i>100% out-of-sample forward verification. Baseline reset 2026-10-15.</i>"
             )
 
         elif cmd == "/history":
@@ -444,7 +444,7 @@ class TelegramService:
                 return (
                     "📜 <b>COMPLETED TRADE HISTORY</b>\n"
                     "━━━━━━━━━━━━━━━━━━\n"
-                    "<i>No completed trades logged in live forward ledger yet.</i>"
+                    "<i>No completed trades found. System is tracking fresh from 2026-10-15 baseline.</i>"
                 )
 
             rows = []

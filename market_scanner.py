@@ -301,8 +301,8 @@ def format_exit_message(
     is_win = outcome == "WIN"
     is_be = outcome == "BREAK_EVEN"
     icon = "🎯" if is_win else ("🛡️" if is_be else "🛑")
-    header = "TARGET REACHED: LIQUIDITY POOL SWEPT" if is_win else ("CAPITAL PRESERVED: BREAK-EVEN EXIT" if is_be else "STRUCTURAL EXIT: STOP LOSS HIT")
-    status_text = "WIN (Liquidity Pool Swept)" if is_win else ("BREAK-EVEN (Capital Protected at +1.0R)" if is_be else "LOSS (Order Block Invalidation)")
+    header = f"TARGET REACHED: FULL TAKE PROFIT HIT (+{realized_r:.2f}R)" if is_win else ("CAPITAL PRESERVED: BREAK-EVEN EXIT" if is_be else "STRUCTURAL EXIT: STOP LOSS HIT (-1.00R)")
+    status_text = f"WIN (Liquidity Pool Swept · +{realized_r:.2f}R)" if is_win else ("BREAK-EVEN (Capital Protected)" if is_be else "LOSS (Order Block Invalidation)")
     sign = "+" if realized_pips >= 0 else ""
     r_sign = "+" if realized_r >= 0 else ""
     pair_name = trade.get('pair') or trade.get('symbol') or 'ASSET'

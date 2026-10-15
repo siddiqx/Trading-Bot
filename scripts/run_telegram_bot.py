@@ -432,10 +432,7 @@ async def get_active_payload():
                 risk_dist = abs(t.get("entry", 0.0) - t.get("stop_loss", 0.0)) / asset["pip"]
                 float_r = (pnl_pips / risk_dist) if risk_dist > 0 else 0.0
                 r_sign = "+" if float_r >= 0 else ""
-                float_emoji = "🟢" if pnl_pips >= 0 else "🔻"
-                be_flag = " 🛡<b>BE Locked</b>" if t.get("be_active") else ""
-                partial_flag = f" 💰<b>+{t.get('partial_banked_r', '0.60')}R Banked (+{t.get('partial_banked_pips', '9.6')}p)</b>" if t.get("partial_taken") else ""
-                float_text = f"• Live Price: <code>{current_price:.{asset['digits']}f}</code> ({float_emoji} <b>{pnl_sign}{pnl_pips:.1f} pips</b> | <b>{r_sign}{float_r:.2f}R</b>){be_flag}{partial_flag}\n"
+                float_text = f"• Live Price: <code>{current_price:.{asset['digits']}f}</code> ({float_emoji} <b>{pnl_sign}{pnl_pips:.1f} pips</b> | <b>{r_sign}{float_r:.2f}R</b>)\n"
         else:
             if is_pending:
                 float_text = "• Status: ⏳ <b>PENDING ENTRY FILL</b>\n• Floating PnL: <b>0.0 pips</b> (<i>Awaiting Feed</i>)\n"
@@ -668,7 +665,8 @@ def get_history_payload(filter_pair: str = "ALL", filter_range: str = "ALL"):
         p_name = t.get("pair") or t.get("symbol")
         is_cancelled = t.get("outcome") == "CANCELLED"
         is_win = t.get("outcome") == "WIN"
-        outcome_badge = "⚠️ <b>CANCELLED</b>" if is_cancelled else ("🎯 <b>WIN</b>" if is_win else "🛑 <b>LOSS</b>")
+        is_be = t.get("outcome") == "BREAK_EVEN"
+        outcome_badge = "⚠️ <b>CANCELLED</b>" if is_cancelled else ("🎯 <b>WIN</b>" if is_win else ("🛡️ <b>BREAK-EVEN</b>" if is_be else "🛑 <b>LOSS</b>"))
         pips_val = float(t.get("realized_pips") or 0.0)
         r_val = float(t.get("realized_r") or 0.0)
         sign = "+" if pips_val >= 0 else ""
@@ -682,7 +680,7 @@ def get_history_payload(filter_pair: str = "ALL", filter_range: str = "ALL"):
             f"• Outcome: {outcome_badge} {outcome_detail}"
         )
 
-    body_text = "\n\n".join(closed_rows) + "\n\n" if closed_rows else f"<i>No completed trades found for {filter_pair} ({range_label}).</i>\n\n"
+    body_text = "\n\n".join(closed_rows) + "\n\n" if closed_rows else f"<i>No completed trades found. System is tracking fresh from 2026-10-15 baseline.</i>\n\n"
 
     text = (
         "📜 <b>COMPLETED TRADE HISTORY</b>\n"
@@ -761,10 +759,10 @@ def get_performance_payload(filter_pair: str = "ALL"):
     expectancy = f"{net_r / (decided + be_count):+.3f} R" if (decided + be_count) > 0 else "N/A"
 
     text = (
-        "📈 <b>STRATEGY PERFORMANCE (v3.1 Production)</b>\n"
+        "📈 <b>STRATEGY PERFORMANCE (v5.0 High-Yield Quant Alpha)</b>\n"
         "━━━━━━━━━━━━━━━━━━\n"
         f"Scope: <b>{scope_label}</b>\n"
-        "Baseline: <code>2026-10-08</code> (Strategy Reset — Fresh Start)\n"
+        "Baseline: <code>2026-10-15</code> (Fresh Start Baseline)\n"
         "━━━━━━━━━━━━━━━━━━\n\n"
         "<b>1. TRADE EXECUTION</b>\n"
         f"• Total Closed: <code>{total_closed}</code>\n"
@@ -776,9 +774,9 @@ def get_performance_payload(filter_pair: str = "ALL"):
         f"• Net Realized Return: <b>{r_sign}{net_r:.2f} R</b>\n"
         f"• Expectancy / Trade: <b>{expectancy}</b>\n"
         f"• Profit Factor: <code>{profit_factor}</code>\n"
-        "• Target R:R: <code>1:1.50 (Calibrated SL & 100% Position Runner to Pure TP)</code>\n\n"
+        "• Target R:R: <code>1:1.50 (Pure Binary Target · 100% Runner to Pure TP)</code>\n\n"
         "━━━━━━━━━━━━━━━━━━\n"
-        "⚡ <i>100% out-of-sample forward verification. Baseline reset 2026-10-08.</i>\n"
+        "⚡ <i>100% out-of-sample forward verification. Baseline reset 2026-10-15.</i>\n"
         f"🕒 <code>{utc_now}</code>"
     )
 
@@ -987,7 +985,7 @@ def get_status_payload():
         f"8. Active Positions: <code>{active_count} locked</code>\n"
         f"9. Recorded Trades: <code>{closed_count} closed</code>\n"
         "10. Session Windows: <code>Asset-Specific Killzones (EUR 06-07/09-13/15, CHF 06-07/10/12-15, CAD 09-11/13-16, GBP 09/13-14/16 UTC)</code>\n"
-        "11. Forward Baseline: <code>2026-10-12 (v5.0 High-Yield Overhaul)</code>\n"
+        "11. Forward Baseline: <code>2026-10-15 (Fresh Start Baseline)</code>\n"
         "━━━━━━━━━━━━━━━━━━\n"
         f"🕒 <code>{utc_now}</code>"
     )
@@ -1012,7 +1010,7 @@ def get_clear_payload():
         "━━━━━━━━━━━━━━━━━━\n"
         "<b>1. Live Ledger Baseline</b>\n"
         "• All legacy test/backtest data has been <b>completely wiped</b>.\n"
-        "• The ledger tracks strictly live confirmed signals from <code>2026-10-08</code> onwards.\n"
+        "• The ledger tracks strictly live confirmed signals from <code>2026-10-15</code> onwards.\n"
         "• Strategy is locked at v5.0 High-Yield Quant Alpha (Core Quad & Pure 1:1.50 R:R).\n\n"
         "<b>2. To Clear Telegram Chat History</b>\n"
         "• On Mobile / Desktop: Tap the <b>⋮ (Three Dots)</b> menu at the top right of this chat.\n"

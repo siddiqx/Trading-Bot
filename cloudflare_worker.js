@@ -293,31 +293,13 @@ async function autoResolveTrade(symbol, t, outcome, exitPrice, env, prefetchedLe
   if (isCancelled) {
     pips = 0.0;
     r = 0.0;
-  } else if (t.partial_taken) {
-    // Model J: 60% position was booked at +1.0R (+0.60R banked)
-    const bankPct = t.bank_pct || 0.60;
-    const baseBankedR = t.partial_banked_r || 0.60;
-    const remPct = 1.0 - bankPct;
-    const initSlPips = t.sl_pips || Math.abs(t.entry - t.stop_loss) / (t.pip || 0.0001);
-
-    if (outcome === "WIN") {
-      // Reached full TP target on remaining 40%
-      const tpPips = t.tp_pips || (initSlPips * (t.rr || 1.50));
-      const rr = t.rr || 1.50;
-      r = baseBankedR + (rr * remPct);
-      pips = (t.partial_banked_pips || (initSlPips * bankPct)) + (tpPips * remPct);
-      resolvedOutcome = "WIN";
-    } else {
-      // Stopped out at Breakeven after banking 60% at +1.0R
-      r = baseBankedR; // +0.60R net win
-      pips = t.partial_banked_pips || (initSlPips * bankPct);
-      resolvedOutcome = "WIN"; // Model J guarantees net win
-    }
   } else {
     const isWin = outcome === "WIN";
+    const pip = t.pip || 0.0001;
+    const initSlPips = t.sl_pips || Math.abs(t.entry - t.stop_loss) / pip;
     pips = isWin 
-      ? (t.tp_pips || Math.abs(t.take_profit - t.entry) / (t.pip || 0.0001)) 
-      : -(t.sl_pips || Math.abs(t.entry - t.stop_loss) / (t.pip || 0.0001));
+      ? (t.tp_pips || Math.round(initSlPips * (t.rr || 1.50) * 10) / 10) 
+      : -(t.sl_pips || Math.round(initSlPips * 10) / 10);
     r = isWin ? (t.rr || 1.50) : -1.0;
   }
 
@@ -417,66 +399,7 @@ async function runActiveTradeChecks(env) {
         const digits = asset.digits || 5;
         const slPips = t.sl_pips || (Math.abs(t.entry - t.stop_loss) / pipVal);
         const target1R = slPips * pipVal;
-        const bankPct = t.bank_pct || 0.60;
-
-        // Model J Institutional Trade Management:
-        // Bank 60% of position at +1.0R and advance SL to Breakeven (+0.5 pip buffer).
-        if (!t.partial_taken && bankPct > 0) {
-          if (isLong && lastClose >= (t.entry + target1R) && lastClose > t.stop_loss) {
-            t.partial_taken = true;
-            t.partial_banked_r = 0.60;
-            t.partial_banked_pips = Math.round(slPips * bankPct * 10) / 10;
-            t.stop_loss = Math.round((t.entry + (0.5 * pipVal)) * (10 ** digits)) / (10 ** digits);
-            t.be_active = true;
-
-            const partialMsg = 
-              `🛡️ <b>PARTIAL PROFIT SECURED (60% @ +1.0R) · ${t.pair || symbol} LONG</b>\n` +
-              `━━━━━━━━━━━━━━━━━━\n` +
-              `• <b>Banked Profit:</b> <b>+${t.partial_banked_pips} pips (+${t.partial_banked_r} R)</b>\n` +
-              `• <b>Stop Loss Moved:</b> <code>${t.stop_loss}</code> <i>(Breakeven +0.5p buffer)</i>\n` +
-              `• <b>Remaining Position:</b> <b>40% runner aiming for Full TP (${t.take_profit})</b>\n` +
-              `• <b>Risk Remaining:</b> <b>0.00 R (Free Trade · Capital Protected)</b>\n` +
-              `━━━━━━━━━━━━━━━━━━\n` +
-              `🔒 <i>Capital locked. Zero downside risk remaining on this trade.</i>`;
-            await sendTelegramMessage(DEFAULT_CHAT_ID, partialMsg);
-
-            const kv = env && (env.TRADE_LEDGER || env.TRADES_KV || env.KV);
-            if (kv) {
-              try {
-                const curAct = { ...(ledger.active || {}) };
-                curAct[symbol] = t;
-                await kv.put("active_trades", JSON.stringify(curAct));
-              } catch (e) {}
-            }
-          } else if (!isLong && lastClose <= (t.entry - target1R) && lastClose < t.stop_loss) {
-            t.partial_taken = true;
-            t.partial_banked_r = 0.60;
-            t.partial_banked_pips = Math.round(slPips * bankPct * 10) / 10;
-            t.stop_loss = Math.round((t.entry - (0.5 * pipVal)) * (10 ** digits)) / (10 ** digits);
-            t.be_active = true;
-
-            const partialMsg = 
-              `🛡️ <b>PARTIAL PROFIT SECURED (60% @ +1.0R) · ${t.pair || symbol} SHORT</b>\n` +
-              `━━━━━━━━━━━━━━━━━━\n` +
-              `• <b>Banked Profit:</b> <b>+${t.partial_banked_pips} pips (+${t.partial_banked_r} R)</b>\n` +
-              `• <b>Stop Loss Moved:</b> <code>${t.stop_loss}</code> <i>(Breakeven +0.5p buffer)</i>\n` +
-              `• <b>Remaining Position:</b> <b>40% runner aiming for Full TP (${t.take_profit})</b>\n` +
-              `• <b>Risk Remaining:</b> <b>0.00 R (Free Trade · Capital Protected)</b>\n` +
-              `━━━━━━━━━━━━━━━━━━\n` +
-              `🔒 <i>Capital locked. Zero downside risk remaining on this trade.</i>`;
-            await sendTelegramMessage(DEFAULT_CHAT_ID, partialMsg);
-
-            const kv = env && (env.TRADE_LEDGER || env.TRADES_KV || env.KV);
-            if (kv) {
-              try {
-                const curAct = { ...(ledger.active || {}) };
-                curAct[symbol] = t;
-                await kv.put("active_trades", JSON.stringify(curAct));
-              } catch (e) {}
-            }
-          }
-        }
-
+        // Pure Binary 1:1.50 Institutional Execution: Run 100% position size to TP or SL
         // Strict Exit Resolution: Stop Loss check takes absolute priority over Take Profit
         let hitTP = false;
         let hitSL = false;
@@ -494,38 +417,15 @@ async function runActiveTradeChecks(env) {
           await autoResolveTrade(symbol, t, rawOutcome, exitPrice, env, ledger);
           resolved.push({ symbol, outcome: rawOutcome, exitPrice });
 
-          let finalR = 0.0;
-          let finalPips = 0.0;
-          let title = "";
-          let icon = "";
+          const isWin = rawOutcome === "WIN";
+          const finalR = isWin ? (t.rr || 1.50) : -1.00;
+          const finalPips = isWin ? (t.tp_pips || Math.round(slPips * 1.5 * 10) / 10) : -(t.sl_pips || Math.round(slPips * 10) / 10);
+          const title = isWin ? "TARGET REACHED: FULL TAKE PROFIT HIT (+1.50R)" : "STRUCTURAL EXIT: STOP LOSS HIT (-1.00R)";
+          const statusText = isWin ? "WIN (Liquidity Pool Swept)" : "LOSS (Structural Stop Hit)";
+          const icon = isWin ? "🎯" : "🛑";
 
-          if (t.partial_taken) {
-            if (hitTP) {
-              finalR = Math.round((t.partial_banked_r + ((t.rr || 1.50) * 0.40)) * 100) / 100;
-              finalPips = Math.round((t.partial_banked_pips + ((t.tp_pips || (slPips * 1.5)) * 0.40)) * 10) / 10;
-              title = "TARGET REACHED: FULL TAKE PROFIT HIT (+1.20R)";
-              icon = "🎯";
-            } else {
-              finalR = t.partial_banked_r || 0.60;
-              finalPips = t.partial_banked_pips || 9.6;
-              title = "BREAKEVEN RUNNER CLOSED: PARTIAL WIN LOCKED (+0.60R)";
-              icon = "🛡️";
-            }
-          } else {
-            if (hitTP) {
-              finalR = t.rr || 1.50;
-              finalPips = t.tp_pips || (slPips * 1.5);
-              title = "TARGET REACHED: FIXED TAKE PROFIT HIT";
-              icon = "🎯";
-            } else {
-              finalR = -1.00;
-              finalPips = -(t.sl_pips || slPips);
-              title = "STRUCTURAL EXIT: FIXED STOP LOSS HIT";
-              icon = "🛑";
-            }
-          }
-
-          const sign = finalR >= 0 ? "+" : "";
+          const sign = finalPips >= 0 ? "+" : "";
+          const rSign = finalR >= 0 ? "+" : "";
           const text = 
             `${icon} <b>${title}</b>\n` +
             `━━━━━━━━━━━━━━━━━━\n` +
@@ -536,7 +436,8 @@ async function runActiveTradeChecks(env) {
             `• <b>Entry Price:</b> <code>${t.entry}</code>\n` +
             `• <b>Exit Price:</b> <code>${exitPrice}</code>\n` +
             `• <b>Net Realized:</b> <b>${sign}${finalPips.toFixed(1)} pips</b>\n` +
-            `• <b>Realized Return:</b> <b>${sign}${finalR.toFixed(2)} R</b>\n\n` +
+            `• <b>Realized Return:</b> <b>${rSign}${finalR.toFixed(2)} R</b>\n` +
+            `• <b>Outcome:</b> <b>${statusText}</b>\n\n` +
             `━━━━━━━━━━━━━━━━━━\n` +
             `🕒 <code>${new Date().toISOString().replace("T", " ").substring(0, 16)} UTC</code>\n` +
             `🔓 <i>Pair unlocked. Surveillance resumed.</i>`;
@@ -1210,9 +1111,7 @@ async function sendActiveMessage(chatId, env) {
           const floatR = riskDist > 0 ? (pnlPips / riskDist).toFixed(2) : "0.00";
           const rSign = parseFloat(floatR) >= 0 ? "+" : "";
           const floatEmoji = pnlPips >= 0 ? "🟢" : "🔻";
-          const beFlag = t.be_active ? " 🛡<b>BE Locked</b>" : "";
-          const partialFlag = t.partial_taken ? ` 💰<b>+${t.partial_banked_r || "0.60"}R Banked (+${t.partial_banked_pips || "9.6"}p)</b>` : "";
-          floatText = `• Live Price: <code>${currentPrice.toFixed(asset.digits)}</code> (${floatEmoji} <b>${pnlSign}${pnlPips.toFixed(1)} pips</b> | <b>${rSign}${floatR}R</b>)${beFlag}${partialFlag}\n`;
+          floatText = `• Live Price: <code>${currentPrice.toFixed(asset.digits)}</code> (${floatEmoji} <b>${pnlSign}${pnlPips.toFixed(1)} pips</b> | <b>${rSign}${floatR}R</b>)\n`;
 
         }
       } else {
@@ -1307,7 +1206,8 @@ async function sendHistoryMessage(chatId, filterPair = "ALL", filterRange = "ALL
     const pName = t.pair || t.symbol;
     const isCancelled = t.outcome === "CANCELLED";
     const isWin = t.outcome === "WIN";
-    const outcomeBadge = isCancelled ? "⚠️ <b>CANCELLED</b>" : (isWin ? "🎯 <b>WIN</b>" : "🛑 <b>LOSS</b>");
+    const isBE = t.outcome === "BREAK_EVEN";
+    const outcomeBadge = isCancelled ? "⚠️ <b>CANCELLED</b>" : (isWin ? "🎯 <b>WIN</b>" : (isBE ? "🛡️ <b>BREAK-EVEN</b>" : "🛑 <b>LOSS</b>"));
     const pipsVal = typeof t.realized_pips === "number" ? t.realized_pips : parseFloat(t.realized_pips || 0);
     const rVal = typeof t.realized_r === "number" ? t.realized_r : parseFloat(t.realized_r || 0);
     const sign = pipsVal >= 0 ? "+" : "";
@@ -1315,7 +1215,7 @@ async function sendHistoryMessage(chatId, filterPair = "ALL", filterRange = "ALL
     const outcomeDetail = isCancelled ? "(Unfilled · 0.0p / 0.00R)" : `(${sign}${pipsVal.toFixed(1)}p / ${rSign}${rVal.toFixed(2)}R)`;
 
     closedRows.push(
-      `<b>${num}. ${pName}</b> · ${t.timeframe || "1H"} · <b>${t.direction}</b>\n` +
+      `<b>${num}. ${pName}</b> · ${t.timeframe || "15M"} · <b>${t.direction}</b>\n` +
       `• Date: <code>${closeDate}</code>\n` +
       `• Price: <code>${t.entry}</code> ➔ <code>${t.exit_price}</code>\n` +
       `• Outcome: ${outcomeBadge} ${outcomeDetail}`
@@ -1326,7 +1226,7 @@ async function sendHistoryMessage(chatId, filterPair = "ALL", filterRange = "ALL
   if (closedRows.length > 0) {
     bodyText = closedRows.join("\n\n") + "\n\n";
   } else {
-    bodyText = `<i>No completed trades found for ${filterPair} (${rangeLabel}).</i>\n\n`;
+    bodyText = `<i>No completed trades found. System is tracking fresh from 2026-10-15 baseline.</i>\n\n`;
   }
 
   const text = 
@@ -1421,10 +1321,10 @@ async function sendPerformanceMessage(chatId, filterPair = "ALL", env) {
   const expSign = parseFloat(expectancy) >= 0 ? "+" : "";
 
   const text = 
-    `📈 <b>STRATEGY PERFORMANCE (v3.1 Production)</b>\n` +
+    `📈 <b>STRATEGY PERFORMANCE (v5.0 High-Yield Quant Alpha)</b>\n` +
     `━━━━━━━━━━━━━━━━━━\n` +
     `Scope: <b>${scopeLabel}</b>\n` +
-    `Baseline: <code>2026-10-08</code> (Strategy Reset — Fresh Start)\n` +
+    `Baseline: <code>2026-10-15</code> (Fresh Start Baseline)\n` +
     `━━━━━━━━━━━━━━━━━━\n\n` +
     `<b>1. TRADE EXECUTION</b>\n` +
     `• Total Closed: <code>${totalClosed}</code>\n` +
@@ -1436,9 +1336,9 @@ async function sendPerformanceMessage(chatId, filterPair = "ALL", env) {
     `• Net Realized Return: <b>${rSign}${netR.toFixed(2)} R</b>\n` +
     `• Expectancy / Trade: <b>${expSign}${expectancy} R</b>\n` +
     `• Profit Factor: <code>${profitFactor}</code>\n` +
-    `• Target R:R: <code>1:1.50 (Calibrated SL & 100% Position Runner to Pure TP)</code>\n\n` +
+    `• Target R:R: <code>1:1.50 (Pure Binary Target · 100% Runner to Pure TP)</code>\n\n` +
     `━━━━━━━━━━━━━━━━━━\n` +
-    `⚡ <i>100% out-of-sample forward verification. Baseline reset 2026-10-08.</i>\n` +
+    `⚡ <i>100% out-of-sample forward verification. Baseline reset 2026-10-15.</i>\n` +
     `🕒 <code>${utcNow}</code>`;
 
   const keyboard = {
@@ -1650,7 +1550,7 @@ async function sendStatusMessage(chatId, env) {
     `8. Active Positions: <code>${activeCount} locked</code>\n` +
     `9. Recorded Trades: <code>${closedCount} closed</code>\n` +
     `10. Session Windows: <code>Asset-Specific Killzones (EUR 06-07/09-13/15, CHF 06-07/10/12-15, CAD 09-11/13-16, GBP 09/13-14/16 UTC)</code>\n` +
-    `11. Forward Baseline: <code>2026-10-12 (v5.0 High-Yield Overhaul)</code>\n` +
+    `11. Forward Baseline: <code>2026-10-15 (Fresh Start Baseline)</code>\n` +
     `━━━━━━━━━━━━━━━━━━\n` +
     `🕒 <code>${utcNow}</code>`;
 
@@ -1723,15 +1623,15 @@ async function sendClearInstructions(chatId) {
     `🧹 <b>CLEAN BOT CHAT & LEDGER STATUS</b>\n` +
     `━━━━━━━━━━━━━━━━━━\n` +
     `<b>1. Live Ledger Baseline</b>\n` +
-    `• All legacy test/backtest data has been <b>completely wiped</b>.\n` +
-    `• The ledger tracks strictly live confirmed signals from <code>2026-10-08</code> onwards.\n` +
-    `• Strategy is locked at v3.1 Two-Phase Pullback Engine (Fixed 15p TP / 10p SL).\n\n` +
+    `• All historical trade records have been <b>completely wiped</b>.\n` +
+    `• The ledger tracks strictly live confirmed signals from <code>2026-10-15</code> onwards.\n` +
+    `• Strategy is locked at v5.0 High-Yield Quant Alpha (Pure Binary 1:1.50 R:R Execution).\n\n` +
     `<b>2. To Clear Telegram Chat History</b>\n` +
     `• On Mobile / Desktop: Tap the <b>⋮ (Three Dots)</b> menu at the top right of this chat.\n` +
     `• Select <b>Clear History</b> (or <b>Delete Chat</b>).\n` +
     `• Type <code>/start</code> to resume with a 100% clean, fresh terminal!\n` +
     `━━━━━━━━━━━━━━━━━━\n` +
-    `✨ <i>v3.1 Production institutional session active.</i>`;
+    `✨ <i>v5.0 Production institutional session active.</i>`;
 
   const keyboard = {
     inline_keyboard: [
@@ -1768,7 +1668,7 @@ async function sendMenuMessage(chatId, env) {
     `4. /history ── Completed trade history ledger\n` +
     `5. /performance ── Win rate &amp; net return metrics\n` +
     `6. /patterns ── Volume post-mortems &amp; failure analysis\n` +
-    `7. /strategy ── High-Yield Quant rules (Core Quad &amp; Model J)\n` +
+    `7. /strategy ── High-Yield Quant rules (Core Quad &amp; Pure 1:1.50 R:R)\n` +
     `8. /status ── 24/7 serverless engine health\n` +
     `9. /close PAIR WIN|LOSS ── Admin force-close\n\n` +
     `Select a dashboard module below:`;
@@ -1832,13 +1732,13 @@ async function handleIncomingSignal(payload) {
       `🧭 <b>Direction:</b> <b>${actionText}</b>\n` +
       `⏱ <b>Timeframe:</b> <b>${payload.timeframe || "15M"}</b>\n` +
       `━━━━━━━━━━━━━━━━━━\n\n` +
-      `<b>📋 TRADE PARAMETERS (MODEL J)</b>\n` +
+      `<b>📋 TRADE PARAMETERS (PURE 1:1.50 R:R)</b>\n` +
       `• <b>Entry Target:</b> <code>${payload.entry || payload.price}</code> <i>(Executed Fill Level)</i>\n` +
       `• <b>Order State:</b> ⏳ <b>PENDING ENTRY FILL</b>\n` +
-      `• <b>Stop Loss:</b> <code>${payload.stop_loss}</code> (${slPipDist.toFixed(1)} pips)\n` +
-      `• <b>Take Profit:</b> <code>${payload.take_profit}</code> (${tpPipDist.toFixed(1)} pips)\n` +
-      `• <b>Risk / Reward:</b> <b>1 : ${(tpPipDist / slPipDist).toFixed(2)}</b> (Bank 60% @ +1.0R · Advance SL to BE)\n` +
-      `• <b>Suggested Risk:</b> <b>0.50% Equity ($25 on $5k Account · 0.25 Lots)</b>\n\n` +
+      `• <b>Stop Loss:</b> <code>${payload.stop_loss}</code> (${slPipDist.toFixed(1)} pips · -1.00R)\n` +
+      `• <b>Take Profit:</b> <code>${payload.take_profit}</code> (${tpPipDist.toFixed(1)} pips · +1.50R)\n` +
+      `• <b>Risk / Reward:</b> <b>1 : ${(tpPipDist / slPipDist).toFixed(2)}</b> (Pure Binary Target · 100% Runner)\n` +
+      `• <b>Suggested Risk:</b> <b>0.50% Equity ($25 on $5k Prop Account · 0.25 Lots)</b>\n\n` +
       `<b>🔬 CONFLUENCE MODEL</b>\n` +
       `• <b>Setup:</b> ${payload.strategy || "ICT Killzone Liquidity Sweep (Turtle Soup)"}\n` +
       `• <b>Phase:</b> ${payload.phase || "Liquidity Sweep Reclaim & Rejection"}\n` +

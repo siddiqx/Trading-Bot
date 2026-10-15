@@ -1,20 +1,13 @@
-# Cross-Volume Strategy Benchmarks
+# Institutional Trade Journal · Volume Benchmarks
 
-Comparative analytics evaluating performance across sequential 100-trade volumes to measure strategy improvements.
+This ledger tracks performance in discrete, immutable 100-trade cohorts to evaluate strategy degradation, win rate stability, and systematic failure modes.
 
-- **Global Trades Evaluated**: `50`
-- **Global Win Rate**: `39.3%` (11 Wins / 17 Losses)
-- **Active Volume**: `VOL_01`
+## Volume Overview
 
-### 📈 Comparative Volume Benchmark Table
-
-| Volume | Range | Completed | Win Rate | Net Pips | Net R | Profit Factor | Avg Loss MFE | Top Failure Mode | Status |
-| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| **Volume 01** | #1 – #100 | `28/100` | **39.3%** | `-114.4p` | `-6.7R` | `0.52` | `+3.0p` | `UNKNOWN` | `IN_PROGRESS` |
+| Volume | Trades | Win Rate | Net Pips | Net Return | Status | Key Failure Mode |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **Vol 01** | `0 / 100` | `0.0%` | `+0.0` | `+0.00 R` | 🟡 `IN_PROGRESS` | *Awaiting data* |
 
 ---
 
-### 🔍 Continuous Refinement Protocol
-1. **Volume 1 (Baseline)**: Trades #1 to #100 establish institutional forward benchmarks with zero curve-fitting.
-2. **Volume Transition Protocol**: Upon completing each 100-trade volume, the distribution of loss causes and MFE is analyzed to calibrate parameters (e.g. wick-ratio filtering, dynamic trailing stop triggers).
-3. **Version Benchmarking**: Successive volumes must demonstrate progressive improvement in Profit Factor and Loss MFE reduction.
+*Updated automatically after every resolved trade by the post-mortem engine.*
