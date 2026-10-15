@@ -606,7 +606,7 @@ export default {
       }
 
       // Handle Incoming Trade Signals
-      return await handleIncomingSignal(payload);
+      return await handleIncomingSignal(payload, env);
     } catch (err) {
       return new Response("Error: " + err.message, { status: 500 });
     }
@@ -1708,10 +1708,10 @@ async function sendMenuMessage(chatId, env) {
 /**
  * Trade Signal Dispatcher
  */
-async function handleIncomingSignal(payload) {
+async function handleIncomingSignal(payload, env) {
   let alertMessage = "";
 
-  const rawSymbol = String(payload.symbol || "").toUpperCase();
+  const rawSymbol = String(payload.symbol || payload.pair || "").toUpperCase();
   if (rawSymbol.includes("XAU") || rawSymbol.includes("GOLD")) {
     console.warn(`Gold signal rejected: ${rawSymbol} is permanently excluded.`);
     return new Response(JSON.stringify({ status: "REJECTED", message: "Gold trading is permanently disabled. Forex pairs only." }), {
@@ -1722,28 +1722,35 @@ async function handleIncomingSignal(payload) {
 
   if (payload.event === "forex_signal" || payload.symbol) {
     const isLong = (payload.direction || "").toUpperCase() === "LONG";
+    const dir = isLong ? "LONG" : "SHORT";
     const icon = isLong ? "🟢" : "🔴";
     const actionText = isLong ? "BUY / LONG" : "SELL / SHORT";
-    const pair = payload.symbol || "FOREX";
+    const pair = getBaseSymbol(payload.symbol || payload.pair || "FOREX");
+    const timeframe = payload.timeframe || "15M";
+    const slotKey = `${pair}_${timeframe}`;
     const displayPair = pair.length === 6 ? `${pair.substring(0,3)}/${pair.substring(3)}` : pair;
     const marketWarning = !isMarketOpen() ? "⚠️ <b>WARNING: MARKETS CURRENTLY CLOSED (Weekend)</b>\n<i>Execution paused until Sunday 17:00 NY open.</i>\n\n" : "";
 
     const pairConfig = getAssetConfig(pair);
-    const slPipDist = payload.sl_pips || (payload.stop_loss && (payload.entry || payload.price) ? Math.abs((payload.entry || payload.price) - payload.stop_loss) / (pairConfig.pip || 0.0001) : pairConfig.sl_pips || 16.0);
-    const tpPipDist = payload.tp_pips || (payload.take_profit && (payload.entry || payload.price) ? Math.abs((payload.take_profit) - (payload.entry || payload.price)) / (pairConfig.pip || 0.0001) : slPipDist * 1.5);
+    const entryPrice = parseFloat(payload.entry || payload.price);
+    const slPrice = parseFloat(payload.stop_loss);
+    const tpPrice = parseFloat(payload.take_profit);
+    const slPipDist = payload.sl_pips || (slPrice && entryPrice ? Math.abs(entryPrice - slPrice) / (pairConfig.pip || 0.0001) : pairConfig.sl_pips || 16.0);
+    const tpPipDist = payload.tp_pips || (tpPrice && entryPrice ? Math.abs(tpPrice - entryPrice) / (pairConfig.pip || 0.0001) : slPipDist * 1.5);
+    const barTime = payload.signal_time || payload.time || new Date().toISOString();
 
     alertMessage = 
       marketWarning +
       `${icon} <b>NEW TRADE SIGNAL · ${displayPair}</b>\n` +
       `━━━━━━━━━━━━━━━━━━\n` +
       `🧭 <b>Direction:</b> <b>${actionText}</b>\n` +
-      `⏱ <b>Timeframe:</b> <b>${payload.timeframe || "15M"}</b>\n` +
+      `⏱ <b>Timeframe:</b> <b>${timeframe}</b>\n` +
       `━━━━━━━━━━━━━━━━━━\n\n` +
       `<b>📋 TRADE PARAMETERS (PURE 1:1.50 R:R)</b>\n` +
-      `• <b>Entry Target:</b> <code>${payload.entry || payload.price}</code> <i>(Executed Fill Level)</i>\n` +
+      `• <b>Entry Target:</b> <code>${entryPrice}</code> <i>(Executed Fill Level)</i>\n` +
       `• <b>Order State:</b> ⏳ <b>PENDING ENTRY FILL</b>\n` +
-      `• <b>Stop Loss:</b> <code>${payload.stop_loss}</code> (${slPipDist.toFixed(1)} pips · -1.00R)\n` +
-      `• <b>Take Profit:</b> <code>${payload.take_profit}</code> (${tpPipDist.toFixed(1)} pips · +1.50R)\n` +
+      `• <b>Stop Loss:</b> <code>${slPrice}</code> (${slPipDist.toFixed(1)} pips · -1.00R)\n` +
+      `• <b>Take Profit:</b> <code>${tpPrice}</code> (${tpPipDist.toFixed(1)} pips · +1.50R)\n` +
       `• <b>Risk / Reward:</b> <b>1 : ${(tpPipDist / slPipDist).toFixed(2)}</b> (Pure Binary Target · 100% Runner)\n` +
       `• <b>Suggested Risk:</b> <b>0.50% Equity ($25 on $5k Prop Account · 0.25 Lots)</b>\n\n` +
       `<b>🔬 CONFLUENCE MODEL</b>\n` +
@@ -1751,8 +1758,44 @@ async function handleIncomingSignal(payload) {
       `• <b>Phase:</b> ${payload.phase || "Liquidity Sweep Reclaim & Rejection"}\n` +
       `• <b>Signal Score:</b> <b>${payload.score || payload.signal_score || 96} / 100</b>\n\n` +
       `━━━━━━━━━━━━━━━━━━\n` +
-      `🕒 <b>Confirmed Bar:</b> <code>${payload.signal_time || new Date().toISOString()}</code>\n` +
+      `🕒 <b>Confirmed Bar:</b> <code>${barTime}</code>\n` +
       `⏳ <i>Order pending fill. Floating PnL activates once entry point is touched.</i>`;
+
+    // Persist to active trade ledger in KV & in-memory cache
+    const newTradeEntry = {
+      trade_id: payload.id || `${slotKey}_${Date.now()}`,
+      pair: pair,
+      symbol: pair,
+      ticker: pairConfig.ticker,
+      direction: dir,
+      timeframe: timeframe,
+      entry: entryPrice,
+      stop_loss: slPrice,
+      take_profit: tpPrice,
+      sl_pips: Math.round(slPipDist * 10) / 10,
+      tp_pips: Math.round(tpPipDist * 10) / 10,
+      rr: parseFloat((tpPipDist / slPipDist).toFixed(2)) || 1.50,
+      bank_pct: 0.0,
+      partial_taken: false,
+      be_active: false,
+      pip: pairConfig.pip,
+      digits: pairConfig.digits,
+      opened_at: barTime,
+      status: "OPEN",
+      filled_at: barTime
+    };
+
+    const kv = env && (env.TRADE_LEDGER || env.TRADES_KV || env.KV);
+    if (kv) {
+      try {
+        const active = (await kv.get("active_trades", "json")) || {};
+        active[slotKey] = newTradeEntry;
+        await kv.put("active_trades", JSON.stringify(active));
+      } catch (e) {
+        console.error("KV save error on incoming signal:", e);
+      }
+    }
+    STORED_ACTIVE_TRADES[slotKey] = newTradeEntry;
   } else {
     alertMessage = payload.text || JSON.stringify(payload);
   }

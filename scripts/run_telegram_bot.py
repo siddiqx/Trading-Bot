@@ -127,17 +127,17 @@ async def sync_ledger_from_cloud(force: bool = False):
     """
     global LAST_CLOUD_SYNC_TIME
     now = time.time()
-    if not force and (now - LAST_CLOUD_SYNC_TIME < 30.0):
+    if not force and (now - LAST_CLOUD_SYNC_TIME < 15.0):
         return
     LAST_CLOUD_SYNC_TIME = now
     try:
-        url = f"https://raw.githubusercontent.com/siddiqx/Trading-Bot/main/trade_records.json?t={int(now)}"
+        worker_url = "https://tradingview-telegram-relay.siddiqsiddiq00012.workers.dev/"
         async with httpx.AsyncClient(timeout=5.0) as client:
-            resp = await client.get(url, headers={"User-Agent": "TelegramBotSupervisor/5.0"})
+            resp = await client.get(worker_url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) TelegramBotSupervisor/5.0"})
             if resp.status_code == 200:
                 cloud_data = resp.json()
-                cloud_active = cloud_data.get("active_trades", {})
-                cloud_completed = cloud_data.get("completed_trades", [])
+                cloud_active = cloud_data.get("resolved_ledger", {}).get("active") or cloud_data.get("kv_active") or {}
+                cloud_completed = cloud_data.get("resolved_ledger", {}).get("completed") or cloud_data.get("kv_completed") or []
 
                 local_data = {}
                 if TRADE_RECORDS_PATH.exists():
@@ -149,16 +149,15 @@ async def sync_ledger_from_cloud(force: bool = False):
                 local_active = local_data.get("active_trades", {})
                 local_completed = local_data.get("completed_trades", [])
 
-                if cloud_active != local_active or len(cloud_completed) > len(local_completed):
-                    merged_completed = cloud_completed if len(cloud_completed) >= len(local_completed) else local_completed
+                if cloud_active != local_active or len(cloud_completed) != len(local_completed):
                     merged = {
-                        "tracking_started": cloud_data.get("tracking_started", "2026-10-06"),
+                        "tracking_started": local_data.get("tracking_started", "2026-10-15"),
                         "active_trades": cloud_active,
-                        "completed_trades": merged_completed
+                        "completed_trades": cloud_completed
                     }
                     with open(TRADE_RECORDS_PATH, "w", encoding="utf-8") as f:
                         json.dump(merged, f, indent=2)
-                    logger.info(f"Cloud ledger synchronized from GitHub: {list(cloud_active.keys())}")
+                    logger.info(f"Cloud ledger synchronized from Cloudflare Worker: {list(cloud_active.keys())}")
     except Exception as e:
         logger.debug(f"Cloud ledger sync skipped: {e}")
 
@@ -432,6 +431,7 @@ async def get_active_payload():
                 risk_dist = abs(t.get("entry", 0.0) - t.get("stop_loss", 0.0)) / asset["pip"]
                 float_r = (pnl_pips / risk_dist) if risk_dist > 0 else 0.0
                 r_sign = "+" if float_r >= 0 else ""
+                float_emoji = "🟢" if pnl_pips >= 0 else "🔻"
                 float_text = f"• Live Price: <code>{current_price:.{asset['digits']}f}</code> ({float_emoji} <b>{pnl_sign}{pnl_pips:.1f} pips</b> | <b>{r_sign}{float_r:.2f}R</b>)\n"
         else:
             if is_pending:
