@@ -45,7 +45,26 @@ logger = logging.getLogger("TelegramBotSupervisor")
 TELEGRAM_BOT_TOKEN = (os.getenv("TELEGRAM_BOT_TOKEN") or "8932628751:AAFS_Z7SZMbfNAgNE9KmU6Sly32IGxDm2p0").strip()
 TELEGRAM_CHAT_ID = (os.getenv("TELEGRAM_CHAT_ID") or "8142877259").strip()
 API_BASE = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}"
+WORKER_WEBHOOK_URL = "https://tradingview-telegram-relay.siddiqsiddiq00012.workers.dev/"
 TRADE_RECORDS_PATH = BASE_DIR / "trade_records.json"
+
+
+async def restore_cloudflare_webhook() -> bool:
+    """Restores the 24/7 Cloudflare Worker webhook."""
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            res = await client.post(
+                f"{API_BASE}/setWebhook",
+                json={"url": WORKER_WEBHOOK_URL, "drop_pending_updates": False}
+            )
+            if res.status_code == 200 and res.json().get("ok"):
+                logger.info(f"✅ 24/7 Cloudflare Worker Webhook successfully restored to: {WORKER_WEBHOOK_URL}")
+                return True
+            else:
+                logger.error(f"❌ Failed to restore webhook: {res.text}")
+    except Exception as e:
+        logger.error(f"Webhook restoration error: {e}")
+    return False
 
 ASSETS = [
     {"name": "EUR/USD", "symbol": "EURUSD", "ticker": "EURUSD=X", "pip": 0.0001, "digits": 5, "donchian_len": 20},
@@ -1113,65 +1132,91 @@ async def run_supervisor():
     logger.info("==================================================")
 
     async with httpx.AsyncClient(timeout=35.0) as client:
-        # Clear any dangling webhook so polling runs cleanly
         try:
-            res = await client.post(f"{API_BASE}/deleteWebhook", json={"drop_pending_updates": False})
-            logger.info(f"Telegram webhook state verified: {res.json().get('description')}")
-        except Exception as e:
-            logger.warning(f"Webhook clearance note: {e}")
-
-        offset = 0
-        error_count = 0
-
-        while True:
+            # Clear any dangling webhook so polling runs cleanly
             try:
-                res = await client.get(f"{API_BASE}/getUpdates?offset={offset}&timeout=20", timeout=25.0)
-                if res.status_code == 200:
-                    error_count = 0
-                    updates = res.json().get("result", [])
-                    for u in updates:
-                        u_id = u.get("update_id", 0)
-                        offset = max(offset, u_id + 1)
-
-                        if "callback_query" in u:
-                            cb = u["callback_query"]
-                            cb_id = cb.get("id")
-                            chat_id = cb.get("message", {}).get("chat", {}).get("id")
-                            action = cb.get("data", "")
-                            if cb_id:
-                                await answer_callback(client, cb_id)
-                            if chat_id and action:
-                                logger.info(f"Callback query: {action} from {chat_id}")
-                                await dispatch_request(client, chat_id, action)
-
-                        elif "message" in u and "text" in u["message"]:
-                            msg = u["message"]
-                            chat_id = msg.get("chat", {}).get("id")
-                            text = msg.get("text", "").strip()
-                            if chat_id and text:
-                                logger.info(f"User command: {text} from {chat_id}")
-                                await dispatch_request(client, chat_id, text)
-
-                elif res.status_code == 409:
-                    logger.warning("Webhook active conflict detected. Clearing webhook to resume polling...")
-                    await client.post(f"{API_BASE}/deleteWebhook", json={"drop_pending_updates": False})
-                    await asyncio.sleep(2)
-                else:
-                    logger.warning(f"Telegram getUpdates returned status {res.status_code}")
-                    await asyncio.sleep(3)
-
-            except httpx.TimeoutException:
-                continue
-            except asyncio.CancelledError:
-                break
+                res = await client.post(f"{API_BASE}/deleteWebhook", json={"drop_pending_updates": False})
+                logger.info(f"Telegram webhook state verified: {res.json().get('description')}")
             except Exception as e:
-                error_count += 1
-                logger.error(f"Supervisor loop exception ({error_count}): {e}")
-                await asyncio.sleep(min(error_count * 2, 10))
+                logger.warning(f"Webhook clearance note: {e}")
+
+            offset = 0
+            error_count = 0
+
+            while True:
+                try:
+                    res = await client.get(f"{API_BASE}/getUpdates?offset={offset}&timeout=20", timeout=25.0)
+                    if res.status_code == 200:
+                        error_count = 0
+                        updates = res.json().get("result", [])
+                        for u in updates:
+                            u_id = u.get("update_id", 0)
+                            offset = max(offset, u_id + 1)
+    
+                            if "callback_query" in u:
+                                cb = u["callback_query"]
+                                cb_id = cb.get("id")
+                                chat_id = cb.get("message", {}).get("chat", {}).get("id")
+                                action = cb.get("data", "")
+                                if cb_id:
+                                    await answer_callback(client, cb_id)
+                                if chat_id and action:
+                                    logger.info(f"Callback query: {action} from {chat_id}")
+                                    await dispatch_request(client, chat_id, action)
+    
+                            elif "message" in u and "text" in u["message"]:
+                                msg = u["message"]
+                                chat_id = msg.get("chat", {}).get("id")
+                                text = msg.get("text", "").strip()
+                                if chat_id and text:
+                                    logger.info(f"User command: {text} from {chat_id}")
+                                    await dispatch_request(client, chat_id, text)
+    
+                    elif res.status_code == 409:
+                        logger.warning("Webhook active conflict detected. Clearing webhook to resume polling...")
+                        await client.post(f"{API_BASE}/deleteWebhook", json={"drop_pending_updates": False})
+                        await asyncio.sleep(2)
+                    else:
+                        logger.warning(f"Telegram getUpdates returned status {res.status_code}")
+                        await asyncio.sleep(3)
+    
+                except httpx.TimeoutException:
+                    continue
+                except asyncio.CancelledError:
+                    break
+                except Exception as e:
+                    error_count += 1
+                    logger.error(f"Supervisor loop exception ({error_count}): {e}")
+                    await asyncio.sleep(min(error_count * 2, 10))
+        finally:
+            logger.info("Local supervisor stopping. Auto-restoring permanent 24/7 Cloudflare Worker webhook...")
+            try:
+                set_res = await client.post(
+                    f"{API_BASE}/setWebhook",
+                    json={"url": WORKER_WEBHOOK_URL, "drop_pending_updates": False},
+                    timeout=10.0
+                )
+                if set_res.status_code == 200 and set_res.json().get("ok"):
+                    logger.info("✅ Permanent 24/7 Cloudflare Worker Webhook successfully restored.")
+                else:
+                    logger.error(f"❌ Failed to restore webhook: {set_res.text}")
+            except Exception as e:
+                logger.error(f"Failed to restore webhook on shutdown: {e}")
 
 
 if __name__ == "__main__":
-    try:
-        asyncio.run(run_supervisor())
-    except KeyboardInterrupt:
-        logger.info("Bot supervisor stopped.")
+    if len(sys.argv) > 1 and sys.argv[1] in ["--restore-webhook", "--fix-webhook"]:
+        logger.info("Explicitly restoring 24/7 Cloudflare Worker webhook...")
+        asyncio.run(restore_cloudflare_webhook())
+    elif len(sys.argv) > 1 and sys.argv[1] in ["--check-webhook", "--status-webhook"]:
+        async def check_wh():
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                r = await client.get(f"{API_BASE}/getWebhookInfo")
+                print(json.dumps(r.json(), indent=2))
+        asyncio.run(check_wh())
+    else:
+        try:
+            asyncio.run(run_supervisor())
+        except KeyboardInterrupt:
+            logger.info("Bot supervisor stopped.")
+            asyncio.run(restore_cloudflare_webhook())

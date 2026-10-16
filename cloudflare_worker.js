@@ -14,6 +14,7 @@
 
 const BOT_TOKEN = "8932628751:AAFS_Z7SZMbfNAgNE9KmU6Sly32IGxDm2p0";
 const TELEGRAM_API = `https://api.telegram.org/bot${BOT_TOKEN}`;
+const WORKER_PUBLIC_URL = "https://tradingview-telegram-relay.siddiqsiddiq00012.workers.dev/";
 const DEFAULT_GH_TOKEN = "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";
 const DEFAULT_CHAT_ID = "8142877259";
 
@@ -458,13 +459,45 @@ async function runActiveTradeChecks(env) {
   return { checked_active: activeEntries.length, resolved_trades: resolved, github_scanner_dispatched: dispatched };
 }
 
+/**
+ * 24/7 Webhook Watchdog: Automatically verifies and re-registers the Telegram Webhook
+ * to ensure the bot NEVER goes unresponsive even if a local process or network event drops it.
+ */
+async function ensureWebhookRegistered() {
+  try {
+    const res = await fetch(`${TELEGRAM_API}/getWebhookInfo`);
+    if (res.ok) {
+      const data = await res.json();
+      const currentUrl = data?.result?.url || "";
+      if (currentUrl.replace(/\/+$/, "") !== WORKER_PUBLIC_URL.replace(/\/+$/, "")) {
+        console.warn(`Telegram webhook dropped or mismatched ('${currentUrl}'). Auto-restoring to ${WORKER_PUBLIC_URL}`);
+        await fetch(`${TELEGRAM_API}/setWebhook`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ url: WORKER_PUBLIC_URL, drop_pending_updates: false })
+        });
+      }
+    }
+  } catch (e) {
+    console.error("Webhook watchdog error:", e);
+  }
+}
+
 export default {
   async fetch(request, env) {
     if (request.method === "GET") {
       const url = new URL(request.url);
       if (url.pathname === "/cron" || url.pathname === "/tick" || url.pathname === "/check") {
+        await ensureWebhookRegistered();
         const result = await runActiveTradeChecks(env);
         return new Response(JSON.stringify({ status: "CRON_EXECUTED", ...result }, null, 2), {
+          status: 200,
+          headers: { "Content-Type": "application/json" }
+        });
+      }
+      if (url.pathname === "/repair_webhook" || url.pathname === "/set_webhook") {
+        await ensureWebhookRegistered();
+        return new Response(JSON.stringify({ status: "WEBHOOK_VERIFIED", url: WORKER_PUBLIC_URL }, null, 2), {
           status: 200,
           headers: { "Content-Type": "application/json" }
         });
@@ -620,7 +653,10 @@ export default {
    * Cloudflare Worker Scheduled Cron Trigger (Runs 24/7 without GitHub Actions delays)
    */
   async scheduled(event, env, ctx) {
-    ctx.waitUntil(runActiveTradeChecks(env));
+    ctx.waitUntil(Promise.all([
+      runActiveTradeChecks(env),
+      ensureWebhookRegistered()
+    ]));
   }
 };
 

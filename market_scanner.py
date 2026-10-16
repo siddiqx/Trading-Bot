@@ -140,6 +140,46 @@ TRADE_RECORDS_FILE = "trade_records.json"
 WORKER_SYNC_URL = "https://tradingview-telegram-relay.siddiqsiddiq00012.workers.dev/"
 
 
+def ensure_telegram_webhook_active() -> bool:
+    """
+    Guarantees 24/7 Telegram responsiveness by ensuring the Telegram bot's webhook
+    points to the Cloudflare Worker. If cleared or pointed elsewhere, it re-registers automatically.
+    """
+    token = TELEGRAM_BOT_TOKEN
+    if not token or os.environ.get("PYTEST_CURRENT_TEST"):
+        return False
+
+    get_url = f"https://api.telegram.org/bot{token}/getWebhookInfo"
+    target_url = WORKER_SYNC_URL.strip("/") + "/"
+    try:
+        resp = httpx.get(get_url, timeout=10.0)
+        if resp.status_code == 200:
+            data = resp.json()
+            current_url = data.get("result", {}).get("url", "")
+            if current_url.rstrip("/") != target_url.rstrip("/"):
+                logger.warning(
+                    f"Telegram webhook dropped or mismatched (current: '{current_url}'). "
+                    f"Auto-restoring permanent 24/7 Cloudflare Worker webhook: {target_url}"
+                )
+                set_url = f"https://api.telegram.org/bot{token}/setWebhook"
+                set_resp = httpx.post(
+                    set_url,
+                    json={"url": target_url, "drop_pending_updates": False},
+                    timeout=10.0
+                )
+                if set_resp.status_code == 200 and set_resp.json().get("ok"):
+                    logger.info("Telegram webhook successfully restored and active.")
+                    return True
+                else:
+                    logger.error(f"Failed to restore Telegram webhook: {set_resp.text}")
+            else:
+                logger.info("Telegram webhook verified active (Cloudflare 24/7 Worker).")
+                return True
+    except Exception as e:
+        logger.warning(f"Telegram webhook watchdog check warning: {e}")
+    return False
+
+
 def get_usd_directional_bias(symbol: str, direction: str) -> int:
     """
     Evaluates net USD directional bias (+1 for Long USD, -1 for Short USD).
@@ -2102,6 +2142,9 @@ def run_scan_cycle():
     state = load_state()
     records = load_trade_records()
     total_signals = 0
+
+    # 0. Watchdog: Guarantee 24/7 Telegram bot responsiveness
+    ensure_telegram_webhook_active()
 
     # 1. Monitor active floating positions for Take Profit / Stop Loss hits
     check_active_trades(records)
