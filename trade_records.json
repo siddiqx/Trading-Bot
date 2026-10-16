@@ -1,29 +1,6 @@
 {
   "tracking_started": "2026-10-15",
-  "active_trades": {
-    "GBPUSD_15M": {
-      "trade_id": "GBPUSD_15M_2026-10-16T14:00:00Z_LONG",
-      "pair": "GBPUSD",
-      "symbol": "GBPUSD",
-      "ticker": "GBPUSD=X",
-      "direction": "LONG",
-      "timeframe": "15M",
-      "entry": 1.33599,
-      "stop_loss": 1.33349,
-      "take_profit": 1.33849,
-      "sl_pips": 25,
-      "tp_pips": 25,
-      "rr": 1,
-      "bank_pct": 0,
-      "partial_taken": false,
-      "be_active": false,
-      "pip": 0.0001,
-      "digits": 5,
-      "opened_at": "2026-10-16T14:00:00Z",
-      "status": "OPEN",
-      "filled_at": "2026-10-16T14:00:00Z"
-    }
-  },
+  "active_trades": {},
   "completed_trades": [
     {
       "trade_id": "USDCAD_15M_2026-10-15T15:45:00Z_SHORT",
@@ -186,6 +163,33 @@
       "realized_pips": -23,
       "realized_r": -1,
       "closed_at": "2026-10-16T13:15:41.364Z"
+    },
+    {
+      "trade_id": "GBPUSD_15M_2026-10-16T14:00:00Z_LONG",
+      "pair": "GBPUSD",
+      "symbol": "GBPUSD",
+      "ticker": "GBPUSD=X",
+      "direction": "LONG",
+      "timeframe": "15M",
+      "entry": 1.33599,
+      "stop_loss": 1.33349,
+      "take_profit": 1.33849,
+      "sl_pips": 25,
+      "tp_pips": 25,
+      "rr": 1,
+      "bank_pct": 0,
+      "partial_taken": false,
+      "be_active": false,
+      "pip": 0.0001,
+      "digits": 5,
+      "opened_at": "2026-10-16T14:00:00Z",
+      "status": "CANCELLED",
+      "filled_at": "2026-10-16T14:00:00Z",
+      "exit_price": 1.33599,
+      "outcome": "CANCELLED",
+      "realized_pips": 0,
+      "realized_r": 0,
+      "closed_at": "2026-10-16T15:10:29.745Z"
     }
   ]
 }
