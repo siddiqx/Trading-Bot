@@ -217,22 +217,26 @@ function sanitizeLedger(ledger) {
 async function getLedger(env) {
   // 1. Cloudflare Workers KV
   const kv = env && (env.TRADE_LEDGER || env.TRADES_KV || env.KV);
+  let active = null;
+  let completed = null;
   if (kv) {
     try {
-      const active = await kv.get("active_trades", "json");
-      const completed = await kv.get("completed_trades", "json");
-      if (active !== null || completed !== null) {
-        return sanitizeLedger({
-          active: active || {},
-          completed: completed || []
-        });
-      }
+      active = await kv.get("active_trades", "json");
+      completed = await kv.get("completed_trades", "json");
     } catch (e) {
       console.error("KV read error:", e);
     }
   }
 
-  // 2. Private GitHub API via GITHUB_TOKEN secret or fallback
+  // If KV has active trades, return them immediately
+  if (active && typeof active === "object" && Object.keys(active).length > 0) {
+    return sanitizeLedger({
+      active: active,
+      completed: completed || []
+    });
+  }
+
+  // 2. Private GitHub API fallback via GITHUB_TOKEN (in case trades were committed to git)
   const ghAuthToken = (env && (env.GITHUB_TOKEN || env.GH_TOKEN)) || DEFAULT_GH_TOKEN;
   if (ghAuthToken) {
     try {
@@ -245,10 +249,18 @@ async function getLedger(env) {
       });
       if (ghRes.ok) {
         const ghData = await ghRes.json();
-        return sanitizeLedger({
-          active: ghData.active_trades || {},
-          completed: ghData.completed_trades || []
-        });
+        const ghActive = ghData.active_trades || {};
+        const ghCompleted = ghData.completed_trades || [];
+        if (Object.keys(ghActive).length > 0) {
+          // Backfill KV so future lookups are fast
+          if (kv) {
+            kv.put("active_trades", JSON.stringify(ghActive)).catch(() => {});
+          }
+          return sanitizeLedger({
+            active: ghActive,
+            completed: (completed && completed.length > 0) ? completed : ghCompleted
+          });
+        }
       }
     } catch (e) {
       console.error("GitHub API fetch error:", e);
@@ -262,17 +274,20 @@ async function getLedger(env) {
     });
     if (rawRes.ok) {
       const rawData = await rawRes.json();
-      return sanitizeLedger({
-        active: rawData.active_trades || {},
-        completed: rawData.completed_trades || []
-      });
+      const rawActive = rawData.active_trades || {};
+      if (Object.keys(rawActive).length > 0) {
+        return sanitizeLedger({
+          active: rawActive,
+          completed: (completed && completed.length > 0) ? completed : (rawData.completed_trades || [])
+        });
+      }
     }
   } catch (e) {}
 
-  // 4. Default in-memory baseline
+  // 4. Fallback to in-memory cache or KV baseline
   return sanitizeLedger({
-    active: STORED_ACTIVE_TRADES,
-    completed: STORED_COMPLETED_TRADES
+    active: active || STORED_ACTIVE_TRADES || {},
+    completed: completed || STORED_COMPLETED_TRADES || []
   });
 }
 
@@ -579,48 +594,61 @@ export default {
       if (payload.event === "sync_trades") {
         const kv = env && (env.TRADE_LEDGER || env.TRADES_KV || env.KV);
 
-        // Get current KV state
-        let kvActive = payload.active_trades || {};
-        let kvCompleted = payload.completed_trades || [];
+        // Incoming trades from scanner
+        const incomingActive = payload.active_trades || {};
+        const incomingCompleted = payload.completed_trades || [];
+
+        let currentActive = {};
+        let currentCompleted = [];
 
         if (kv) {
           try {
-            if (payload.overwrite_active) {
-              kvActive = payload.active_trades || {};
-              kvCompleted = payload.completed_trades || [];
-            } else {
-              const existingActive = await kv.get("active_trades", "json") || {};
-              const existingCompleted = await kv.get("completed_trades", "json") || [];
-
-              const mergedActive = { ...kvActive };
-              for (const [symbol, trade] of Object.entries(existingActive)) {
-                if (!(symbol in kvActive) && (trade.status === "OPEN" || trade.status === "PENDING")) {
-                  mergedActive[symbol] = trade;
-                }
-              }
-
-              const seenIds = new Set(existingCompleted.map(t => t.trade_id));
-              for (const ct of kvCompleted) {
-                if (!seenIds.has(ct.trade_id)) {
-                  existingCompleted.push(ct);
-                  seenIds.add(ct.trade_id);
-                }
-              }
-
-              // Purge any active trade whose trade_id is already completed
-              for (const [k, at] of Object.entries(mergedActive)) {
-                if (seenIds.has(at.trade_id)) {
-                  delete mergedActive[k];
-                }
-              }
-
-              kvActive = mergedActive;
-              kvCompleted = existingCompleted;
-            }
+            currentActive = (await kv.get("active_trades", "json")) || {};
+            currentCompleted = (await kv.get("completed_trades", "json")) || [];
           } catch (e) {
-            console.error("KV merge error:", e);
+            console.error("KV read error during sync_trades:", e);
           }
+        } else {
+          currentActive = STORED_ACTIVE_TRADES || {};
+          currentCompleted = STORED_COMPLETED_TRADES || [];
+        }
 
+        // If KV active trades were empty, fallback to ledger retrieval
+        if (Object.keys(currentActive).length === 0) {
+          try {
+            const fallbackLedger = await getLedger(env);
+            if (fallbackLedger && fallbackLedger.active && Object.keys(fallbackLedger.active).length > 0) {
+              currentActive = { ...fallbackLedger.active };
+            }
+          } catch (err) {
+            console.error("Ledger fallback error during sync:", err);
+          }
+        }
+
+        // Start with current active trades in cloud, then overlay incoming active trades
+        const mergedActive = { ...currentActive, ...incomingActive };
+
+        // Deduplicate and merge completed trades
+        const seenIds = new Set((currentCompleted || []).map(t => t.trade_id));
+        const mergedCompleted = [...(currentCompleted || [])];
+        for (const ct of incomingCompleted) {
+          if (ct && ct.trade_id && !seenIds.has(ct.trade_id)) {
+            mergedCompleted.push(ct);
+            seenIds.add(ct.trade_id);
+          }
+        }
+
+        // Purge any active trade whose trade_id is already marked completed or closed
+        for (const [k, at] of Object.entries(mergedActive)) {
+          if (!at || (at.trade_id && seenIds.has(at.trade_id)) || at.status === "COMPLETED" || at.status === "CLOSED") {
+            delete mergedActive[k];
+          }
+        }
+
+        let kvActive = mergedActive;
+        let kvCompleted = mergedCompleted;
+
+        if (kv) {
           try {
             await kv.put("active_trades", JSON.stringify(kvActive));
             await kv.put("completed_trades", JSON.stringify(kvCompleted));

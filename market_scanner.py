@@ -274,18 +274,67 @@ def save_state(state):
         logger.error(f"Error saving state: {e}")
 
 
-def load_trade_records():
-    if os.path.exists(TRADE_RECORDS_FILE):
-        try:
-            with open(TRADE_RECORDS_FILE, "r") as f:
-                return json.load(f)
-        except Exception:
-            pass
-    return {
+def load_trade_records() -> dict:
+    records = {
         "tracking_started": "2026-10-08",
         "active_trades": {},
         "completed_trades": []
     }
+    if os.path.exists(TRADE_RECORDS_FILE):
+        try:
+            with open(TRADE_RECORDS_FILE, "r") as f:
+                records = json.load(f)
+        except Exception:
+            pass
+
+    # Skip external cloud pull during unit test runs
+    if os.environ.get("PYTEST_CURRENT_TEST"):
+        return records
+
+    # Cloud-Native Synchronization: Pull latest active & completed trades from 24/7 Cloudflare Worker
+    try:
+        with httpx.Client(timeout=6.0) as client:
+            resp = client.get(WORKER_SYNC_URL, headers={"User-Agent": "MarketScanner/2.0"})
+            if resp.status_code == 200:
+                cloud_data = resp.json()
+                cloud_ledger = cloud_data.get("resolved_ledger") or {}
+                cloud_active = cloud_ledger.get("active") or {}
+                cloud_completed = cloud_ledger.get("completed") or []
+
+                # Merge active trades: Never lose an active trade in the cloud
+                merged_active = dict(records.get("active_trades", {}))
+                for k, t in cloud_active.items():
+                    if isinstance(t, dict) and t.get("status") in ["OPEN", "PENDING"]:
+                        merged_active[k] = t
+
+                # Merge completed trades by unique trade_id
+                seen_ids = set()
+                merged_completed = []
+                for t in records.get("completed_trades", []):
+                    tid = t.get("trade_id")
+                    if tid and tid not in seen_ids:
+                        seen_ids.add(tid)
+                        merged_completed.append(t)
+                for t in cloud_completed:
+                    tid = t.get("trade_id")
+                    if tid and tid not in seen_ids:
+                        seen_ids.add(tid)
+                        merged_completed.append(t)
+
+                # Remove any completed trade from active positions
+                for tid in seen_ids:
+                    for k in list(merged_active.keys()):
+                        if merged_active[k].get("trade_id") == tid:
+                            del merged_active[k]
+
+                records["active_trades"] = merged_active
+                records["completed_trades"] = merged_completed
+                save_trade_records(records)
+                logger.info(f"Synchronized with Cloudflare KV: {len(merged_active)} active trade(s), {len(merged_completed)} completed.")
+    except Exception as e:
+        logger.warning(f"Could not pull cloud ledger from Cloudflare Worker: {e}")
+
+    return records
 
 
 def save_trade_records(records):
@@ -313,7 +362,7 @@ def sync_worker(records, overwrite_active: bool = False):
             "active_trades": records.get("active_trades", {}),
             "completed_trades": records.get("completed_trades", []),
             "volume_summary": volume_summary,
-            "overwrite_active": True
+            "overwrite_active": False  # ALWAYS MERGE, NEVER BLINDLY OVERWRITE
         }
         for attempt in range(2):  # retry once on failure
             try:
@@ -2247,6 +2296,7 @@ def run_scan_cycle():
                     records.setdefault("active_trades", {})[slot_key] = new_trade_entry
                     active_trades_map[slot_key] = new_trade_entry
                     save_trade_records(records)
+                    sync_worker(records, overwrite_active=False)  # Instant push to Cloudflare KV the exact moment signal fires!
 
             except Exception as e:
                 logger.error(f"Error scanning {pair_name} ({tf}): {e}")
