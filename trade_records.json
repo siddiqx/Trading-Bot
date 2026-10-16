@@ -36,7 +36,7 @@
       "sl_pips": 17.1,
       "tp_pips": 21.4,
       "rr": 1.25,
-      "bank_pct": 0.0,
+      "bank_pct": 0,
       "partial_taken": false,
       "be_active": false,
       "pip": 0.0001,
