@@ -1,7 +1,8 @@
 {
   "tracking_started": "2026-10-15",
-  "active_trades": {
-    "USDCAD_15M": {
+  "active_trades": {},
+  "completed_trades": [
+    {
       "trade_id": "USDCAD_15M_2026-10-15T15:45:00Z_SHORT",
       "pair": "USDCAD",
       "symbol": "USDCAD",
@@ -20,9 +21,13 @@
       "pip": 0.0001,
       "digits": 5,
       "opened_at": "2026-10-15T15:45:00Z",
-      "status": "OPEN",
-      "filled_at": "2026-10-15T15:45:00Z"
+      "status": "CLOSED",
+      "filled_at": "2026-10-15T15:45:00Z",
+      "exit_price": 1.41692,
+      "outcome": "WIN",
+      "realized_pips": 24.0,
+      "realized_r": 1.5,
+      "closed_at": "2026-10-16T04:01:04Z"
     }
-  },
-  "completed_trades": []
+  ]
 }
