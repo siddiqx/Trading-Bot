@@ -22,6 +22,28 @@
       "opened_at": "2026-10-16T06:00:00Z",
       "status": "OPEN",
       "filled_at": "2026-10-16T06:00:00Z"
+    },
+    "EURUSD_15M": {
+      "trade_id": "EURUSD_15M_2026-10-16T06:30:00Z_LONG",
+      "pair": "EURUSD",
+      "symbol": "EURUSD",
+      "ticker": "EURUSD=X",
+      "direction": "LONG",
+      "timeframe": "15M",
+      "entry": 1.1236,
+      "stop_loss": 1.12118,
+      "take_profit": 1.1261,
+      "sl_pips": 24.2,
+      "tp_pips": 25.0,
+      "rr": 1.03,
+      "bank_pct": 0.0,
+      "partial_taken": false,
+      "be_active": false,
+      "pip": 0.0001,
+      "digits": 5,
+      "opened_at": "2026-10-16T06:30:00Z",
+      "status": "OPEN",
+      "filled_at": "2026-10-16T06:30:00Z"
     }
   },
   "completed_trades": [
