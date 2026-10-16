@@ -400,15 +400,19 @@ async function runActiveTradeChecks(env) {
         const slPips = t.sl_pips || (Math.abs(t.entry - t.stop_loss) / pipVal);
         const target1R = slPips * pipVal;
         // Pure Binary 1:1.50 Institutional Execution: Run 100% position size to TP or SL
-        // Strict Exit Resolution: Stop Loss check takes absolute priority over Take Profit
+        // Strict Exit Resolution with Retail Spread Clearance Buffer:
+        // Stop Loss takes absolute precedence over Take Profit.
+        // Take Profit requires clearing retail broker Bid/Ask spread and feed variance (1.0 pip buffer),
+        // preventing false-positive win notifications on micro-wicks that never execute on broker accounts.
+        const spreadBuffer = 1.0 * pipVal;
         let hitTP = false;
         let hitSL = false;
         if (isLong) {
           if (lastClose <= t.stop_loss) hitSL = true;
-          else if (lastClose >= t.take_profit) hitTP = true;
+          else if (lastClose >= (t.take_profit + spreadBuffer)) hitTP = true;
         } else {
           if (lastClose >= t.stop_loss) hitSL = true;
-          else if (lastClose <= t.take_profit) hitTP = true;
+          else if (lastClose <= (t.take_profit - spreadBuffer)) hitTP = true;
         }
 
         if (hitTP || hitSL) {
@@ -420,7 +424,7 @@ async function runActiveTradeChecks(env) {
           const isWin = rawOutcome === "WIN";
           const finalR = isWin ? (t.rr || 1.50) : -1.00;
           const finalPips = isWin ? (t.tp_pips || Math.round(slPips * 1.5 * 10) / 10) : -(t.sl_pips || Math.round(slPips * 10) / 10);
-          const title = isWin ? "TARGET REACHED: FULL TAKE PROFIT HIT (+1.50R)" : "STRUCTURAL EXIT: STOP LOSS HIT (-1.00R)";
+          const title = isWin ? `TARGET REACHED: FULL TAKE PROFIT HIT (+${finalR.toFixed(2)}R)` : "STRUCTURAL EXIT: STOP LOSS HIT (-1.00R)";
           const statusText = isWin ? "WIN (Liquidity Pool Swept)" : "LOSS (Structural Stop Hit)";
           const icon = isWin ? "🎯" : "🛑";
 

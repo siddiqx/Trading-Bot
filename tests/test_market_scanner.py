@@ -1357,6 +1357,140 @@ def test_chase_guard_rejects_extended_moves(monkeypatch):
     assert signals_valid[0]["entry"] == 1.31610
 
 
+def test_calculate_liquidity_bounds_tp_sl():
+    """Verify that TP and SL are strictly bounded between 15.0 and 25.0 pips and anchored to liquidity."""
+    from market_scanner import calculate_liquidity_bounds_tp_sl
+
+    # Generate synthetic 15M bars
+    times = pd.date_range("2026-10-15 00:00", periods=50, freq="15min", tz="UTC")
+    closes = [1.3000 + i * 0.0001 for i in range(50)]
+    df = pd.DataFrame({
+        "time": times,
+        "open": closes,
+        "high": [c + 0.0010 for c in closes],
+        "low": [c - 0.0010 for c in closes],
+        "close": closes,
+        "volume": [1000] * 50
+    })
+    closed_bars = df.to_dict("records")
+    entry = 1.30500
+    pip = 0.0001
+    digits = 5
+
+    # Test LONG with tight invalidation (should be clamped up to 15.0 min SL)
+    tp, sl, tp_pips, sl_pips, rr, pool_name = calculate_liquidity_bounds_tp_sl(
+        closed_bars, entry=entry, is_long=True, pair_name="GBPUSD",
+        pip=pip, digits=digits, invalidation_level=1.30450, # only 5 pips away
+        min_pips=15.0, max_pips=25.0
+    )
+    assert 15.0 <= sl_pips <= 25.0
+    assert 15.0 <= tp_pips <= 25.0
+    assert sl_pips == 15.0
+    assert rr >= 1.0
+    assert sl < entry
+    assert tp > entry
+
+    # Test LONG with wide invalidation (should be clamped down to 25.0 max SL)
+    tp, sl, tp_pips, sl_pips, rr, pool_name = calculate_liquidity_bounds_tp_sl(
+        closed_bars, entry=entry, is_long=True, pair_name="GBPUSD",
+        pip=pip, digits=digits, invalidation_level=1.30100, # 40 pips away
+        min_pips=15.0, max_pips=25.0
+    )
+    assert sl_pips == 25.0
+    assert 15.0 <= tp_pips <= 25.0
+    assert rr >= 1.0
+
+    # Test SHORT
+    tp, sl, tp_pips, sl_pips, rr, pool_name = calculate_liquidity_bounds_tp_sl(
+        closed_bars, entry=entry, is_long=False, pair_name="GBPUSD",
+        pip=pip, digits=digits, invalidation_level=1.30550, # 5 pips away
+        min_pips=15.0, max_pips=25.0
+    )
+    assert 15.0 <= sl_pips <= 25.0
+    assert 15.0 <= tp_pips <= 25.0
+    assert sl_pips == 15.0
+    assert rr >= 1.0
+    assert sl > entry
+    assert tp < entry
+
+
+def test_evaluate_active_trade_exits_spread_clearance(monkeypatch):
+    """
+    Verify that TP is NOT triggered when price grazes TP within retail spread gap (< 1.0 pip past TP).
+    Only true penetrations beyond (TP ± 1.0 pip clearance) trigger target reached.
+    """
+    from market_scanner import check_active_trades
+
+    monkeypatch.setattr("market_scanner.send_telegram_alert", lambda *a, **kw: None)
+    monkeypatch.setattr("market_scanner.is_forex_market_open", lambda *a, **kw: True)
+    monkeypatch.setattr("market_scanner.record_trade_post_mortem", lambda *a, **kw: None)
+    monkeypatch.setattr("market_scanner.save_trade_records", lambda *a, **kw: None)
+
+    # SHORT Trade on USDCAD
+    # Entry: 1.41932, TP: 1.41692 (24p), SL: 1.42092 (16p)
+    # Required clearance for SHORT TP: low <= (1.41692 - 0.00010) = 1.41682
+    trade_id = "USDCAD_15M_SHORT"
+    active_trade = {
+        "trade_id": trade_id,
+        "symbol": "USDCAD",
+        "ticker": "USDCAD=X",
+        "pair": "USDCAD",
+        "timeframe": "15M",
+        "direction": "SHORT",
+        "entry": 1.41932,
+        "stop_loss": 1.42092,
+        "take_profit": 1.41692,
+        "sl_pips": 16.0,
+        "tp_pips": 24.0,
+        "rr": 1.50,
+        "pip": 0.0001,
+        "digits": 5,
+        "status": "OPEN",
+        "opened_at": "2026-10-15T00:00:00Z"
+    }
+
+    # Case A: Low is 1.41690 (touches TP 1.41692, but above 1.41682 clearance; does NOT clear 1.0p buffer)
+    time_candle = pd.to_datetime("2026-10-15 01:00:00+00:00")
+    df_graze = pd.DataFrame([{
+        "time": time_candle,
+        "open": 1.41750,
+        "high": 1.41780,
+        "low": 1.41690,  # Touched TP (1.41692), but only 0.2 pips penetration, does NOT clear 1.0p buffer
+        "close": 1.41740,
+        "volume": 100
+    }])
+    monkeypatch.setattr("market_scanner.fetch_candles", lambda *a, **kw: df_graze)
+
+    records = {
+        "active_trades": {trade_id: dict(active_trade)},
+        "completed_trades": []
+    }
+    check_active_trades(records)
+    assert trade_id in records["active_trades"]  # Position remains OPEN!
+    assert len(records["completed_trades"]) == 0
+
+    # Case B: Low penetrates deep enough to clear 1.0 pip buffer: low <= 1.41682 (e.g. 1.41580)
+    df_clear = pd.DataFrame([{
+        "time": time_candle,
+        "open": 1.41750,
+        "high": 1.41780,
+        "low": 1.41580,  # 11.2 pips past TP, cleanly clears 1.0p buffer
+        "close": 1.41600,
+        "volume": 100
+    }])
+    monkeypatch.setattr("market_scanner.fetch_candles", lambda *a, **kw: df_clear)
+
+    records = {
+        "active_trades": {trade_id: dict(active_trade)},
+        "completed_trades": []
+    }
+    check_active_trades(records)
+    assert trade_id not in records["active_trades"]
+    assert len(records["completed_trades"]) == 1
+    assert records["completed_trades"][0]["outcome"] == "WIN"
+
+
+
 
 
 

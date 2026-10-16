@@ -433,6 +433,9 @@ def check_active_trades(records: dict):
         tp = trade["take_profit"]
         sl = trade["stop_loss"]
         is_pending = (trade.get("status") == "PENDING")
+        pip = float(trade.get("pip", 0.0001))
+        digits = int(trade.get("digits", 5))
+        spread_buffer = float(trade.get("spread_clearance", 1.0 * pip))
 
         hit_tp = False
         hit_sl = False
@@ -477,7 +480,7 @@ def check_active_trades(records: dict):
                         if b_low <= sl:
                             hit_sl = True
                             break
-                        elif b_high >= tp:
+                        elif b_high >= (tp + spread_buffer):
                             hit_tp = True
                             break
                 else:
@@ -512,36 +515,31 @@ def check_active_trades(records: dict):
                         if b_high >= sl:
                             hit_sl = True
                             break
-                        elif b_low <= tp:
+                        elif b_low <= (tp - spread_buffer):
                             hit_tp = True
                             break
             else:
                 # Trade is active and OPEN
-                pip = trade.get("pip", 0.0001)
-                digits = trade.get("digits", 5)
                 sl_pips = float(trade.get("sl_pips", 20.0))
                 sl_dist = sl_pips * pip
                 be_active = trade.get("be_active", False)
 
-                # Binary All-or-Nothing Institutional Execution: Run 100% position size to TP or SL without premature cuts
-                pip = trade.get("pip", 0.0001)
-                digits = trade.get("digits", 5)
-
-                # Strict Exit Resolution:
+                # Strict Exit Resolution with Retail Spread Clearance Buffer:
                 # Stop Loss takes absolute precedence over Take Profit.
-                # If a bar breaches both SL and TP, it must be evaluated as Stop Loss hit to prevent false positive wins.
+                # Take Profit requires clearing retail broker Bid/Ask spread and feed variance (1.0 pip buffer),
+                # preventing false-positive win notifications on micro-wicks that never execute on broker accounts.
                 if is_long:
                     if b_low <= sl:
                         hit_sl = True
                         break
-                    elif b_high >= tp:
+                    elif b_high >= (tp + spread_buffer):
                         hit_tp = True
                         break
                 else:
                     if b_high >= sl:
                         hit_sl = True
                         break
-                    elif b_low <= tp:
+                    elif b_low <= (tp - spread_buffer):
                         hit_tp = True
                         break
 
@@ -1223,6 +1221,124 @@ def find_ict_liquidity_target(
         return None, 0.0, None
 
 
+def calculate_liquidity_bounds_tp_sl(
+    df: pd.DataFrame,
+    entry: float,
+    is_long: bool,
+    pair_name: str,
+    pip: float,
+    digits: int,
+    invalidation_level: float | None = None,
+    min_pips: float = 15.0,
+    max_pips: float = 25.0
+) -> tuple[float, float, float, float, float, str]:
+    """
+    Computes Take Profit and Stop Loss based on Strong Institutional Liquidity Zones,
+    strictly bounded between 15.0 and 25.0 pips (never above 25p, never below 15p).
+
+    Liquidity Architecture:
+      - Longs: Targets Buy-Side Liquidity (BSL) pools (5-bar fractal swing highs, Asian session high,
+        10-bar swing high, or Donchian resistance).
+      - Shorts: Targets Sell-Side Liquidity (SSL) pools (5-bar fractal swing lows, Asian session low,
+        10-bar swing low, or Donchian support).
+      - Invalidation: Anchored to origin Order Block boundaries or liquidity sweep extremes.
+      - Mathematical bounds: 15.0 <= tp_pips <= 25.0 and 15.0 <= sl_pips <= 25.0.
+      - Positive Expectancy: Ensures R:R >= 1.0 (typically 1.10R - 1.50R).
+
+    Returns:
+      (take_profit, stop_loss, tp_pips, sl_pips, rr, target_type)
+    """
+    if isinstance(df, list):
+        df = pd.DataFrame(df)
+
+    highs = df["high"].values
+    lows = df["low"].values
+    n = len(df)
+    closed_idx = n - 1
+
+    if is_long:
+        # Invalidation (Stop Loss) for LONG
+        if invalidation_level is not None and invalidation_level < entry:
+            raw_sl_pips = ((entry - invalidation_level) + (1.5 * pip)) / pip
+        else:
+            atr_val = float(df["atr"].iloc[-1]) if "atr" in df.columns else (12.0 * pip)
+            raw_sl_pips = (1.5 * atr_val) / pip
+        sl_pips = round(max(min_pips, min(max_pips, raw_sl_pips)), 1)
+
+        # Take Profit: Search for confirmed Buy-Side Liquidity (BSL)
+        bsl_candidates = []
+        for k in range(closed_idx - 3, max(2, closed_idx - 80), -1):
+            if (highs[k] >= highs[k-1] and highs[k] >= highs[k-2] and
+                    highs[k] >= highs[k+1] and highs[k] >= highs[k+2]):
+                dist = (highs[k] - entry) / pip
+                if min_pips <= dist <= max_pips:
+                    bsl_candidates.append(dist)
+
+        if "asia_high" in df.columns:
+            asia_h = df["asia_high"].iloc[-1]
+            if not pd.isna(asia_h) and asia_h > entry:
+                dist_asia = (asia_h - entry) / pip
+                if min_pips <= dist_asia <= max_pips:
+                    bsl_candidates.append(dist_asia)
+
+        if bsl_candidates:
+            # Nearest qualifying BSL pool (avoids reversals before deep targets)
+            tp_pips = round(min(bsl_candidates), 1)
+            target_name = f"Structural BSL Pool ({tp_pips}p)"
+        else:
+            tp_pips = round(min(max_pips, max(min_pips, sl_pips * 1.25)), 1)
+            target_name = f"Calibrated Institutional Target ({tp_pips}p)"
+
+        if tp_pips < sl_pips:
+            tp_pips = round(min(max_pips, max(tp_pips, sl_pips)), 1)
+
+        tp = round(entry + (tp_pips * pip), digits)
+        sl = round(entry - (sl_pips * pip), digits)
+        rr = round(tp_pips / sl_pips, 2)
+        return float(tp), float(sl), float(tp_pips), float(sl_pips), float(rr), target_name
+
+    else:
+        # Invalidation (Stop Loss) for SHORT
+        if invalidation_level is not None and invalidation_level > entry:
+            raw_sl_pips = ((invalidation_level - entry) + (1.5 * pip)) / pip
+        else:
+            atr_val = float(df["atr"].iloc[-1]) if "atr" in df.columns else (12.0 * pip)
+            raw_sl_pips = (1.5 * atr_val) / pip
+        sl_pips = round(max(min_pips, min(max_pips, raw_sl_pips)), 1)
+
+        # Take Profit: Search for confirmed Sell-Side Liquidity (SSL)
+        ssl_candidates = []
+        for k in range(closed_idx - 3, max(2, closed_idx - 80), -1):
+            if (lows[k] <= lows[k-1] and lows[k] <= lows[k-2] and
+                    lows[k] <= lows[k+1] and lows[k] <= lows[k+2]):
+                dist = (entry - lows[k]) / pip
+                if min_pips <= dist <= max_pips:
+                    ssl_candidates.append(dist)
+
+        if "asia_low" in df.columns:
+            asia_l = df["asia_low"].iloc[-1]
+            if not pd.isna(asia_l) and asia_l < entry:
+                dist_asia = (entry - asia_l) / pip
+                if min_pips <= dist_asia <= max_pips:
+                    ssl_candidates.append(dist_asia)
+
+        if ssl_candidates:
+            # Nearest qualifying SSL pool (avoids reversals before deep targets)
+            tp_pips = round(min(ssl_candidates), 1)
+            target_name = f"Structural SSL Pool ({tp_pips}p)"
+        else:
+            tp_pips = round(min(max_pips, max(min_pips, sl_pips * 1.25)), 1)
+            target_name = f"Calibrated Institutional Target ({tp_pips}p)"
+
+        if tp_pips < sl_pips:
+            tp_pips = round(min(max_pips, max(tp_pips, sl_pips)), 1)
+
+        tp = round(entry - (tp_pips * pip), digits)
+        sl = round(entry + (sl_pips * pip), digits)
+        rr = round(tp_pips / sl_pips, 2)
+        return float(tp), float(sl), float(tp_pips), float(sl_pips), float(rr), target_name
+
+
 def check_htf_alignment(ticker: str, tf: str, is_long: bool) -> tuple[bool, str]:
     """
     Higher-Timeframe (HTF) Trend Agreement Verification:
@@ -1666,11 +1782,21 @@ def scan_pair_timeframe(pair_name: str, config: dict, tf: str, state: dict) -> l
             if live_price is None:
                 live_price = bar_close_price
 
-            pair_sched = PAIR_SCHEDULES.get(pair_name, {})
-            pair_sl_pips = float(pair_sched.get("sl_pips", STOP_LOSS_PIPS))
-            pair_rr = float(pair_sched.get("tp_rr", RISK_REWARD))
-            pair_tp_pips = float(round(pair_sl_pips * pair_rr, 1))
-            pair_bank_pct = float(pair_sched.get("bank_pct", 0.0))
+            entry = round(live_price, digits)
+
+            # Strong Institutional Liquidity Zones (strictly bounded 15.0 to 25.0 pips)
+            inval_level = swept_lvl_l if is_ict else ob_low
+            take_profit, stop_loss, pair_tp_pips, pair_sl_pips, calc_rr, pool_name = calculate_liquidity_bounds_tp_sl(
+                closed_bars,
+                entry=entry,
+                is_long=True,
+                pair_name=pair_name,
+                pip=pip,
+                digits=digits,
+                invalidation_level=inval_level,
+                min_pips=15.0,
+                max_pips=25.0
+            )
 
             # Predictive Real-Time Execution Guard:
             # Only trigger signals for setups formed at the baseline.
@@ -1690,13 +1816,6 @@ def scan_pair_timeframe(pair_name: str, config: dict, tf: str, state: dict) -> l
             if (live_price - bar_close_price) >= (0.15 * pair_tp_pips * pip):
                 logger.info(f"Skipping {pair_name} ({tf}) LONG: Price already advanced >=15% towards target. Expansion already commenced.")
                 return signals
-
-            # Strict live market execution entry — never quote historical bar closes
-            entry = round(live_price, digits)
-
-            take_profit, stop_loss = calculate_tp_sl(entry, "LONG", pair_name, tp_pips=pair_tp_pips, sl_pips=pair_sl_pips)
-            calc_rr = pair_rr
-            pool_name = pool_l if is_ict else f"Calibrated {pair_tp_pips}-Pip Target"
 
             # ICT Multi-Timeframe Entry Modeling (50% Consequent Encroachment / OTE Retest)
             disp_range = float(closed_bar["high"] - (ob_low if not is_ict else swept_lvl_l))
@@ -1729,7 +1848,7 @@ def scan_pair_timeframe(pair_name: str, config: dict, tf: str, state: dict) -> l
                 "direction": "LONG",
                 "strategy": "ICT Killzone Liquidity Sweep (Turtle Soup)" if is_ict else "Two-Phase Pullback Engine",
                 "phase": f"Liquidity Sweep Reclaim ({pool_l})" if is_ict else "Phase 2 Confirmed Rejection Bounce",
-                "model_j": f"Direct Target Model: {pair_tp_pips}p TP (1.50R) / {pair_sl_pips}p SL",
+                "model_j": f"Direct Target Model: {pair_tp_pips}p TP ({calc_rr:.2f}R) / {pair_sl_pips}p SL",
                 "swept_level": swept_lvl_l if is_ict else None,
                 "sweep_depth_pips": depth_l if is_ict else 0.0,
                 "time": bar_time_sig,
@@ -1744,7 +1863,7 @@ def scan_pair_timeframe(pair_name: str, config: dict, tf: str, state: dict) -> l
                 "take_profit": round(take_profit, digits),
                 "sl_pips": pair_sl_pips,
                 "tp_pips": pair_tp_pips,
-                "rr": pair_rr,
+                "rr": calc_rr,
                 "bank_pct": 0.0,
                 "target_type": pool_name,
                 "donchian_len": donch_len,
@@ -1782,11 +1901,21 @@ def scan_pair_timeframe(pair_name: str, config: dict, tf: str, state: dict) -> l
             if live_price is None:
                 live_price = bar_close_price
 
-            pair_sched = PAIR_SCHEDULES.get(pair_name, {})
-            pair_sl_pips = float(pair_sched.get("sl_pips", STOP_LOSS_PIPS))
-            pair_rr = float(pair_sched.get("tp_rr", RISK_REWARD))
-            pair_tp_pips = float(round(pair_sl_pips * pair_rr, 1))
-            pair_bank_pct = float(pair_sched.get("bank_pct", 0.0))
+            entry = round(live_price, digits)
+
+            # Strong Institutional Liquidity Zones (strictly bounded 15.0 to 25.0 pips)
+            inval_level = swept_lvl_s if is_ict else ob_high
+            take_profit, stop_loss, pair_tp_pips, pair_sl_pips, calc_rr, pool_name = calculate_liquidity_bounds_tp_sl(
+                closed_bars,
+                entry=entry,
+                is_long=False,
+                pair_name=pair_name,
+                pip=pip,
+                digits=digits,
+                invalidation_level=inval_level,
+                min_pips=15.0,
+                max_pips=25.0
+            )
 
             # Predictive Real-Time Execution Guard:
             # Only trigger signals for setups formed at the baseline.
@@ -1806,13 +1935,6 @@ def scan_pair_timeframe(pair_name: str, config: dict, tf: str, state: dict) -> l
             if (bar_close_price - live_price) >= (0.15 * pair_tp_pips * pip):
                 logger.info(f"Skipping {pair_name} ({tf}) SHORT: Price already advanced >=15% towards target. Expansion already commenced.")
                 return signals
-
-            # Strict live market execution entry — never quote historical bar closes
-            entry = round(live_price, digits)
-
-            take_profit, stop_loss = calculate_tp_sl(entry, "SHORT", pair_name, tp_pips=pair_tp_pips, sl_pips=pair_sl_pips)
-            calc_rr = pair_rr
-            pool_name = pool_s if is_ict else f"Calibrated {pair_tp_pips}-Pip Target"
 
             disp_range = float((ob_high if not is_ict else swept_lvl_s) - closed_bar["low"])
             ote_entry = round(closed_bar["close"] + (0.50 * disp_range), digits)
@@ -1843,7 +1965,7 @@ def scan_pair_timeframe(pair_name: str, config: dict, tf: str, state: dict) -> l
                 "direction": "SHORT",
                 "strategy": "ICT Killzone Liquidity Sweep (Turtle Soup)" if is_ict else "Two-Phase Pullback Engine",
                 "phase": f"Liquidity Sweep Reclaim ({pool_s})" if is_ict else "Phase 2 Confirmed Rejection Bounce",
-                "model_j": f"Direct Target Model: {pair_tp_pips}p TP (1.50R) / {pair_sl_pips}p SL",
+                "model_j": f"Direct Target Model: {pair_tp_pips}p TP ({calc_rr:.2f}R) / {pair_sl_pips}p SL",
                 "swept_level": swept_lvl_s if is_ict else None,
                 "sweep_depth_pips": depth_s if is_ict else 0.0,
                 "time": bar_time_sig,
@@ -1858,7 +1980,7 @@ def scan_pair_timeframe(pair_name: str, config: dict, tf: str, state: dict) -> l
                 "take_profit": round(take_profit, digits),
                 "sl_pips": pair_sl_pips,
                 "tp_pips": pair_tp_pips,
-                "rr": pair_rr,
+                "rr": calc_rr,
                 "bank_pct": 0.0,
                 "target_type": pool_name,
                 "donchian_len": donch_len,
