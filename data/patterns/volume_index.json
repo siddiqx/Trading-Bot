@@ -1,18 +1,18 @@
 {
   "current_volume_no": 1,
   "current_volume_id": "VOL_01",
-  "total_global_trades": 1,
-  "total_wins": 1,
+  "total_global_trades": 2,
+  "total_wins": 2,
   "total_losses": 17,
-  "global_win_rate_pct": 5.6,
+  "global_win_rate_pct": 10.5,
   "volumes": {
     "VOL_01": {
       "volume_no": 1,
       "label": "Volume 1 (Trades 1\u2013100)",
-      "trade_count": 18,
-      "wins": 1,
+      "trade_count": 19,
+      "wins": 2,
       "losses": 17,
-      "win_rate_pct": 5.6,
+      "win_rate_pct": 10.5,
       "status": "IN_PROGRESS"
     }
   }
