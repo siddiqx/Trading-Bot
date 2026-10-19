@@ -82,3 +82,28 @@
 
 ---
 
+### #4 · GBPUSD (15M) — 🛑 LOSS (-1.00R)
+
+- **Global Sequence**: Trade `#4`
+- **Direction**: `LONG` | **Outcome**: `LOSS` (`-15.0 pips` / `-1.0R`)
+- **Execution Range**: Entry ` 1.33278 ` ➔ Exit ` 1.33128 `
+- **Targets**: Stop Loss ` 1.33128 ` | Take Profit ` 1.33466 `
+- **Holding Time**: `1.51 hours` (6 bars)
+- **Window**: `2026-10-19 14:00:00 UTC` ➔ `2026-10-19 15:30:53 UTC`
+
+#### 📊 Excursion & Market Regime
+| Metric | Value | Detail |
+| :--- | :--- | :--- |
+| **Max Favorable Excursion (MFE)** | `+0.0 pips` | Reached `+0.0R` (0.1% of TP) |
+| **Max Adverse Excursion (MAE)** | `-16.1 pips` | Deepest drawdown `-1.07R` |
+| **Session** | `London/New York Overlap` | Institutional Market Timing |
+| **Entry RSI (14)** | `50.0` | Momentum Baseline |
+| **EMA Alignment** | `BULLISH_EXPANDING` | Structural Trend Bias |
+
+#### 🔬 Post-Mortem Diagnosis: `STRUCTURAL_INVALIDATION`
+> **Analysis**: Order block level was invalidated by institutional flow after 1 bar(s). Stop-loss executed disciplined capital preservation.
+>
+> **Actionable Takeaway**: Trade adhered strictly to risk geometry. Invalidation was clean and preserved capital.
+
+---
+
