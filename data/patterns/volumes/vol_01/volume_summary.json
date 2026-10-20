@@ -1,15 +1,15 @@
 {
   "volume_no": 1,
   "volume_id": "VOL_01",
-  "trade_count": 22,
+  "trade_count": 23,
   "capacity": 100,
   "status": "IN_PROGRESS",
-  "wins": 2,
+  "wins": 3,
   "losses": 20,
-  "win_rate_pct": 9.1,
-  "net_pips": -234.8,
-  "net_r": -17.48,
-  "profit_factor": 0.17,
+  "win_rate_pct": 13.0,
+  "net_pips": -215.8,
+  "net_r": -16.23,
+  "profit_factor": 0.24,
   "average_loss_mfe_pips": 3.2,
   "top_loss_factors": {
     "UNKNOWN": 7,
@@ -18,8 +18,8 @@
     "PREMATURE_REVERSAL": 2
   },
   "top_win_factors": {
-    "HIGH_VELOCITY_BREAKOUT": 1,
+    "HIGH_VELOCITY_BREAKOUT": 2,
     "CLEAN_MOMENTUM_EXPANSION": 1
   },
-  "last_updated": "2026-10-20T14:29:21Z"
+  "last_updated": "2026-10-20T14:30:47Z"
 }

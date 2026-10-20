@@ -132,3 +132,28 @@
 
 ---
 
+### #6 · AUDUSD (15M) — 🎯 WIN (+1.75R)
+
+- **Global Sequence**: Trade `#6`
+- **Direction**: `LONG` | **Outcome**: `WIN` (`+19.0 pips` / `1.25R`)
+- **Execution Range**: Entry ` 0.69969 ` ➔ Exit ` 0.70159 `
+- **Targets**: Stop Loss ` 0.69817 ` | Take Profit ` 0.70159 `
+- **Holding Time**: `7.76 hours` (31 bars)
+- **Window**: `2026-10-20 06:45:00 UTC` ➔ `2026-10-20 14:30:47 UTC`
+
+#### 📊 Excursion & Market Regime
+| Metric | Value | Detail |
+| :--- | :--- | :--- |
+| **Max Favorable Excursion (MFE)** | `+21.1 pips` | Reached `+1.39R` (100.0% of TP) |
+| **Max Adverse Excursion (MAE)** | `-10.7 pips` | Deepest drawdown `-0.71R` |
+| **Session** | `Asian/Tokyo Session` | Institutional Market Timing |
+| **Entry RSI (14)** | `50.0` | Momentum Baseline |
+| **EMA Alignment** | `BULLISH_EXPANDING` | Structural Trend Bias |
+
+#### 🔬 Post-Mortem Diagnosis: `HIGH_VELOCITY_BREAKOUT`
+> **Analysis**: Take-profit hit within 1 bar(s). High momentum impulse confirmed structural breakout conviction.
+>
+> **Actionable Takeaway**: Validates the 20-period Donchian channel breakout trigger.
+
+---
+
