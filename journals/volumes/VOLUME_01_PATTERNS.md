@@ -257,3 +257,28 @@
 
 ---
 
+### #11 · AUDUSD (15M) — 🛑 LOSS (-1.00R)
+
+- **Global Sequence**: Trade `#11`
+- **Direction**: `LONG` | **Outcome**: `LOSS` (`-5.0 pips` / `-0.33R`)
+- **Execution Range**: Entry ` 0.70294 ` ➔ Exit ` 0.7024445533752441 `
+- **Targets**: Stop Loss ` 0.70144 ` | Take Profit ` 0.70482 `
+- **Holding Time**: `12.27 hours` (49 bars)
+- **Window**: `2026-10-21 10:30:00 UTC` ➔ `2026-10-21 22:46:15 UTC`
+
+#### 📊 Excursion & Market Regime
+| Metric | Value | Detail |
+| :--- | :--- | :--- |
+| **Max Favorable Excursion (MFE)** | `+8.4 pips` | Reached `+0.56R` (44.6% of TP) |
+| **Max Adverse Excursion (MAE)** | `-7.9 pips` | Deepest drawdown `-0.53R` |
+| **Session** | `London Session` | Institutional Market Timing |
+| **Entry RSI (14)** | `50.0` | Momentum Baseline |
+| **EMA Alignment** | `BULLISH_EXPANDING` | Structural Trend Bias |
+
+#### 🔬 Post-Mortem Diagnosis: `STRUCTURAL_INVALIDATION`
+> **Analysis**: Order block level was invalidated by institutional flow after 1 bar(s). Stop-loss executed disciplined capital preservation.
+>
+> **Actionable Takeaway**: Trade adhered strictly to risk geometry. Invalidation was clean and preserved capital.
+
+---
+
