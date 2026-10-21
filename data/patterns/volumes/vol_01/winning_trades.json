@@ -133,5 +133,50 @@
       "summary": "Take-profit hit within 1 bar(s). High momentum impulse confirmed structural breakout conviction.",
       "actionable_insight": "Validates the 20-period Donchian channel breakout trigger."
     }
+  },
+  {
+    "tracking": {
+      "global_trade_no": 7,
+      "volume_no": 1,
+      "volume_trade_no": 7,
+      "volume_id": "VOL_01",
+      "volume_label": "Volume 1 (Trades 1\u2013100)"
+    },
+    "trade_id": "AUDUSD_15M_2026-10-20T15:45:00Z_LONG",
+    "pair": "AUDUSD",
+    "symbol": "AUDUSD",
+    "timeframe": "15M",
+    "direction": "LONG",
+    "entry_price": 0.70023,
+    "exit_price": 0.70185,
+    "stop_loss": 0.69873,
+    "take_profit": 0.70185,
+    "opened_at": "2026-10-20T15:45:00Z",
+    "closed_at": "2026-10-21T01:31:10Z",
+    "duration_hours": 9.77,
+    "duration_bars": 39,
+    "outcome": "WIN",
+    "realized_pips": 16.2,
+    "realized_r": 1.08,
+    "excursion_metrics": {
+      "mfe_pips": 17.2,
+      "mfe_r": 1.15,
+      "mae_pips": -4.4,
+      "mae_r": -0.29,
+      "tp_distance_pct_reached": 100.0
+    },
+    "market_regime": {
+      "trading_session": "London/New York Overlap",
+      "rsi_at_entry": 50.0,
+      "atr_14": 0.0015,
+      "volatility_regime": "NORMAL",
+      "ema_alignment": "BULLISH_EXPANDING",
+      "breakout_candle_wick_ratio": 0.28
+    },
+    "diagnostic": {
+      "primary_factor": "HIGH_VELOCITY_BREAKOUT",
+      "summary": "Take-profit hit within 1 bar(s). High momentum impulse confirmed structural breakout conviction.",
+      "actionable_insight": "Validates the 20-period Donchian channel breakout trigger."
+    }
   }
 ]
