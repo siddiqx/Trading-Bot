@@ -1,6 +1,29 @@
 {
   "tracking_started": "2026-10-15",
-  "active_trades": {},
+  "active_trades": {
+    "USDCHF_15M": {
+      "trade_id": "USDCHF_15M_2026-10-22T07:00:00Z_SHORT",
+      "pair": "USDCHF",
+      "symbol": "USDCHF",
+      "ticker": "USDCHF=X",
+      "direction": "SHORT",
+      "timeframe": "15M",
+      "entry": 0.82061,
+      "stop_loss": 0.82211,
+      "take_profit": 0.81873,
+      "sl_pips": 15.0,
+      "tp_pips": 18.8,
+      "rr": 1.25,
+      "bank_pct": 0.0,
+      "partial_taken": false,
+      "be_active": false,
+      "pip": 0.0001,
+      "digits": 5,
+      "opened_at": "2026-10-22T07:00:00Z",
+      "status": "OPEN",
+      "filled_at": "2026-10-22T07:00:00Z"
+    }
+  },
   "completed_trades": [
     {
       "trade_id": "USDCAD_15M_2026-10-15T15:45:00Z_SHORT",
