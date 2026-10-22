@@ -282,3 +282,28 @@
 
 ---
 
+### #12 · USDCHF (15M) — 🛑 LOSS (-1.00R)
+
+- **Global Sequence**: Trade `#12`
+- **Direction**: `SHORT` | **Outcome**: `LOSS` (`-15.0 pips` / `-1.0R`)
+- **Execution Range**: Entry ` 0.82061 ` ➔ Exit ` 0.82211 `
+- **Targets**: Stop Loss ` 0.82211 ` | Take Profit ` 0.81873 `
+- **Holding Time**: `4.76 hours` (19 bars)
+- **Window**: `2026-10-22 07:00:00 UTC` ➔ `2026-10-22 11:45:53 UTC`
+
+#### 📊 Excursion & Market Regime
+| Metric | Value | Detail |
+| :--- | :--- | :--- |
+| **Max Favorable Excursion (MFE)** | `+14.9 pips` | Reached `+0.99R` (79.3% of TP) |
+| **Max Adverse Excursion (MAE)** | `-20.7 pips` | Deepest drawdown `-1.38R` |
+| **Session** | `London Session` | Institutional Market Timing |
+| **Entry RSI (14)** | `50.0` | Momentum Baseline |
+| **EMA Alignment** | `BEARISH_EXPANDING` | Structural Trend Bias |
+
+#### 🔬 Post-Mortem Diagnosis: `PREMATURE_REVERSAL`
+> **Analysis**: Position reached +14.9 pips (+0.99R / 79.3% of TP) before aggressive counter-trend reversal hit stop-loss.
+>
+> **Actionable Takeaway**: Incorporate a Breakeven Protection rule once position reaches +0.8R or 50% TP distance.
+
+---
+

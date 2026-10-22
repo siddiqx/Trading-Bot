@@ -1933,5 +1933,50 @@
       "summary": "Order block level was invalidated by institutional flow after 1 bar(s). Stop-loss executed disciplined capital preservation.",
       "actionable_insight": "Trade adhered strictly to risk geometry. Invalidation was clean and preserved capital."
     }
+  },
+  {
+    "tracking": {
+      "global_trade_no": 12,
+      "volume_no": 1,
+      "volume_trade_no": 12,
+      "volume_id": "VOL_01",
+      "volume_label": "Volume 1 (Trades 1\u2013100)"
+    },
+    "trade_id": "USDCHF_15M_2026-10-22T07:00:00Z_SHORT",
+    "pair": "USDCHF",
+    "symbol": "USDCHF",
+    "timeframe": "15M",
+    "direction": "SHORT",
+    "entry_price": 0.82061,
+    "exit_price": 0.82211,
+    "stop_loss": 0.82211,
+    "take_profit": 0.81873,
+    "opened_at": "2026-10-22T07:00:00Z",
+    "closed_at": "2026-10-22T11:45:53Z",
+    "duration_hours": 4.76,
+    "duration_bars": 19,
+    "outcome": "LOSS",
+    "realized_pips": -15.0,
+    "realized_r": -1.0,
+    "excursion_metrics": {
+      "mfe_pips": 14.9,
+      "mfe_r": 0.99,
+      "mae_pips": -20.7,
+      "mae_r": -1.38,
+      "tp_distance_pct_reached": 79.3
+    },
+    "market_regime": {
+      "trading_session": "London Session",
+      "rsi_at_entry": 50.0,
+      "atr_14": 0.0015,
+      "volatility_regime": "NORMAL",
+      "ema_alignment": "BEARISH_EXPANDING",
+      "breakout_candle_wick_ratio": 0.28
+    },
+    "diagnostic": {
+      "primary_factor": "PREMATURE_REVERSAL",
+      "summary": "Position reached +14.9 pips (+0.99R / 79.3% of TP) before aggressive counter-trend reversal hit stop-loss.",
+      "actionable_insight": "Incorporate a Breakeven Protection rule once position reaches +0.8R or 50% TP distance."
+    }
   }
 ]
