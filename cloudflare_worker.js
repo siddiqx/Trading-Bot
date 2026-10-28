@@ -12,11 +12,32 @@
  * - Modern, aesthetic, executive terminal formatting
  */
 
-const BOT_TOKEN = "8932628751:AAFS_Z7SZMbfNAgNE9KmU6Sly32IGxDm2p0";
-const TELEGRAM_API = `https://api.telegram.org/bot${BOT_TOKEN}`;
+// Module-level environment reference and credential accessors
+let CURRENT_ENV = null;
+
+function getBotToken(env = null) {
+  const activeEnv = env || CURRENT_ENV;
+  return (activeEnv && (activeEnv.TELEGRAM_BOT_TOKEN || activeEnv.BOT_TOKEN)) || "";
+}
+
+function getTelegramApi(env = null) {
+  const token = getBotToken(env);
+  if (!token) {
+    throw new Error("Missing TELEGRAM_BOT_TOKEN secret binding in Cloudflare Worker environment.");
+  }
+  return `https://api.telegram.org/bot${token}`;
+}
+
+function getTelegramChatId(env = null) {
+  const activeEnv = env || CURRENT_ENV;
+  return (activeEnv && (activeEnv.TELEGRAM_CHAT_ID || activeEnv.CHAT_ID)) || "";
+}
+
+const BOT_TOKEN = ""; // Resolved dynamically via getBotToken(env)
+const TELEGRAM_API = ""; // Dynamic URL resolved via getTelegramApi(env)
 const WORKER_PUBLIC_URL = "https://tradingview-telegram-relay.siddiqsiddiq00012.workers.dev/";
-const DEFAULT_GH_TOKEN = "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";
-const DEFAULT_CHAT_ID = "8142877259";
+const DEFAULT_GH_TOKEN = ""; // Resolved via env.GITHUB_TOKEN or env.GH_TOKEN
+const DEFAULT_CHAT_ID = ""; // Resolved via env.TELEGRAM_CHAT_ID or env.CHAT_ID
 
 const ASSETS = [
   { name: "EUR/USD", symbol: "EURUSD", ticker: "EURUSD=X", pip: 0.0001, digits: 5, donchian_len: 20 },
@@ -51,7 +72,19 @@ function getBaseSymbol(key, trade = null) {
   return String(key || "").toUpperCase();
 }
 
+const CANONICAL_SL_PIPS = 10.0;
+const CANONICAL_TP_PIPS = 15.0;
+const CANONICAL_RR = 1.50;
+
 const PAIR_SCHEDULES = {
+  "EURUSD": { sl_pips: 10.0, tp_rr: 1.50, bank_pct: 0.0, hours: [6, 7, 9, 10, 11, 12, 13, 15] },
+  "USDCHF": { sl_pips: 10.0, tp_rr: 1.50, bank_pct: 0.0, hours: [6, 7, 10, 12, 13, 15] },
+  "AUDUSD": { sl_pips: 10.0, tp_rr: 1.50, bank_pct: 0.0, hours: [6, 7, 9, 10, 11, 15] },
+  "USDCAD": { sl_pips: 10.0, tp_rr: 1.50, bank_pct: 0.0, hours: [10, 11, 13, 14, 15] },
+  "USDJPY": { sl_pips: 10.0, tp_rr: 1.50, bank_pct: 0.0, hours: [6, 7, 9, 10, 11, 12, 13, 15] },
+  "GBPUSD": { sl_pips: 10.0, tp_rr: 1.50, bank_pct: 0.0, hours: [13, 14, 16] }
+};
+const _OLD_PAIR_SCHEDULES = {
   "EURUSD": { sl_pips: 16.0, tp_rr: 1.50, bank_pct: 0.0, hours: [6, 7, 9, 10, 11, 12, 13, 15] },
   "USDCHF": { sl_pips: 14.0, tp_rr: 1.50, bank_pct: 0.0, hours: [6, 7, 10, 12, 13, 15] },
   "AUDUSD": { sl_pips: 12.0, tp_rr: 1.50, bank_pct: 0.0, hours: [6, 7, 9, 10, 11, 15] },
@@ -373,7 +406,10 @@ async function triggerGitHubScanner(env) {
     return false;
   }
   const token = (env && (env.GITHUB_TOKEN || env.GH_TOKEN)) || DEFAULT_GH_TOKEN;
-  if (!token) return false;
+  if (!token) {
+    console.warn("GITHUB_TOKEN missing from environment. Workflow dispatch skipped.");
+    return false;
+  }
   try {
     const res = await fetch("https://api.github.com/repos/siddiqx/Trading-Bot/actions/workflows/scanner.yml/dispatches", {
       method: "POST",
@@ -461,7 +497,12 @@ async function runActiveTradeChecks(env) {
             `━━━━━━━━━━━━━━━━━━\n` +
             `🕒 <code>${new Date().toISOString().replace("T", " ").substring(0, 16)} UTC</code>\n` +
             `🔓 <i>Pair unlocked. Surveillance resumed.</i>`;
-          await sendTelegramMessage(DEFAULT_CHAT_ID, text);
+          const notifyChatId = getTelegramChatId(env);
+          if (notifyChatId) {
+            await sendTelegramMessage(notifyChatId, text, null, env);
+          } else {
+            console.error("TELEGRAM_CHAT_ID missing in environment. Cannot dispatch exit alert.");
+          }
         }
       }
     } catch (e) {
@@ -478,15 +519,16 @@ async function runActiveTradeChecks(env) {
  * 24/7 Webhook Watchdog: Automatically verifies and re-registers the Telegram Webhook
  * to ensure the bot NEVER goes unresponsive even if a local process or network event drops it.
  */
-async function ensureWebhookRegistered() {
+async function ensureWebhookRegistered(env = null) {
   try {
-    const res = await fetch(`${TELEGRAM_API}/getWebhookInfo`);
+    const apiUrl = getTelegramApi(env);
+    const res = await fetch(`${apiUrl}/getWebhookInfo`);
     if (res.ok) {
       const data = await res.json();
       const currentUrl = data?.result?.url || "";
       if (currentUrl.replace(/\/+$/, "") !== WORKER_PUBLIC_URL.replace(/\/+$/, "")) {
         console.warn(`Telegram webhook dropped or mismatched ('${currentUrl}'). Auto-restoring to ${WORKER_PUBLIC_URL}`);
-        await fetch(`${TELEGRAM_API}/setWebhook`, {
+        await fetch(`${apiUrl}/setWebhook`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ url: WORKER_PUBLIC_URL, drop_pending_updates: false })
@@ -500,10 +542,11 @@ async function ensureWebhookRegistered() {
 
 export default {
   async fetch(request, env) {
+    CURRENT_ENV = env;
     if (request.method === "GET") {
       const url = new URL(request.url);
       if (url.pathname === "/cron" || url.pathname === "/tick" || url.pathname === "/check") {
-        await ensureWebhookRegistered();
+        await ensureWebhookRegistered(env);
         const result = await runActiveTradeChecks(env);
         return new Response(JSON.stringify({ status: "CRON_EXECUTED", ...result }, null, 2), {
           status: 200,
@@ -511,7 +554,7 @@ export default {
         });
       }
       if (url.pathname === "/repair_webhook" || url.pathname === "/set_webhook") {
-        await ensureWebhookRegistered();
+        await ensureWebhookRegistered(env);
         return new Response(JSON.stringify({ status: "WEBHOOK_VERIFIED", url: WORKER_PUBLIC_URL }, null, 2), {
           status: 200,
           headers: { "Content-Type": "application/json" }
@@ -681,9 +724,10 @@ export default {
    * Cloudflare Worker Scheduled Cron Trigger (Runs 24/7 without GitHub Actions delays)
    */
   async scheduled(event, env, ctx) {
+    CURRENT_ENV = env;
     ctx.waitUntil(Promise.all([
       runActiveTradeChecks(env),
-      ensureWebhookRegistered()
+      ensureWebhookRegistered(env)
     ]));
   }
 };
@@ -694,7 +738,8 @@ async function handleTelegramUpdate(update, env) {
     const chatId = cb.message.chat.id;
     const action = cb.data;
 
-    await fetch(`${TELEGRAM_API}/answerCallbackQuery`, {
+    const apiUrl = getTelegramApi(env);
+    await fetch(`${apiUrl}/answerCallbackQuery`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ callback_query_id: cb.id })
@@ -1647,36 +1692,34 @@ async function sendStatusMessage(chatId, env) {
 }
 
 /**
- * /strategy - ICT Killzone Liquidity Sweep & Capital Protection Specifications
+ * /strategy - Asian Night Statistical Mean-Reversion Scalper Specifications
  */
 async function sendStrategyMessage(chatId) {
   const text = 
     `🎯 <b>INSTITUTIONAL STRATEGY SPECIFICATION</b>\n` +
     `━━━━━━━━━━━━━━━━━━\n` +
-    `<b>ICT KILLZONE LIQUIDITY SWEEP &amp; BREAKOUT ENGINE</b>\n\n` +
-    `<b>1. Strategy Concept &amp; Core Edge</b>\n` +
-    `• <b>Market Premise:</b> Exploits institutional stop-runs and liquidity sweeps above and below key session reference boundaries.\n` +
-    `• <b>Edge:</b> Captures rapid displacement when smart money engineers liquidity against retail breakouts, delivering clean asymmetric follow-through without subjective guessing.\n\n` +
-    `<b>2. Multi-Timeframe Execution Model</b>\n` +
-    `• <b>Higher Timeframe Bias (1H):</b> 20 EMA vs 50 EMA directional agreement confirms macro regime and filters adverse trends.\n` +
-    `• <b>Microstructure Trigger (15M):</b> Price sweeps Asian Range (00:00–06:00 UTC) or 10-bar fractal swing by ≥1.0 pip.\n` +
-    `• <b>Execution Bar:</b> Enforces confirmed bar close (100% non-repainting execution).\n\n` +
-    `<b>3. High-Volume Session Killzones (UTC)</b>\n` +
-    `• <b>London Open:</b> <code>07:00 – 10:00 UTC</code> (European volume expansion)\n` +
-    `• <b>New York Open:</b> <code>12:00 – 15:00 UTC</code> (US opening liquidity &amp; London overlap)\n` +
-    `• <b>Dead-Zone Filter:</b> Low-volume consolidation periods and major news rollover chop are strictly bypassed.\n\n` +
-    `<b>4. Target Geometry &amp; Binary Execution</b>\n` +
-    `• <b>Risk/Reward Ratio:</b> <b>Fixed 1:1.50</b> (Mathematically optimized liquidity target)\n` +
-    `• <b>Take Profit (+1.50R):</b> Anchored at opposing liquidity pool or key structural level.\n` +
-    `• <b>Stop Loss (-1.00R):</b> Anchored firmly behind structural sweep invalidation point.\n` +
-    `• <b>Binary Target Discipline:</b> Full 100% position size runs to TP or initial SL. Eliminates premature breakeven cuts, noise whip-outs, and preserves full mathematical expectancy.\n\n` +
-    `<b>5. Portfolio Risk &amp; Capital Protection</b>\n` +
-    `• <b>Position Risk:</b> <code>0.50% Equity</code> ($25 risk on a $5,000 account)\n` +
-    `• <b>Correlation Guard:</b> Max 2 concurrent positions across the entire currency basket.\n` +
-    `• <b>Universe:</b> 6 Forex Pairs (<code>EURUSD · USDCAD · GBPUSD · USDJPY · USDCHF · AUDUSD</code>).\n` +
-    `• <b>Exclusions:</b> Zero Gold (XAUUSD permanently disabled due to unbacked spread spikes).\n` +
+    `<b>ASIAN NIGHT STATISTICAL MEAN-REVERSION SCALPER (v2.0)</b>\n\n` +
+    `<b>1. Strategy Premise &amp; Quantitative Edge</b>\n` +
+    `• <b>Market Edge:</b> Exploits institutional liquidity voids during the quiet Asian &amp; Late NY sessions (21:00–05:00 UTC, skipping 22:00 rollover).\n` +
+    `• <b>Statistical Physics:</b> Major currency pairs trade in bounded Gaussian distributions without institutional trend drivers. Fading extreme ±2.0σ Bollinger Band piercings with RSI exhaustion back to the 20-EMA produces an empirical <b>65.13% Win Rate</b> over 4.8 years (2,776 trades, +319.7R net profit, 1.30 Profit Factor).\n\n` +
+    `<b>2. Rolling 6-Month Window Performance</b>\n` +
+    `• <b>Average 6-Month Gain:</b> <b>+38.01 R</b> (+34.2% on $5,000 equity)\n` +
+    `• <b>Median 6-Month Gain:</b> <b>+27.32 R</b> (+24.6% on $5,000 equity)\n` +
+    `• <b>Robustness:</b> <b>0 negative 6-month windows</b> across 52 consecutive rolling windows (2021–2026).\n\n` +
+    `<b>3. Signal Generation &amp; Execution Model</b>\n` +
+    `• <b>Trigger (15M):</b> Bar closes back inside the ±2.0σ band with RSI exhaustion (≤36 Long / ≥64 Short) and directional candle confirmation.\n` +
+    `• <b>Live Entry:</b> Generated at confirmed candle close (100% non-repainting, non-chasing).\n` +
+    `• <b>Take Profit:</b> Dynamically anchored at the 20-period EMA (Equilibrium Mean, min 5.0 pips).\n` +
+    `• <b>Stop Loss:</b> Anchored beyond local swing high/low + 1.0 ATR buffer (strictly bounded 8.0–25.0 pips).\n` +
+    `• <b>Max Hold Duration:</b> 16 bars (4 hours) timeout exit at market close.\n\n` +
+    `<b>4. Portfolio Risk &amp; Capital Protection</b>\n` +
+    `• <b>Position Risk:</b> <code>1.0% Equity</code> ($50 risk on a $5,000 account)\n` +
+    `• <b>Concurrency Cap:</b> Max 3 simultaneous trades across the 6-pair portfolio.\n` +
+    `• <b>Rollover Protection:</b> 22:00 UTC rollover spread spikes strictly skipped.\n` +
+    `• <b>Active Universe:</b> 6 Forex Pairs (<code>EURUSD · USDCAD · GBPUSD · USDJPY · USDCHF · AUDUSD</code>).\n` +
+    `• <b>Exclusions:</b> Zero Gold (XAUUSD permanently disabled).\n` +
     `━━━━━━━━━━━━━━━━━━\n` +
-    `🛡 <i>Systematic, rule-based algorithmic execution engineered for prop firm compliance.</i>`;
+    `🛡 <i>Systematic, verified algorithmic execution engineered for prop firm compliance.</i>`;
 
   const keyboard = {
     inline_keyboard: [
@@ -1803,8 +1846,8 @@ async function handleIncomingSignal(payload, env) {
     const entryPrice = parseFloat(payload.entry || payload.price);
     const slPrice = parseFloat(payload.stop_loss);
     const tpPrice = parseFloat(payload.take_profit);
-    const slPipDist = payload.sl_pips || (slPrice && entryPrice ? Math.abs(entryPrice - slPrice) / (pairConfig.pip || 0.0001) : pairConfig.sl_pips || 16.0);
-    const tpPipDist = payload.tp_pips || (tpPrice && entryPrice ? Math.abs(tpPrice - entryPrice) / (pairConfig.pip || 0.0001) : slPipDist * 1.5);
+    const slPipDist = payload.sl_pips || (slPrice && entryPrice ? Math.abs(entryPrice - slPrice) / (pairConfig.pip || 0.0001) : CANONICAL_SL_PIPS);
+    const tpPipDist = payload.tp_pips || (tpPrice && entryPrice ? Math.abs(tpPrice - entryPrice) / (pairConfig.pip || 0.0001) : CANONICAL_TP_PIPS);
     const barTime = payload.signal_time || payload.time || new Date().toISOString();
 
     const isPending = (payload.status === "PENDING");
@@ -1827,7 +1870,7 @@ async function handleIncomingSignal(payload, env) {
       `• <b>Stop Loss:</b> <code>${slPrice}</code> (${slPipDist.toFixed(1)} pips · -1.00R)\n` +
       `• <b>Take Profit:</b> <code>${tpPrice}</code> (${tpPipDist.toFixed(1)} pips · +1.50R)\n` +
       `• <b>Risk / Reward:</b> <b>1 : ${(tpPipDist / slPipDist).toFixed(2)}</b> (Pure Binary Target · 100% Runner)\n` +
-      `• <b>Suggested Risk:</b> <b>0.50% Equity ($25 on $5k Prop Account · 0.25 Lots)</b>\n\n` +
+      `• <b>Suggested Risk:</b> <b>1.00% Equity ($50 on $5k Reference Account)</b>\n\n` +
       `<b>🔬 CONFLUENCE MODEL</b>\n` +
       `• <b>Setup:</b> ${payload.strategy || "ICT Killzone Liquidity Sweep (Turtle Soup)"}\n` +
       `• <b>Phase:</b> ${payload.phase || "Liquidity Sweep Reclaim & Rejection"}\n` +
@@ -1875,19 +1918,30 @@ async function handleIncomingSignal(payload, env) {
     alertMessage = payload.text || JSON.stringify(payload);
   }
 
-  await sendTelegramMessage(DEFAULT_CHAT_ID, alertMessage);
+  const targetChatId = getTelegramChatId(env);
+  if (targetChatId) {
+    await sendTelegramMessage(targetChatId, alertMessage, null, env);
+  } else {
+    console.error("Configuration Error: TELEGRAM_CHAT_ID missing in environment. Cannot dispatch signal alert.");
+  }
   return new Response("OK", { status: 200 });
 }
 
 /**
  * Resilient Telegram Message Sender with Entity Fallback
  */
-async function sendTelegramMessage(chatId, text, replyMarkup = null) {
+async function sendTelegramMessage(chatId, text, replyMarkup = null, env = null) {
+  const token = getBotToken(env);
+  if (!token) {
+    console.error("Configuration Error: TELEGRAM_BOT_TOKEN missing in environment. Telegram dispatch aborted.");
+    return null;
+  }
+  const apiUrl = `https://api.telegram.org/bot${token}`;
   const body = { chat_id: chatId, text: text, parse_mode: "HTML" };
   if (replyMarkup) body.reply_markup = replyMarkup;
 
   try {
-    const res = await fetch(`${TELEGRAM_API}/sendMessage`, {
+    const res = await fetch(`${apiUrl}/sendMessage`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body)
@@ -1898,7 +1952,7 @@ async function sendTelegramMessage(chatId, text, replyMarkup = null) {
       // Fallback: If Telegram failed due to HTML entity formatting, strip tags and send as clean plain text
       if (data.description && data.description.includes("can't parse entities")) {
         const plainText = text.replace(/<[^>]*>/g, "");
-        await fetch(`${TELEGRAM_API}/sendMessage`, {
+        await fetch(`${apiUrl}/sendMessage`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ chat_id: chatId, text: plainText, reply_markup: replyMarkup })

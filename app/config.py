@@ -4,6 +4,12 @@ from functools import lru_cache
 from typing import List
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from core.config import (
+    CANONICAL_SYMBOLS,
+    CANONICAL_TAKE_PROFIT_PIPS,
+    CANONICAL_STOP_LOSS_PIPS,
+    CANONICAL_RISK_REWARD_RATIO,
+)
 
 
 class Settings(BaseSettings):
@@ -45,12 +51,12 @@ class Settings(BaseSettings):
     DEFAULT_DONCHIAN_LENGTH: int = 20
     DEFAULT_ATR_PERIOD: int = 14
     DEFAULT_ATR_MULTIPLIER: float = 1.0
-    DEFAULT_RISK_REWARD: float = 1.5
+    DEFAULT_RISK_REWARD: float = CANONICAL_RISK_REWARD_RATIO
     MIN_SIGNAL_SCORE: float = 60.0
 
     # Fixed Trade Exits
-    TAKE_PROFIT_PIPS: float = 15.0
-    STOP_LOSS_PIPS: float = 10.0
+    TAKE_PROFIT_PIPS: float = CANONICAL_TAKE_PROFIT_PIPS
+    STOP_LOSS_PIPS: float = CANONICAL_STOP_LOSS_PIPS
 
     # Gold Exclusion Flag
     GOLD_ENABLED: bool = False
@@ -77,7 +83,8 @@ class Settings(BaseSettings):
     FOREX_LOSS_COOLDOWN_HOURS: int = 6
 
     # Supported Symbols - Strictly Verified Institutional Forex Whitelist Only (No Gold)
-    SUPPORTED_SYMBOLS: List[str] = [
+    SUPPORTED_SYMBOLS: List[str] = CANONICAL_SYMBOLS
+    _LEGACY_SYMBOLS: List[str] = [
         "EURUSD",
         "GBPUSD",
         "USDJPY",
@@ -102,3 +109,11 @@ class Settings(BaseSettings):
 def get_settings() -> Settings:
     """Return cached settings instance."""
     return Settings()
+
+
+# Module-level aliases for canonical strategy configuration
+TAKE_PROFIT_PIPS: float = CANONICAL_TAKE_PROFIT_PIPS
+STOP_LOSS_PIPS: float = CANONICAL_STOP_LOSS_PIPS
+DEFAULT_RISK_REWARD: float = CANONICAL_RISK_REWARD_RATIO
+SUPPORTED_SYMBOLS: List[str] = CANONICAL_SYMBOLS
+settings = get_settings()

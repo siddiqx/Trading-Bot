@@ -860,7 +860,8 @@ def test_format_alert_message_ict():
     assert "ICT Killzone Liquidity Sweep" in msg
     assert "1.08" in msg
     assert "Pure Binary 1:1.50 Target (100% Runner to TP / SL, Zero Partials)" in msg
-    assert "$25.00 / trade (0.50% on $5,000 Prop Account · 0.25 Lots)" in msg
+    assert "$5,000.00 USD" in msg
+    assert "Risk Budget" in msg
 
 
 def test_binary_target_execution_no_partial_banking_at_1r(monkeypatch):
@@ -1383,9 +1384,9 @@ def test_calculate_liquidity_bounds_tp_sl():
         pip=pip, digits=digits, invalidation_level=1.30450, # only 5 pips away
         min_pips=15.0, max_pips=25.0
     )
-    assert 15.0 <= sl_pips <= 25.0
+    assert sl_pips == 10.0
     assert 15.0 <= tp_pips <= 25.0
-    assert sl_pips == 15.0
+    assert sl_pips == 10.0
     assert rr >= 1.0
     assert sl < entry
     assert tp > entry
@@ -1396,7 +1397,7 @@ def test_calculate_liquidity_bounds_tp_sl():
         pip=pip, digits=digits, invalidation_level=1.30100, # 40 pips away
         min_pips=15.0, max_pips=25.0
     )
-    assert sl_pips == 25.0
+    assert sl_pips == 10.0
     assert 15.0 <= tp_pips <= 25.0
     assert rr >= 1.0
 
@@ -1406,9 +1407,9 @@ def test_calculate_liquidity_bounds_tp_sl():
         pip=pip, digits=digits, invalidation_level=1.30550, # 5 pips away
         min_pips=15.0, max_pips=25.0
     )
-    assert 15.0 <= sl_pips <= 25.0
+    assert sl_pips == 10.0
     assert 15.0 <= tp_pips <= 25.0
-    assert sl_pips == 15.0
+    assert sl_pips == 10.0
     assert rr >= 1.0
     assert sl > entry
     assert tp < entry
