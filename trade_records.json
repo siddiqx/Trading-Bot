@@ -1,32 +1,6 @@
 {
   "tracking_started": "2026-10-15",
-  "active_trades": {
-    "USDCHF_15M": {
-      "trade_id": "USDCHF_15M_2026-10-28T17:15:00Z_LONG_MR",
-      "pair": "USDCHF",
-      "symbol": "USDCHF",
-      "ticker": "USDCHF=X",
-      "direction": "LONG",
-      "timeframe": "15M",
-      "strategy": "Asian Night Statistical Mean-Reversion Scalper",
-      "strategy_type": "NIGHT_SCALPER",
-      "max_hold_hours": 4.0,
-      "entry": 0.82914,
-      "stop_loss": 0.82823,
-      "take_profit": 0.82984,
-      "sl_pips": 8.0,
-      "tp_pips": 8.1,
-      "rr": 1.01,
-      "bank_pct": 0.0,
-      "partial_taken": false,
-      "be_active": false,
-      "pip": 0.0001,
-      "digits": 5,
-      "opened_at": "2026-10-28T17:15:00Z",
-      "status": "OPEN",
-      "filled_at": "2026-10-28T17:15:00Z"
-    }
-  },
+  "active_trades": {},
   "completed_trades": [
     {
       "trade_id": "USDCAD_15M_2026-10-15T15:45:00Z_SHORT",
@@ -700,6 +674,36 @@
       "realized_pips": -10.0,
       "realized_r": -1.0,
       "closed_at": "2026-10-28T17:28:36Z"
+    },
+    {
+      "trade_id": "USDCHF_15M_2026-10-28T17:15:00Z_LONG_MR",
+      "pair": "USDCHF",
+      "symbol": "USDCHF",
+      "ticker": "USDCHF=X",
+      "direction": "LONG",
+      "timeframe": "15M",
+      "strategy": "Asian Night Statistical Mean-Reversion Scalper",
+      "strategy_type": "NIGHT_SCALPER",
+      "max_hold_hours": 4,
+      "entry": 0.82914,
+      "stop_loss": 0.82823,
+      "take_profit": 0.82984,
+      "sl_pips": 8,
+      "tp_pips": 8.1,
+      "rr": 1.01,
+      "bank_pct": 0,
+      "partial_taken": false,
+      "be_active": false,
+      "pip": 0.0001,
+      "digits": 5,
+      "opened_at": "2026-10-28T17:15:00Z",
+      "status": "CLOSED",
+      "filled_at": "2026-10-28T17:15:00Z",
+      "exit_price": 0.82984,
+      "outcome": "WIN",
+      "realized_pips": 8.1,
+      "realized_r": 1.01,
+      "closed_at": "2026-10-28T18:30:26.900Z"
     }
   ]
 }

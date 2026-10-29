@@ -1924,9 +1924,10 @@ def scan_pair_timeframe(pair_name: str, config: dict, tf: str, state: dict) -> l
     prev_bar = closed_bars.iloc[-2]
     
     # Predictive Real-Time Freshness Guard:
-    # Restricts signal alerts to bars that closed within 3 minutes on 15M (or 10 minutes on 1H).
-    # Prevents triggering alerts on stale historical candles where price has already run.
-    max_age_seconds = 180 if tf == "15m" else 600
+    # Restricts signal alerts to the active bar cycle (up to 20 minutes on 15M, 70 minutes on 1H).
+    # Accommodates GitHub Actions runner scheduling queues (which typically introduce 2-8 minutes of latency).
+    # Price execution freshness is strictly guaranteed downstream by the 1.5-pip max_chase_pips guard.
+    max_age_seconds = 1200 if tf == "15m" else 4200
     seconds_since_close = (now_utc - closed_bar["close_time"]).total_seconds()
     if not os.environ.get("PYTEST_CURRENT_TEST") and seconds_since_close > max_age_seconds:
         logger.info(f"Skipping {pair_name} ({tf}): Bar closed {int(seconds_since_close)}s ago (exceeds {max_age_seconds}s real-time freshness limit). Move may already be underway.")
