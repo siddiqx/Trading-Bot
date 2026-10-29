@@ -42,8 +42,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger("TelegramBotSupervisor")
 
-TELEGRAM_BOT_TOKEN = (os.getenv("TELEGRAM_BOT_TOKEN") or "8932628751:AAFS_Z7SZMbfNAgNE9KmU6Sly32IGxDm2p0").strip()
-TELEGRAM_CHAT_ID = (os.getenv("TELEGRAM_CHAT_ID") or "8142877259").strip()
+TELEGRAM_BOT_TOKEN = (os.getenv("TELEGRAM_BOT_TOKEN") or "").strip()
+TELEGRAM_CHAT_ID = (os.getenv("TELEGRAM_CHAT_ID") or "").strip()
 API_BASE = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}"
 WORKER_WEBHOOK_URL = "https://tradingview-telegram-relay.siddiqsiddiq00012.workers.dev/"
 TRADE_RECORDS_PATH = BASE_DIR / "trade_records.json"

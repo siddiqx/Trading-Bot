@@ -283,7 +283,7 @@ Detailed comparison between user specifications and actual repository state:
    - Finding: A GitHub token (`DEFAULT_GH_TOKEN = "gho_..."`) is hardcoded in the JavaScript worker source.
 3. **Hardcoded Telegram Token in Cloudflare Worker:**
    - File: `cloudflare_worker.js` (line 15).
-   - Finding: `BOT_TOKEN = "8932628751:..."` is committed in plaintext.
+   - Finding: Telegram Bot Token was previously hardcoded; now strictly bound to encrypted secret.
 
 > [!CAUTION]
 > Both the Telegram Bot Token and the GitHub Personal Access Token must be revoked and rotated immediately in their respective administrative consoles (BotFather and GitHub Settings).
