@@ -150,3 +150,16 @@ This document tracks verified defects, architectural discrepancies, and security
   2. Add repository secrets: `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID`.
   3. Go to repository **Settings** -> **Actions** -> **General** -> **Workflow permissions** and select **Read and write permissions**.
   4. (For local execution) Populate `.env` from `.env.example`.
+
+---
+
+### ISSUE-OPS-02: GitHub Actions Peak-Minute Queue Throttling and Cron Dropping
+
+* **Severity:** **High** (Operational Execution Continuity)
+* **Status:** **REMEDIATED (2026-10-30)** — Dual offset schedule (`:02`, `:17`, `:32`, `:47` and redundant `:09`, `:24`, `:39`, `:54`) implemented in `.github/workflows/scanner.yml`. Cloudflare Worker `/cron` dual dispatch enabled.
+* **Affected Files:** `.github/workflows/scanner.yml`, `cloudflare_worker.js`
+* **Root Cause:** Standard `:00, :15, :30, :45` (`*/15`) cron intervals experience extreme queue saturation on GitHub Actions shared runners. For public repositories, GitHub deprioritizes or drops scheduled crons during peak load or following account billing holds. Furthermore, running exactly at `:00` risks querying Yahoo Finance before the previous 15M candle is finalized.
+* **Remediation Implemented:**
+  - Migrated `.github/workflows/scanner.yml` to primary offset schedule `2,17,32,47 * * * 1-5`: runs 120 seconds after candle close, ensuring candle consolidation and zero queue backlog.
+  - Added redundant fallback schedule `9,24,39,54 * * * 1-5` providing 200% execution coverage. Because `market_scanner.py` tracks alerted bars in `state["alerted_signals"]`, backup runs are completely duplicate-free.
+  - Enhanced Cloudflare Worker `/cron` endpoint to optionally dispatch GitHub Actions via repository dispatch when `env.GITHUB_TOKEN` is present.

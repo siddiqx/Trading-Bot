@@ -2,9 +2,12 @@ name: 24/7 Cloud Market Scanner
 
 on:
   schedule:
-    # Run every 15 minutes 24/5 during Forex market hours (Mon-Fri)
-    - cron: '*/15 * * * 1-5'
-  workflow_dispatch: # Manual trigger from GitHub web UI at any time
+    # Primary offset schedule: 2 minutes after 15M candle close (:02, :17, :32, :47)
+    # Bypasses peak-hour :00/:15 GitHub queue congestion and ensures Yahoo Finance candle consolidation
+    - cron: '2,17,32,47 * * * 1-5'
+    # Redundant fail-safe schedule (:09, :24, :39, :54) in case GitHub peak load delays or drops a primary run
+    - cron: '9,24,39,54 * * * 1-5'
+  workflow_dispatch: # Manual trigger from GitHub web UI or external cron ping at any time
 
 # Prevent concurrent runs from racing each other and double-firing signals
 concurrency:
@@ -13,6 +16,7 @@ concurrency:
 
 permissions:
   contents: write
+  actions: write
 
 jobs:
   scan-markets:

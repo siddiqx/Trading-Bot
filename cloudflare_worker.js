@@ -545,10 +545,28 @@ export default {
     CURRENT_ENV = env;
     if (request.method === "GET") {
       const url = new URL(request.url);
-      if (url.pathname === "/cron" || url.pathname === "/tick" || url.pathname === "/check") {
+      if (url.pathname === "/cron" || url.pathname === "/tick" || url.pathname === "/check" || url.pathname === "/dispatch_scan") {
         await ensureWebhookRegistered(env);
         const result = await runActiveTradeChecks(env);
-        return new Response(JSON.stringify({ status: "CRON_EXECUTED", ...result }, null, 2), {
+        let ghDispatchResult = null;
+        const ghToken = env && (env.GH_TOKEN || env.GITHUB_TOKEN || env.GITHUB_PAT);
+        if (ghToken) {
+          try {
+            const ghResp = await fetch("https://api.github.com/repos/siddiqx/Trading-Bot/actions/workflows/scanner.yml/dispatches", {
+              method: "POST",
+              headers: {
+                "Authorization": `Bearer ${ghToken}`,
+                "Accept": "application/vnd.github.v3+json",
+                "User-Agent": "Cloudflare-Worker-Market-Scanner-Relay"
+              },
+              body: JSON.stringify({ ref: "main" })
+            });
+            ghDispatchResult = { status: ghResp.status, ok: ghResp.ok };
+          } catch(err) {
+            ghDispatchResult = { error: String(err) };
+          }
+        }
+        return new Response(JSON.stringify({ status: "CRON_EXECUTED", gh_dispatch: ghDispatchResult, ...result }, null, 2), {
           status: 200,
           headers: { "Content-Type": "application/json" }
         });
