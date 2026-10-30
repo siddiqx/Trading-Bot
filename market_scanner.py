@@ -1869,14 +1869,14 @@ def scan_pair_timeframe(pair_name: str, config: dict, tf: str, state: dict) -> l
         return []
 
     # Institutional Session Liquidity Guard (Forex):
-    # Surveillance is active during Asian Night Mean-Reversion hours (21:00-05:00 UTC) and London/NY hours (06:00-17:00 UTC).
-    # Rollover window (22:00 UTC / 17:00 NY) is strictly skipped due to illiquid broker spread widening.
+    # Surveillance is active strictly during institutional volume hours (London/NY hours: 06:00-17:00 UTC).
+    # Illiquid Asian night sessions and rollover window (22:00 UTC) are strictly excluded to avoid low-R spread chop.
     if not os.environ.get("PYTEST_CURRENT_TEST"):
         if now_utc.hour == 22:
             logger.info(f"Skipping {pair_name} ({tf}): 22:00 UTC daily rollover spread spike window. Fresh entries prohibited.")
             return []
         pair_sched = PAIR_SCHEDULES.get(pair_name)
-        allowed_hours = pair_sched.get("hours", NIGHT_SESSION_HOURS + list(range(6, 17))) if pair_sched else (NIGHT_SESSION_HOURS + list(range(6, 17)))
+        allowed_hours = pair_sched.get("hours", list(range(6, 17))) if pair_sched else list(range(6, 17))
         if now_utc.hour not in allowed_hours:
             logger.info(f"Skipping {pair_name} ({tf}): Outside active session hours ({now_utc.hour}:00 UTC). Allowed hours: {allowed_hours}.")
             return []
@@ -2019,9 +2019,10 @@ def scan_pair_timeframe(pair_name: str, config: dict, tf: str, state: dict) -> l
     else:
         adx_regime = "Moderate Trend (Caution)"
     
-    # Primary Alpha Engine: Asian Night Statistical Mean-Reversion Scalper (65.13% WR, +38R/6m)
-    # Active during quiet Asian / Late NY liquidity hours (21:00 to 05:00 UTC, skipping 22:00 rollover).
-    in_night_session = (now_utc.hour in NIGHT_SESSION_HOURS) or bool(os.environ.get("PYTEST_CURRENT_TEST"))
+    # Asian Night Scalper Decommissioned (Per Empirical Audit & User Directive)
+    # Reversion engine during Asian quiet hours produced negative expectancy and dragged down ICT alpha.
+    # Trading engine now operates strictly on high-conviction daytime ICT Liquidity Sweeps & Pullbacks.
+    in_night_session = False
     if in_night_session:
         long_mr, mr_time_l, mr_entry_l, mr_sl_l, mr_tp_l, mr_sl_p_l, mr_tp_p_l, mr_rr_l = detect_night_mean_reversion(
             closed_bars, pip, digits, is_long=True, pair_name=pair_name

@@ -21,12 +21,12 @@ The system operates primarily via a **24/7 Serverless Cloud Architecture**:
 
 | Parameter | Canonical Specification | Code Reality (`core/config.py`, `market_scanner.py`, `cloudflare_worker.js`) |
 |---|---|---|
-| **Strategy Identity** | Asian Night Statistical Mean-Reversion Scalper (v2.0) | Primary Alpha Engine: Fades extreme $\pm 2.0\sigma$ Bollinger Band deviations with RSI exhaustion during Asian/Late NY liquidity hours (21:00–05:00 UTC, skipping 22:00 rollover). Empirical: 65.13% WR over 2,776 trades, +319.73R net, +38.0R avg/6-month window across 4.8 years. |
+| **Strategy Identity** | ICT Killzone Liquidity Sweep Engine (v2.1) | Primary Engine: Structural ICT Liquidity Sweeps (Asian High/Low & 10-bar fractal reclaim with candle rejection ≥50%) and Two-Phase Pullback Rejections during London & NY Killzones. Asian Night Scalper decommissioned per audit (caused high-friction churn and negative expectancy). |
 | **Asset Universe** | 6 Institutional Forex Pairs (Zero Gold) | **6 Forex Pairs:** `EURUSD`, `USDCAD`, `GBPUSD`, `USDJPY`, `USDCHF`, `AUDUSD`. Gold (`XAUUSD`) and all commodities/crypto are strictly excluded. |
 | **Timeframes** | 15M (Intraday) & 1H (Macro) | 15M execution, 1H/Daily HTF trend alignment, 5M precision trigger. |
-| **Take Profit** | Dynamic Equilibrium Mean (20-EMA) | Dynamically anchored at the 20-period EMA (minimum 5.0 pips). |
-| **Stop Loss** | Bounded Structural Stop | Anchored beyond local swing low/high + 1.0 ATR buffer (bounded strictly between 8.0 and 25.0 pips). |
-| **Max Hold Duration** | Session Capital Protection | 16 bars (4 hours) timeout exit at market close before European volatility. |
+| **Active Volume Hours** | London & NY Killzones (UTC) | Strictly institutional volume hours: London (06:00–11:00 UTC) & NY (12:00–16:00 UTC). Illiquid Asian night hours strictly bypassed. |
+| **Take Profit** | Liquidity Pool Target (Pure 1:1.50 R:R) | Opposing BSL/SSL liquidity target bounded strictly between 15.0 and 25.0 pips. |
+| **Stop Loss** | Structural Invalidation Level | Anchored to swept fractal / swing pivot level (bounded strictly between 15.0 and 25.0 pips). |
 | **Risk per Trade** | 1.0% ($50 on $5,000) | Dynamically calculated multi-currency position sizing with quote-to-USD conversion and lot flooring (`core/instrument_validator.py`). Trades safely skipped (returns `0.0` lots) if min lot exceeds risk budget. |
 | **Daily Circuit Breaker** | Prop firm capital preservation | Halts if today's loss $\le -2.50\text{R}$ or if $\ge 3$ stop-outs occur today. |
 | **Correlated Exposure** | Risk limit | Max 3 simultaneous unprotected trades; max 2 in same net USD direction. |

@@ -1710,34 +1710,30 @@ async function sendStatusMessage(chatId, env) {
 }
 
 /**
- * /strategy - Asian Night Statistical Mean-Reversion Scalper Specifications
+ * /strategy - ICT Killzone Liquidity Sweep Engine Specifications
  */
 async function sendStrategyMessage(chatId) {
   const text = 
     `🎯 <b>INSTITUTIONAL STRATEGY SPECIFICATION</b>\n` +
     `━━━━━━━━━━━━━━━━━━\n` +
-    `<b>ASIAN NIGHT STATISTICAL MEAN-REVERSION SCALPER (v2.0)</b>\n\n` +
-    `<b>1. Strategy Premise &amp; Quantitative Edge</b>\n` +
-    `• <b>Market Edge:</b> Exploits institutional liquidity voids during the quiet Asian &amp; Late NY sessions (21:00–05:00 UTC, skipping 22:00 rollover).\n` +
-    `• <b>Statistical Physics:</b> Major currency pairs trade in bounded Gaussian distributions without institutional trend drivers. Fading extreme ±2.0σ Bollinger Band piercings with RSI exhaustion back to the 20-EMA produces an empirical <b>65.13% Win Rate</b> over 4.8 years (2,776 trades, +319.7R net profit, 1.30 Profit Factor).\n\n` +
-    `<b>2. Rolling 6-Month Window Performance</b>\n` +
-    `• <b>Average 6-Month Gain:</b> <b>+38.01 R</b> (+34.2% on $5,000 equity)\n` +
-    `• <b>Median 6-Month Gain:</b> <b>+27.32 R</b> (+24.6% on $5,000 equity)\n` +
-    `• <b>Robustness:</b> <b>0 negative 6-month windows</b> across 52 consecutive rolling windows (2021–2026).\n\n` +
-    `<b>3. Signal Generation &amp; Execution Model</b>\n` +
-    `• <b>Trigger (15M):</b> Bar closes back inside the ±2.0σ band with RSI exhaustion (≤36 Long / ≥64 Short) and directional candle confirmation.\n` +
-    `• <b>Live Entry:</b> Generated at confirmed candle close (100% non-repainting, non-chasing).\n` +
-    `• <b>Take Profit:</b> Dynamically anchored at the 20-period EMA (Equilibrium Mean, min 5.0 pips).\n` +
-    `• <b>Stop Loss:</b> Anchored beyond local swing high/low + 1.0 ATR buffer (strictly bounded 8.0–25.0 pips).\n` +
-    `• <b>Max Hold Duration:</b> 16 bars (4 hours) timeout exit at market close.\n\n` +
-    `<b>4. Portfolio Risk &amp; Capital Protection</b>\n` +
-    `• <b>Position Risk:</b> <code>1.0% Equity</code> ($50 risk on a $5,000 account)\n` +
-    `• <b>Concurrency Cap:</b> Max 3 simultaneous trades across the 6-pair portfolio.\n` +
-    `• <b>Rollover Protection:</b> 22:00 UTC rollover spread spikes strictly skipped.\n` +
-    `• <b>Active Universe:</b> 6 Forex Pairs (<code>EURUSD · USDCAD · GBPUSD · USDJPY · USDCHF · AUDUSD</code>).\n` +
+    `<b>ICT KILLZONE LIQUIDITY SWEEP &amp; PULLBACK ENGINE (v2.1)</b>\n\n` +
+    `<b>1. Strategy Premise &amp; Institutional Edge</b>\n` +
+    `• <b>Market Edge:</b> Exploits institutional liquidity runs and stop hunts (Turtle Soup) during the high-volume London (07:00–10:00 UTC) and New York (12:00–15:00 UTC) Killzones.\n` +
+    `• <b>Liquidity Mechanics:</b> Captures price reclaims of the Asian Session High/Low and 10-bar fractal swing levels after liquidity sweeps, accompanied by strong candle body rejection (≥50% range) and Higher Timeframe trend alignment.\n\n` +
+    `<b>2. Signal Generation &amp; Execution Model</b>\n` +
+    `• <b>Primary Setup:</b> ICT Killzone Major Liquidity Sweep (Asian High/Low &amp; 10-bar fractal reclaim).\n` +
+    `• <b>Secondary Setup:</b> Two-Phase Pullback Engine (Donchian breakout impulse + retracement to 20-EMA/50% Fib value zone).\n` +
+    `• <b>Target Geometry:</b> Pure 1:1.50 Risk-Reward Ratio (Bounded 15.0–25.0 pips Take Profit and Stop Loss).\n` +
+    `• <b>Execution:</b> Non-repainting closed-candle signals with max 1.5-pip non-chasing real-time protection.\n\n` +
+    `<b>3. Portfolio Risk &amp; Capital Protection</b>\n` +
+    `• <b>Position Risk:</b> <code>1.0% Equity</code> ($50 risk on a $5,000 reference account)\n` +
+    `• <b>Concurrency Cap:</b> Max 3 simultaneous unprotected trades across the 6-pair portfolio.\n` +
+    `• <b>Directional Cap:</b> Max 2 trades in the same net USD direction.\n` +
+    `• <b>Lockout Protection:</b> 60-minute post-loss cooldown and 3-loss / -2.5R daily circuit breaker.\n` +
+    `• <b>Active Universe:</b> 6 Institutional Forex Pairs (<code>EURUSD · USDCAD · GBPUSD · USDJPY · USDCHF · AUDUSD</code>).\n` +
     `• <b>Exclusions:</b> Zero Gold (XAUUSD permanently disabled).\n` +
     `━━━━━━━━━━━━━━━━━━\n` +
-    `🛡 <i>Systematic, verified algorithmic execution engineered for prop firm compliance.</i>`;
+    `🛡 <i>Systematic, institutional liquidity execution engineered for prop firm compliance.</i>`;
 
   const keyboard = {
     inline_keyboard: [

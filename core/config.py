@@ -44,17 +44,17 @@ EXCLUDED_SYMBOLS = EXCLUDED_GOLD_SYMBOLS.union({
 })
 
 # ==============================================================================
-# 2. CANONICAL STRATEGY GEOMETRY (PURE 1:1.50 R:R BINARY EXECUTION & NIGHT SCALPER)
+# 2. CANONICAL STRATEGY GEOMETRY (PURE 1:1.50 R:R BINARY EXECUTION - ICT KILLZONES)
 # ==============================================================================
-STRATEGY_NAME: str = "Asian Night Statistical Mean-Reversion Scalper"
-STRATEGY_VERSION: str = "2.0.0"
+STRATEGY_NAME: str = "ICT Killzone Liquidity Sweep Engine"
+STRATEGY_VERSION: str = "2.1.0"
 
-# Night Session Mean-Reversion Engine Parameters (21:00 to 05:00 UTC)
-NIGHT_SESSION_HOURS: List[int] = [21, 23, 0, 1, 2, 3, 4, 5]  # Skips 22:00 rollover spread spike
+# Deprecated Night Session Scalper Parameters (Retained for backwards compatibility)
+NIGHT_SESSION_HOURS: List[int] = []  # Night scalper decommissioned: 0 night hours
 NIGHT_BOLLINGER_STD: float = 2.0
 NIGHT_RSI_OVERSOLD: float = 36.0
 NIGHT_RSI_OVERBOUGHT: float = 64.0
-NIGHT_MAX_HOLD_BARS: int = 16  # 4-hour max holding window
+NIGHT_MAX_HOLD_BARS: int = 16
 NIGHT_MAX_SPREAD_PIPS: float = 2.5
 NIGHT_MIN_TP_PIPS: float = 5.0
 
@@ -88,9 +88,8 @@ PAIR_CONFIGS: Dict[str, Dict[str, Any]] = {
         "pip_size": 0.0001,
         "digits": 5,
         "donchian_len": 20,
-        "night_hours": NIGHT_SESSION_HOURS,
         "day_hours": [6, 7, 9, 10, 11, 12, 13, 15],
-        "hours": sorted(list(set(NIGHT_SESSION_HOURS + [6, 7, 9, 10, 11, 12, 13, 15]))),
+        "hours": [6, 7, 9, 10, 11, 12, 13, 15],
         "sl_pips": CANONICAL_STOP_LOSS_PIPS,
         "tp_pips": CANONICAL_TAKE_PROFIT_PIPS,
         "rr": CANONICAL_RISK_REWARD_RATIO,
@@ -100,9 +99,8 @@ PAIR_CONFIGS: Dict[str, Dict[str, Any]] = {
         "pip_size": 0.0001,
         "digits": 5,
         "donchian_len": 20,
-        "night_hours": NIGHT_SESSION_HOURS,
         "day_hours": [10, 11, 13, 14, 15],
-        "hours": sorted(list(set(NIGHT_SESSION_HOURS + [10, 11, 13, 14, 15]))),
+        "hours": [10, 11, 13, 14, 15],
         "sl_pips": CANONICAL_STOP_LOSS_PIPS,
         "tp_pips": CANONICAL_TAKE_PROFIT_PIPS,
         "rr": CANONICAL_RISK_REWARD_RATIO,
@@ -112,9 +110,8 @@ PAIR_CONFIGS: Dict[str, Dict[str, Any]] = {
         "pip_size": 0.0001,
         "digits": 5,
         "donchian_len": 20,
-        "night_hours": NIGHT_SESSION_HOURS,
         "day_hours": [13, 14, 16],
-        "hours": sorted(list(set(NIGHT_SESSION_HOURS + [13, 14, 16]))),
+        "hours": [13, 14, 16],
         "sl_pips": CANONICAL_STOP_LOSS_PIPS,
         "tp_pips": CANONICAL_TAKE_PROFIT_PIPS,
         "rr": CANONICAL_RISK_REWARD_RATIO,
@@ -124,9 +121,8 @@ PAIR_CONFIGS: Dict[str, Dict[str, Any]] = {
         "pip_size": 0.01,
         "digits": 3,
         "donchian_len": 20,
-        "night_hours": NIGHT_SESSION_HOURS,
         "day_hours": [6, 7, 9, 10, 11, 12, 13, 15],
-        "hours": sorted(list(set(NIGHT_SESSION_HOURS + [6, 7, 9, 10, 11, 12, 13, 15]))),
+        "hours": [6, 7, 9, 10, 11, 12, 13, 15],
         "sl_pips": CANONICAL_STOP_LOSS_PIPS,
         "tp_pips": CANONICAL_TAKE_PROFIT_PIPS,
         "rr": CANONICAL_RISK_REWARD_RATIO,
@@ -136,9 +132,8 @@ PAIR_CONFIGS: Dict[str, Dict[str, Any]] = {
         "pip_size": 0.0001,
         "digits": 5,
         "donchian_len": 20,
-        "night_hours": NIGHT_SESSION_HOURS,
         "day_hours": [6, 7, 10, 12, 13, 15],
-        "hours": sorted(list(set(NIGHT_SESSION_HOURS + [6, 7, 10, 12, 13, 15]))),
+        "hours": [6, 7, 10, 12, 13, 15],
         "sl_pips": CANONICAL_STOP_LOSS_PIPS,
         "tp_pips": CANONICAL_TAKE_PROFIT_PIPS,
         "rr": CANONICAL_RISK_REWARD_RATIO,
@@ -148,9 +143,8 @@ PAIR_CONFIGS: Dict[str, Dict[str, Any]] = {
         "pip_size": 0.0001,
         "digits": 5,
         "donchian_len": 20,
-        "night_hours": NIGHT_SESSION_HOURS,
         "day_hours": [6, 7, 9, 10, 11, 15],
-        "hours": sorted(list(set(NIGHT_SESSION_HOURS + [6, 7, 9, 10, 11, 15]))),
+        "hours": [6, 7, 9, 10, 11, 15],
         "sl_pips": CANONICAL_STOP_LOSS_PIPS,
         "tp_pips": CANONICAL_TAKE_PROFIT_PIPS,
         "rr": CANONICAL_RISK_REWARD_RATIO,
