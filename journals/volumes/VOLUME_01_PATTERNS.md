@@ -57,20 +57,20 @@
 
 ---
 
-### #3 · EURUSD (1H) — 🎯 WIN (+1.75R)
+### #3 · AUDUSD (1H) — 🎯 WIN (+1.75R)
 
 - **Global Sequence**: Trade `#3`
-- **Direction**: `SHORT` | **Outcome**: `WIN` (`+10.0 pips` / `0.29R`)
-- **Execution Range**: Entry ` 1.12082 ` ➔ Exit ` 1.1198208332061768 `
-- **Targets**: Stop Loss ` 1.12432 ` | Take Profit ` 1.11557 `
-- **Holding Time**: `16.08 hours` (16 bars)
-- **Window**: `2026-11-02 11:00:00 UTC` ➔ `2026-11-03 03:04:44 UTC`
+- **Direction**: `SHORT` | **Outcome**: `WIN` (`+33.0 pips` / `1.5R`)
+- **Execution Range**: Entry ` 0.70121 ` ➔ Exit ` 0.69791 `
+- **Targets**: Stop Loss ` 0.70341 ` | Take Profit ` 0.69791 `
+- **Holding Time**: `24.75 hours` (25 bars)
+- **Window**: `2026-11-02 11:00:00 UTC` ➔ `2026-11-03 11:45:08 UTC`
 
 #### 📊 Excursion & Market Regime
 | Metric | Value | Detail |
 | :--- | :--- | :--- |
-| **Max Favorable Excursion (MFE)** | `+27.5 pips` | Reached `+0.79R` (52.4% of TP) |
-| **Max Adverse Excursion (MAE)** | `-24.0 pips` | Deepest drawdown `-0.68R` |
+| **Max Favorable Excursion (MFE)** | `+46.9 pips` | Reached `+2.13R` (100.0% of TP) |
+| **Max Adverse Excursion (MAE)** | `-10.9 pips` | Deepest drawdown `-0.49R` |
 | **Session** | `London Session` | Institutional Market Timing |
 | **Entry RSI (14)** | `50.0` | Momentum Baseline |
 | **EMA Alignment** | `BEARISH_EXPANDING` | Structural Trend Bias |

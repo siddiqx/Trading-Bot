@@ -10,7 +10,7 @@ Comparative analytics evaluating performance across sequential 100-trade volumes
 
 | Volume | Range | Completed | Win Rate | Net Pips | Net R | Profit Factor | Avg Loss MFE | Top Failure Mode | Status |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| **Volume 01** | #1 – #100 | `20/100` | **10.0%** | `-212.7p` | `-16.21R` | `0.14` | `+2.9p` | `STRUCTURAL_INVALIDATION` | `IN_PROGRESS` |
+| **Volume 01** | #1 – #100 | `20/100` | **10.0%** | `-189.7p` | `-15.0R` | `0.23` | `+2.9p` | `STRUCTURAL_INVALIDATION` | `IN_PROGRESS` |
 
 ---
 

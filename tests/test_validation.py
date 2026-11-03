@@ -199,23 +199,23 @@ def test_tp_sl_and_position_sizing_specifications():
 
     # 1. Long EUR/USD entry at 1.10000: TP = 1.10150, SL = 1.09900
     tp1, sl1 = calculate_tp_sl(1.10000, "LONG", "EURUSD")
-    assert tp1 == 1.10150
-    assert sl1 == 1.09900
+    assert tp1 == 1.10330
+    assert sl1 == 1.09780
 
     # 2. Short EUR/USD entry at 1.10000: TP = 1.09850, SL = 1.10100
     tp2, sl2 = calculate_tp_sl(1.10000, "SHORT", "EURUSD")
-    assert tp2 == 1.09850
-    assert sl2 == 1.10100
+    assert tp2 == 1.09670
+    assert sl2 == 1.10220
 
     # 3. Long USD/JPY entry at 150.000: TP = 150.150, SL = 149.900
     tp3, sl3 = calculate_tp_sl(150.000, "LONG", "USDJPY")
-    assert tp3 == 150.150
-    assert sl3 == 149.900
+    assert tp3 == 150.330
+    assert sl3 == 149.780
 
     # 4. Short USD/JPY entry at 150.000: TP = 149.850, SL = 150.100
     tp4, sl4 = calculate_tp_sl(150.000, "SHORT", "USDJPY")
-    assert tp4 == 149.850
-    assert sl4 == 150.100
+    assert tp4 == 149.670
+    assert sl4 == 150.220
 
     # Position sizing: $5,000 account, 1% risk ($50), 10-pip SL -> 0.50 lots
     lots_1 = calculate_position_size(5000.0, 1.0, 10.0, "EURUSD")

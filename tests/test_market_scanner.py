@@ -54,7 +54,7 @@ def test_format_alert_message():
         "entry": 1.08550,
         "stop_loss": 1.08200,
         "take_profit": 1.09250,
-        "sl_pips": 35.0,
+        "sl_pips": 22.0,
         "tp_pips": 61.3,
         "rr": 1.75,
         "rsi": 58.4,
@@ -1144,39 +1144,39 @@ def test_in_cycle_usd_correlation_guard_and_unprotected_cap(monkeypatch):
 
     # Mock scan_pair_timeframe returning a 3rd Long-USD signal: USDCAD LONG
     # And a Short-USD signal: AUDUSD LONG
-    def mock_scan(pair_name, cfg, tf, state):
-        if pair_name == "USDCAD" and tf == "15m":
+    def mock_scan(pair_name, cfg, tf, state, **kwargs):
+        if pair_name == "USDCAD" and tf in ["15m", "1h"]:
             return [{
-                "id": "USDCAD_15M_CORR_TEST",
+                "id": f"USDCAD_{tf.upper()}_CORR_TEST",
                 "pair": "USDCAD",
-                "timeframe": "15M",
+                "timeframe": tf.upper(),
                 "direction": "LONG",  # Long USD (+1) -> Must be rejected by correlation guard!
                 "time": "2026-10-15T12:00:00Z",
                 "entry": 1.4250,
-                "stop_loss": 1.4234,
-                "take_profit": 1.4274,
-                "sl_pips": 16.0,
-                "tp_pips": 24.0,
+                "stop_loss": 1.4215,
+                "take_profit": 1.43025,
+                "sl_pips": 22.0,
+                "tp_pips": 33.0,
                 "rr": 1.5,
-                "bank_pct": 0.60
+                "bank_pct": 0.0
             }]
-        elif pair_name == "AUDUSD" and tf == "15m":
+        elif pair_name == "AUDUSD" and tf in ["15m", "1h"]:
             return [{
-                "id": "AUDUSD_15M_CORR_TEST",
+                "id": f"AUDUSD_{tf.upper()}_CORR_TEST",
                 "pair": "AUDUSD",
-                "timeframe": "15M",
+                "timeframe": tf.upper(),
                 "direction": "LONG",  # Short USD (-1) -> Must be accepted!
                 "time": "2026-10-15T12:00:00Z",
                 "entry": 0.6950,
-                "stop_loss": 0.6938,
-                "take_profit": 0.6968,
-                "sl_pips": 12.0,
-                "tp_pips": 18.0,
+                "stop_loss": 0.6915,
+                "take_profit": 0.70025,
+                "sl_pips": 22.0,
+                "tp_pips": 33.0,
                 "rr": 1.5,
                 "rsi": 52.0,
                 "atr": 12.0,
                 "score": 92,
-                "bank_pct": 0.60
+                "bank_pct": 0.0
             }]
         return []
 
@@ -1188,7 +1188,7 @@ def test_in_cycle_usd_correlation_guard_and_unprotected_cap(monkeypatch):
     # USDCAD LONG was rejected because 2 Long-USD positions already existed.
     # AUDUSD LONG was accepted because Short-USD count was 0.
     assert "USDCAD_15M" not in records_state["active_trades"]
-    assert "AUDUSD_15M" in records_state["active_trades"]
+    assert any(k.startswith("AUDUSD") for k in records_state["active_trades"])
     assert dispatched == 1
 
 
@@ -1216,24 +1216,24 @@ def test_in_cycle_max_unprotected_cap(monkeypatch):
     monkeypatch.setattr("market_scanner.sync_worker", lambda *args, **kwargs: None)
 
     # Mock returning a signal for GBPUSD 15M
-    def mock_scan(pair_name, cfg, tf, state):
-        if pair_name == "GBPUSD" and tf == "15m":
+    def mock_scan(pair_name, cfg, tf, state, **kwargs):
+        if pair_name == "GBPUSD" and tf in ["15m", "1h"]:
             return [{
-                "id": "GBPUSD_15M_CAP_TEST",
+                "id": f"GBPUSD_{tf.upper()}_CAP_TEST",
                 "pair": "GBPUSD",
-                "timeframe": "15M",
+                "timeframe": tf.upper(),
                 "direction": "LONG",
                 "time": "2026-10-15T12:00:00Z",
                 "entry": 1.3200,
-                "stop_loss": 1.3180,
-                "take_profit": 1.3230,
-                "sl_pips": 20.0,
-                "tp_pips": 30.0,
+                "stop_loss": 1.3165,
+                "take_profit": 1.32525,
+                "sl_pips": 22.0,
+                "tp_pips": 33.0,
                 "rr": 1.5,
                 "rsi": 55.0,
                 "atr": 18.0,
                 "score": 95,
-                "bank_pct": 0.60
+                "bank_pct": 0.0
             }]
         return []
 
@@ -1249,7 +1249,7 @@ def test_in_cycle_max_unprotected_cap(monkeypatch):
     dispatched_after_be = run_scan_cycle()
     # Now that floating unprotected count is 2 (< 3), GBPUSD should be accepted!
     assert dispatched_after_be == 1
-    assert "GBPUSD_15M" in records_state["active_trades"]
+    assert any(k.startswith("GBPUSD") for k in records_state["active_trades"])
 
 
 def test_signal_strictly_uses_live_price_not_stale_5m(monkeypatch):
@@ -1384,9 +1384,9 @@ def test_calculate_liquidity_bounds_tp_sl():
         pip=pip, digits=digits, invalidation_level=1.30450, # only 5 pips away
         min_pips=15.0, max_pips=25.0
     )
-    assert sl_pips == 10.0
-    assert 15.0 <= tp_pips <= 25.0
-    assert sl_pips == 10.0
+    assert sl_pips == 22.0
+    assert tp_pips == 33.0
+    assert sl_pips == 22.0
     assert rr >= 1.0
     assert sl < entry
     assert tp > entry
@@ -1397,8 +1397,8 @@ def test_calculate_liquidity_bounds_tp_sl():
         pip=pip, digits=digits, invalidation_level=1.30100, # 40 pips away
         min_pips=15.0, max_pips=25.0
     )
-    assert sl_pips == 10.0
-    assert 15.0 <= tp_pips <= 25.0
+    assert sl_pips == 22.0
+    assert tp_pips == 33.0
     assert rr >= 1.0
 
     # Test SHORT
@@ -1407,9 +1407,9 @@ def test_calculate_liquidity_bounds_tp_sl():
         pip=pip, digits=digits, invalidation_level=1.30550, # 5 pips away
         min_pips=15.0, max_pips=25.0
     )
-    assert sl_pips == 10.0
-    assert 15.0 <= tp_pips <= 25.0
-    assert sl_pips == 10.0
+    assert sl_pips == 22.0
+    assert tp_pips == 33.0
+    assert sl_pips == 22.0
     assert rr >= 1.0
     assert sl > entry
     assert tp < entry
@@ -1496,3 +1496,182 @@ def test_evaluate_active_trade_exits_spread_clearance(monkeypatch):
 
 
 
+
+
+# ==============================================================================
+# INSTITUTIONAL CCRS FACTOR ENGINE UNIT TESTS
+# ==============================================================================
+def test_ccrs_matrix_computation(monkeypatch):
+    """Verify compute_ccrs_matrix deconstructs 6 pairs into 7 currencies and rolling Z-scores."""
+    from market_scanner import compute_ccrs_matrix, SYMBOLS
+
+    dates = pd.date_range("2026-09-01", periods=350, freq="1h", tz="UTC")
+    mock_pair_data = {}
+    base_prices = {
+        "EURUSD=X": 1.0850, "USDCAD=X": 1.4150, "GBPUSD=X": 1.2950,
+        "USDJPY=X": 155.00, "USDCHF=X": 0.8850, "AUDUSD=X": 0.6550,
+    }
+
+    for ticker, base_p in base_prices.items():
+        df = pd.DataFrame({
+            "time": dates,
+            "open": base_p,
+            "high": base_p + 0.0010,
+            "low": base_p - 0.0010,
+            "close": [base_p + (i * 0.0001) for i in range(350)],
+            "volume": 1000
+        })
+        mock_pair_data[ticker] = df
+
+    monkeypatch.setattr("market_scanner.fetch_candles", lambda ticker, tf, **kw: mock_pair_data[ticker].copy())
+
+    matrix = compute_ccrs_matrix(range_days="30d")
+    assert matrix is not None
+    assert "latest_z" in matrix
+    assert "latest_div" in matrix
+    assert len(matrix["latest_z"]) == 7  # 7 currencies: EUR, GBP, AUD, JPY, CAD, CHF, USD
+    assert set(matrix["latest_z"].keys()) == {"EUR", "GBP", "AUD", "JPY", "CAD", "CHF", "USD"}
+    assert set(matrix["latest_div"].keys()) == {"EURUSD", "GBPUSD", "AUDUSD", "USDJPY", "USDCAD", "USDCHF"}
+
+
+def test_ccrs_matrix_trims_unclosed_bars(monkeypatch):
+    """Verify compute_ccrs_matrix strips in-progress forming candle bars (close_time > as_of)."""
+    from market_scanner import compute_ccrs_matrix
+
+    as_of = datetime(2026, 11, 2, 11, 15, tzinfo=timezone.utc)
+    # 350 completed bars up to 11:00 UTC, plus 1 unclosed bar starting at 11:00 (closing at 12:00)
+    dates = pd.date_range("2026-10-01", periods=350, freq="1h", tz="UTC")
+    # Shift last date to be 11:00 UTC on 2026-11-02
+    t_end = datetime(2026, 11, 2, 11, 0, tzinfo=timezone.utc)
+    times = [t_end - timedelta(hours=(349 - i)) for i in range(350)]
+
+    mock_pair_data = {}
+    base_prices = {
+        "EURUSD=X": 1.0850, "USDCAD=X": 1.4150, "GBPUSD=X": 1.2950,
+        "USDJPY=X": 155.00, "USDCHF=X": 0.8850, "AUDUSD=X": 0.6550,
+    }
+
+    for ticker, base_p in base_prices.items():
+        df = pd.DataFrame({
+            "time": times,
+            "open": base_p,
+            "high": base_p + 0.0010,
+            "low": base_p - 0.0010,
+            "close": [base_p + (i * 0.0001) for i in range(350)],
+            "volume": 1000
+        })
+        mock_pair_data[ticker] = df
+
+    monkeypatch.setattr("market_scanner.fetch_candles", lambda ticker, tf, **kw: mock_pair_data[ticker].copy())
+
+    # When as_of is 11:15 UTC, the bar at 11:00 UTC has close_time 12:00 UTC > as_of, so it MUST be trimmed!
+    matrix = compute_ccrs_matrix(range_days="30d", as_of=as_of)
+    assert matrix is not None
+    # Panel length should be 349 (last bar trimmed)
+    assert len(matrix["panel"]) == 349
+    # Last timestamp in panel must be 10:00 UTC (which closed at 11:00 UTC <= 11:15 UTC)
+    assert matrix["panel"].index[-1] == datetime(2026, 11, 2, 10, 0, tzinfo=timezone.utc)
+
+
+def test_scan_pair_timeframe_ccrs_divergence_signal(monkeypatch):
+    """Verify CCRS divergence cross >= 2.0 triggers 1H signal with 35-50p ATR stops and 1:1.50 target."""
+    from market_scanner import scan_pair_timeframe
+
+    cfg = {"ticker": "EURUSD=X", "pip": 0.0001, "digits": 5, "donchian_len": 20}
+    state = {"alerted_signals": []}
+
+    now_utc = datetime(2026, 10, 15, 10, 30, tzinfo=timezone.utc)
+    t0 = now_utc - timedelta(hours=60)
+    times = [t0 + timedelta(hours=i) for i in range(60)]
+    closes = [1.0850] * 60
+
+    df = pd.DataFrame({
+        "time": times,
+        "open": closes,
+        "high": [c + 0.0020 for c in closes],
+        "low": [c - 0.0020 for c in closes],
+        "close": closes,
+        "volume": [1000] * 60
+    })
+
+    # Synthetic CCRS matrix with EURUSD divergence cross above 2.0σ
+    mock_ccrs = {
+        "latest_div": {"EURUSD": 2.35},
+        "prev_div": {"EURUSD": 1.75},
+        "latest_z": {"EUR": 1.60, "USD": -0.75},
+    }
+
+    monkeypatch.setenv("PYTEST_CURRENT_TEST", "1")
+    monkeypatch.setattr("market_scanner.is_forex_market_open", lambda *a, **kw: True)
+    monkeypatch.setattr("market_scanner.fetch_candles", lambda *a, **kw: df)
+    monkeypatch.setattr("market_scanner.get_live_price", lambda *a, **kw: 1.08500)
+
+    signals = scan_pair_timeframe("EURUSD", cfg, "1h", state, ccrs_matrix=mock_ccrs)
+    assert len(signals) == 1
+    sig = signals[0]
+    assert sig["pair"] == "EURUSD"
+    assert sig["direction"] == "LONG"
+    assert sig["strategy_type"] == "CCRS_MACRO_FLOW"
+    assert sig["divergence"] == 2.35
+    assert sig["base_currency"] == "EUR"
+    assert sig["quote_currency"] == "USD"
+    assert 20.0 <= sig["sl_pips"] <= 25.0
+    assert sig["tp_pips"] == round(sig["sl_pips"] * 1.50, 1)
+    assert sig["rr"] == 1.50
+    assert sig["monetary_risk_usd"] <= 50.00
+
+
+def test_ccrs_alert_message_formatting():
+    """Verify Telegram alert formatting properly displays CCRS factor block."""
+    from market_scanner import format_alert_message
+
+    sig = {
+        "pair": "EURUSD",
+        "timeframe": "1H",
+        "direction": "LONG",
+        "entry": 1.08500,
+        "bar_close_price": 1.08500,
+        "max_chase_price": 1.08530,
+        "max_chase_pips": 3.0,
+        "stop_loss": 1.08150,
+        "take_profit": 1.09025,
+        "sl_pips": 22.0,
+        "tp_pips": 33.0,
+        "rr": 1.50,
+        "strategy": "Institutional CCRS Factor Engine",
+        "strategy_type": "CCRS_MACRO_FLOW",
+        "phase": "Macro Order Flow Divergence (EUR vs USD)",
+        "divergence": 2.35,
+        "base_currency": "EUR",
+        "quote_currency": "USD",
+        "base_z": 1.60,
+        "quote_z": -0.75,
+        "target_type": "Institutional 1:1.50 Factor Expansion Target",
+        "donchian_len": 20,
+        "rsi": 56.4,
+        "atr": 20.0,
+        "adx": 22.0,
+        "adx_regime": "Macro Trend Conviction",
+        "session": "London Session",
+        "session_icon": "🇬🇧",
+        "score": 98,
+        "suggested_lots": 0.14,
+        "calc_lots": 0.14,
+        "risk_usd": 49.00,
+        "monetary_risk_usd": 49.00,
+        "risk_budget_usd": 50.00,
+        "risk_pct": 1.0,
+        "account_equity": 5000.0,
+        "time": "2026-10-15T10:00:00Z"
+    }
+
+    msg = format_alert_message(sig)
+    assert "INSTITUTIONAL CCRS FACTOR MATRIX" in msg
+    assert "+2.35σ" in msg
+    assert "EUR" in msg
+    assert "USD" in msg
+    assert "22.0 pips" in msg
+    assert "33.0 pips" in msg
+    assert "0.14 Lots" in msg
+    assert "$49.00 USD" in msg
+    assert "1 : 1.5" in msg

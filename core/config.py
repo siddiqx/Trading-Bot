@@ -5,14 +5,16 @@ Single Source of Truth across:
 - Instrument Validator & Position Sizer (core/instrument_validator.py)
 - Historical Backtester & Simulation Engines (scripts/run_canonical_backtest.py)
 - Secondary Webhook Framework (app/config.py)
-- Telegram Signal Alerting and Edge Relay
+- Telegram Signal Alerting and Edge Relay (cloudflare_worker.js)
 
 Enforces:
 1. Canonical Institutional Forex Universe (6 standard pairs only, zero Gold/crypto).
-2. Pure Binary 1:1.50 Target Geometry (Fixed 15.0 pips Take Profit, 10.0 pips Stop Loss).
-3. Risk Budget: 1.0% per trade on a reference $5,000 equity account ($50.00 max risk).
-4. Conservative Lot Sizing: Quote-to-USD conversion, lot flooring, zero-budget breaching.
-5. Realistic Institutional Transaction Costs (Spread + Commission + Slippage).
+2. Institutional Cross-Currency Relative Strength (CCRS) Factor Engine (v3.0.0).
+3. 1H Execution with Dynamic Volatility-Anchored ATR Stops (20.0 to 25.0 pips, 30.0 to 37.5 pips TP).
+4. Pure Binary 1:1.50 Target Geometry (1.50 R:R).
+5. Risk Budget: 1.0% per trade on a reference $5,000 equity account ($50.00 max risk).
+6. Conservative Lot Sizing: Quote-to-USD conversion, lot flooring, zero-budget breaching.
+7. Realistic Institutional Transaction Costs (Spread + Commission + Slippage).
 """
 
 from typing import Dict, List, Any
@@ -44,28 +46,38 @@ EXCLUDED_SYMBOLS = EXCLUDED_GOLD_SYMBOLS.union({
 })
 
 # ==============================================================================
-# 2. CANONICAL STRATEGY GEOMETRY (PURE 1:1.50 R:R BINARY EXECUTION - ICT KILLZONES)
+# 2. CANONICAL STRATEGY GEOMETRY (INSTITUTIONAL CCRS FACTOR ENGINE v3.0)
 # ==============================================================================
-STRATEGY_NAME: str = "ICT Killzone Liquidity Sweep Engine"
-STRATEGY_VERSION: str = "2.1.0"
+STRATEGY_NAME: str = "Institutional CCRS Factor Engine"
+STRATEGY_VERSION: str = "3.0.0"
+CANONICAL_TIMEFRAME: str = "1h"
+
+# Cross-Currency Relative Strength (CCRS) Matrix Parameters
+CCRS_LOOKBACK_HOURS: int = 120         # 120-hour (5 trading days) momentum lookback
+CCRS_Z_WINDOW_HOURS: int = 200         # 200-hour rolling mean/std normalization window
+CCRS_Z_THRESHOLD: float = 2.0          # 2.0σ divergence trigger threshold
+CCRS_ATR_MULTIPLIER: float = 2.0       # 2.0x 14-period 1H ATR stop distance
+CCRS_MIN_SL_PIPS: float = 20.0         # Minimum stop loss ceiling (suppresses noise stopouts)
+CCRS_MAX_SL_PIPS: float = 25.0         # Maximum stop loss cap (calibrated to intraday ADR)
+
+# Canonical Target Geometry (Calibrated Swing 1:1.50 R:R)
+CANONICAL_STOP_LOSS_PIPS: float = 22.0
+CANONICAL_TAKE_PROFIT_PIPS: float = 33.0  # 22.0 * 1.50
+CANONICAL_RISK_REWARD_RATIO: float = 1.50
+
+# Aliases for backwards compatibility with existing imports
+FIXED_TAKE_PROFIT_PIPS: float = CANONICAL_TAKE_PROFIT_PIPS
+FIXED_STOP_LOSS_PIPS: float = CANONICAL_STOP_LOSS_PIPS
+FIXED_RISK_REWARD_RATIO: float = CANONICAL_RISK_REWARD_RATIO
 
 # Deprecated Night Session Scalper Parameters (Retained for backwards compatibility)
-NIGHT_SESSION_HOURS: List[int] = []  # Night scalper decommissioned: 0 night hours
+NIGHT_SESSION_HOURS: List[int] = []
 NIGHT_BOLLINGER_STD: float = 2.0
 NIGHT_RSI_OVERSOLD: float = 36.0
 NIGHT_RSI_OVERBOUGHT: float = 64.0
 NIGHT_MAX_HOLD_BARS: int = 16
 NIGHT_MAX_SPREAD_PIPS: float = 2.5
 NIGHT_MIN_TP_PIPS: float = 5.0
-
-CANONICAL_TAKE_PROFIT_PIPS: float = 15.0
-CANONICAL_STOP_LOSS_PIPS: float = 10.0
-CANONICAL_RISK_REWARD_RATIO: float = 1.50  # 15.0 / 10.0
-
-# Aliases for backwards compatibility with existing imports
-FIXED_TAKE_PROFIT_PIPS: float = CANONICAL_TAKE_PROFIT_PIPS
-FIXED_STOP_LOSS_PIPS: float = CANONICAL_STOP_LOSS_PIPS
-FIXED_RISK_REWARD_RATIO: float = CANONICAL_RISK_REWARD_RATIO
 
 # ==============================================================================
 # 3. ACCOUNT EQUITY, RISK BUDGET & LOT SIZE CONSTRAINTS
@@ -82,14 +94,16 @@ DEFAULT_MAX_LOT: float = 100.0            # Institutional max lot ceiling
 # ==============================================================================
 # 4. PAIR SPECIFICATIONS AND INSTITUTIONAL KILLZONE HOURS (UTC)
 # ==============================================================================
+INSTITUTIONAL_HOURS: List[int] = [7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17]
+
 PAIR_CONFIGS: Dict[str, Dict[str, Any]] = {
     "EURUSD": {
         "ticker": "EURUSD=X",
         "pip_size": 0.0001,
         "digits": 5,
         "donchian_len": 20,
-        "day_hours": [6, 7, 9, 10, 11, 12, 13, 15],
-        "hours": [6, 7, 9, 10, 11, 12, 13, 15],
+        "day_hours": INSTITUTIONAL_HOURS,
+        "hours": INSTITUTIONAL_HOURS,
         "sl_pips": CANONICAL_STOP_LOSS_PIPS,
         "tp_pips": CANONICAL_TAKE_PROFIT_PIPS,
         "rr": CANONICAL_RISK_REWARD_RATIO,
@@ -99,8 +113,8 @@ PAIR_CONFIGS: Dict[str, Dict[str, Any]] = {
         "pip_size": 0.0001,
         "digits": 5,
         "donchian_len": 20,
-        "day_hours": [10, 11, 13, 14, 15],
-        "hours": [10, 11, 13, 14, 15],
+        "day_hours": INSTITUTIONAL_HOURS,
+        "hours": INSTITUTIONAL_HOURS,
         "sl_pips": CANONICAL_STOP_LOSS_PIPS,
         "tp_pips": CANONICAL_TAKE_PROFIT_PIPS,
         "rr": CANONICAL_RISK_REWARD_RATIO,
@@ -110,8 +124,8 @@ PAIR_CONFIGS: Dict[str, Dict[str, Any]] = {
         "pip_size": 0.0001,
         "digits": 5,
         "donchian_len": 20,
-        "day_hours": [13, 14, 16],
-        "hours": [13, 14, 16],
+        "day_hours": INSTITUTIONAL_HOURS,
+        "hours": INSTITUTIONAL_HOURS,
         "sl_pips": CANONICAL_STOP_LOSS_PIPS,
         "tp_pips": CANONICAL_TAKE_PROFIT_PIPS,
         "rr": CANONICAL_RISK_REWARD_RATIO,
@@ -121,8 +135,8 @@ PAIR_CONFIGS: Dict[str, Dict[str, Any]] = {
         "pip_size": 0.01,
         "digits": 3,
         "donchian_len": 20,
-        "day_hours": [6, 7, 9, 10, 11, 12, 13, 15],
-        "hours": [6, 7, 9, 10, 11, 12, 13, 15],
+        "day_hours": INSTITUTIONAL_HOURS,
+        "hours": INSTITUTIONAL_HOURS,
         "sl_pips": CANONICAL_STOP_LOSS_PIPS,
         "tp_pips": CANONICAL_TAKE_PROFIT_PIPS,
         "rr": CANONICAL_RISK_REWARD_RATIO,
@@ -132,8 +146,8 @@ PAIR_CONFIGS: Dict[str, Dict[str, Any]] = {
         "pip_size": 0.0001,
         "digits": 5,
         "donchian_len": 20,
-        "day_hours": [6, 7, 10, 12, 13, 15],
-        "hours": [6, 7, 10, 12, 13, 15],
+        "day_hours": INSTITUTIONAL_HOURS,
+        "hours": INSTITUTIONAL_HOURS,
         "sl_pips": CANONICAL_STOP_LOSS_PIPS,
         "tp_pips": CANONICAL_TAKE_PROFIT_PIPS,
         "rr": CANONICAL_RISK_REWARD_RATIO,
@@ -143,8 +157,8 @@ PAIR_CONFIGS: Dict[str, Dict[str, Any]] = {
         "pip_size": 0.0001,
         "digits": 5,
         "donchian_len": 20,
-        "day_hours": [6, 7, 9, 10, 11, 15],
-        "hours": [6, 7, 9, 10, 11, 15],
+        "day_hours": INSTITUTIONAL_HOURS,
+        "hours": INSTITUTIONAL_HOURS,
         "sl_pips": CANONICAL_STOP_LOSS_PIPS,
         "tp_pips": CANONICAL_TAKE_PROFIT_PIPS,
         "rr": CANONICAL_RISK_REWARD_RATIO,
@@ -154,8 +168,6 @@ PAIR_CONFIGS: Dict[str, Dict[str, Any]] = {
 # ==============================================================================
 # 5. INSTITUTIONAL TRANSACTION COSTS & SLIPPAGE ASSUMPTIONS
 # ==============================================================================
-# Modeling institutional ECN conditions: raw interbank spread + $4.00/lot round turn
-# commission (0.4 pip eq) + 0.2 pip realistic market fill slippage.
 CANONICAL_TRANSACTION_COSTS: Dict[str, Dict[str, float]] = {
     "EURUSD": {"spread_pips": 0.6, "commission_pips": 0.4, "slippage_pips": 0.2, "total_pips": 1.2},
     "USDCAD": {"spread_pips": 0.9, "commission_pips": 0.4, "slippage_pips": 0.2, "total_pips": 1.5},

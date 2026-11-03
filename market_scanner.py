@@ -97,6 +97,13 @@ from core.config import (
     CANONICAL_TAKE_PROFIT_PIPS,
     CANONICAL_STOP_LOSS_PIPS,
     CANONICAL_RISK_REWARD_RATIO,
+    CANONICAL_TIMEFRAME,
+    CCRS_LOOKBACK_HOURS,
+    CCRS_Z_WINDOW_HOURS,
+    CCRS_Z_THRESHOLD,
+    CCRS_MIN_SL_PIPS,
+    CCRS_MAX_SL_PIPS,
+    CCRS_ATR_MULTIPLIER,
     PAIR_CONFIGS,
     REFERENCE_ACCOUNT_EQUITY,
     REFERENCE_RISK_PCT,
@@ -160,7 +167,7 @@ _LEGACY_PAIR_SCHEDULES = {
     }
 }
 
-TIMEFRAMES = ["15m", "1h"]
+TIMEFRAMES = ["1h"]
 
 STATE_FILE = "market_scanner_state.json"
 TRADE_RECORDS_FILE = "trade_records.json"
@@ -1014,6 +1021,82 @@ def fetch_candles(ticker: str, interval: str, range_days: str = "7d") -> pd.Data
         return pd.DataFrame()
 
 
+def compute_ccrs_matrix(range_days: str = "30d", as_of: datetime | None = None) -> dict | None:
+    """
+    Computes the live Institutional Cross-Currency Relative Strength (CCRS) Matrix.
+    Deconstructs the 6 institutional Forex pairs into 7 individual currency indices
+    (USD, EUR, GBP, JPY, CAD, CHF, AUD), calculates rolling volatility-normalized Z-scores,
+    and computes pairwise order flow divergences D(A/B) = Z_A - Z_B.
+    Strictly filters for COMPLETED 1H candle bars (Look-Ahead Prevention: close_time <= as_of).
+    """
+    if as_of is None:
+        as_of = datetime.now(timezone.utc)
+    elif as_of.tzinfo is None:
+        as_of = as_of.replace(tzinfo=timezone.utc)
+
+    dfs = {}
+    pair_dfs = {}
+    for p, cfg in SYMBOLS.items():
+        df = fetch_candles(cfg["ticker"], "1h", range_days=range_days)
+        if df.empty:
+            logger.warning(f"CCRS Matrix: Empty 1H data for {p}.")
+            return None
+        df["time"] = pd.to_datetime(df["time"], utc=True)
+        df["close_time"] = df["time"] + pd.Timedelta(hours=1)
+        
+        # Enforce completed bars: Yahoo Finance includes in-progress unclosed bar at index -1.
+        # Trim any bars where close_time exceeds as_of to guarantee completed candle alignment.
+        if df["close_time"].iloc[-1] > as_of:
+            df = df[df["close_time"] <= as_of].copy()
+
+        if len(df) < (CCRS_LOOKBACK_HOURS + CCRS_Z_WINDOW_HOURS):
+            logger.warning(f"CCRS Matrix: Insufficient 1H data for {p} (received {len(df)} bars, need {CCRS_LOOKBACK_HOURS + CCRS_Z_WINDOW_HOURS}).")
+            return None
+        pair_dfs[p] = df
+        dfs[p] = df.set_index("time")["close"]
+        
+    panel = pd.DataFrame(dfs).dropna()
+    min_required = CCRS_LOOKBACK_HOURS + CCRS_Z_WINDOW_HOURS
+    if len(panel) < min_required:
+        logger.warning(f"CCRS Matrix: Aligned panel length {len(panel)} < {min_required}.")
+        return None
+        
+    lb = CCRS_LOOKBACK_HOURS
+    ret_eur = np.log(panel["EURUSD"] / panel["EURUSD"].shift(lb))
+    ret_gbp = np.log(panel["GBPUSD"] / panel["GBPUSD"].shift(lb))
+    ret_aud = np.log(panel["AUDUSD"] / panel["AUDUSD"].shift(lb))
+    ret_jpy = -np.log(panel["USDJPY"] / panel["USDJPY"].shift(lb))
+    ret_cad = -np.log(panel["USDCAD"] / panel["USDCAD"].shift(lb))
+    ret_chf = -np.log(panel["USDCHF"] / panel["USDCHF"].shift(lb))
+    ret_usd = -(ret_eur + ret_gbp + ret_aud + ret_jpy + ret_cad + ret_chf) / 6.0
+    
+    curr_returns = pd.DataFrame({
+        "EUR": ret_eur, "GBP": ret_gbp, "AUD": ret_aud,
+        "JPY": ret_jpy, "CAD": ret_cad, "CHF": ret_chf, "USD": ret_usd
+    })
+    
+    z_scores = (curr_returns - curr_returns.rolling(CCRS_Z_WINDOW_HOURS).mean()) / (curr_returns.rolling(CCRS_Z_WINDOW_HOURS).std() + 1e-9)
+    
+    div = pd.DataFrame(index=panel.index)
+    div["EURUSD"] = z_scores["EUR"] - z_scores["USD"]
+    div["GBPUSD"] = z_scores["GBP"] - z_scores["USD"]
+    div["AUDUSD"] = z_scores["AUD"] - z_scores["USD"]
+    div["USDJPY"] = z_scores["USD"] - z_scores["JPY"]
+    div["USDCAD"] = z_scores["USD"] - z_scores["CAD"]
+    div["USDCHF"] = z_scores["USD"] - z_scores["CHF"]
+    
+    return {
+        "panel": panel,
+        "z_scores": z_scores,
+        "div": div,
+        "latest_z": z_scores.iloc[-1].to_dict(),
+        "prev_z": z_scores.iloc[-2].to_dict(),
+        "latest_div": div.iloc[-1].to_dict(),
+        "prev_div": div.iloc[-2].to_dict(),
+        "pair_dfs": pair_dfs,
+    }
+
+
 def fetch_5m_entry_trigger(
     ticker: str,
     direction: str,
@@ -1383,10 +1466,10 @@ def calculate_liquidity_bounds_tp_sl(
     Returns:
       (take_profit, stop_loss, tp_pips, sl_pips, rr, target_type)
     """
-    # Enforce Canonical Strategy Exits: Fixed 15.0p TP / 10.0p SL (Pure Binary 1:1.50 R:R)
+    # Enforce Canonical Strategy Exits: Fixed Canonical SL / TP (Pure Binary 1:1.50 R:R)
     dir_str = "LONG" if is_long else "SHORT"
     tp, sl = calculate_tp_sl(entry, dir_str, pair_name, CANONICAL_TAKE_PROFIT_PIPS, CANONICAL_STOP_LOSS_PIPS)
-    return float(tp), float(sl), CANONICAL_TAKE_PROFIT_PIPS, CANONICAL_STOP_LOSS_PIPS, CANONICAL_RISK_REWARD_RATIO, "Canonical 1:1.50 Target (15.0p TP / 10.0p SL)"
+    return float(tp), float(sl), CANONICAL_TAKE_PROFIT_PIPS, CANONICAL_STOP_LOSS_PIPS, CANONICAL_RISK_REWARD_RATIO, f"Canonical 1:1.50 Target ({CANONICAL_TAKE_PROFIT_PIPS}p TP / {CANONICAL_STOP_LOSS_PIPS}p SL)"
 
     if isinstance(df, list):
         df = pd.DataFrame(df)
@@ -1854,7 +1937,7 @@ def detect_ict_liquidity_sweep(
     return False, None, 0.0, 0.0, ""
 
 
-def scan_pair_timeframe(pair_name: str, config: dict, tf: str, state: dict) -> list:
+def scan_pair_timeframe(pair_name: str, config: dict, tf: str, state: dict, ccrs_matrix: dict | None = None) -> list:
     """Scans a single pair and timeframe for confirmed Two-Phase Pullback & Rejection setups."""
     now_utc = datetime.now(timezone.utc)
 
@@ -2018,6 +2101,142 @@ def scan_pair_timeframe(pair_name: str, config: dict, tf: str, state: dict) -> l
         adx_regime = "Strong Trend"
     else:
         adx_regime = "Moderate Trend (Caution)"
+
+    # ==============================================================================
+    # Institutional Cross-Currency Relative Strength (CCRS) Factor Engine (Primary)
+    # ==============================================================================
+    if tf == "1h" and ccrs_matrix and "latest_div" in ccrs_matrix:
+        pair_div_cur = ccrs_matrix["latest_div"].get(pair_name)
+        pair_div_prev = ccrs_matrix.get("prev_div", {}).get(pair_name)
+
+        if pair_div_cur is not None and pair_div_prev is not None:
+            long_ccrs = (pair_div_cur >= CCRS_Z_THRESHOLD) and (pair_div_prev < CCRS_Z_THRESHOLD)
+            short_ccrs = (pair_div_cur <= -CCRS_Z_THRESHOLD) and (pair_div_prev > -CCRS_Z_THRESHOLD)
+
+            if long_ccrs or short_ccrs:
+                direction = "LONG" if long_ccrs else "SHORT"
+                sig_id = f"{pair_name}_{tf.upper()}_{bar_time_str}_{direction}_CCRS"
+
+                if sig_id not in state["alerted_signals"]:
+                    bar_close_price = float(closed_bar["close"])
+                    live_price = get_live_price(ticker, pip, digits)
+                    if live_price is None:
+                        live_price = bar_close_price
+                    entry = round(live_price, digits)
+
+                    # 1H Macro Non-Chasing Protection (max 3.0 pips)
+                    max_chase_pips = 3.0
+                    chase_breached = False
+                    if direction == "LONG":
+                        if live_price > bar_close_price + (max_chase_pips * pip):
+                            logger.info(f"Skipping {pair_name} ({tf}) CCRS LONG: Live price {live_price} extended {round((live_price - bar_close_price)/pip, 1)}p above bar close.")
+                            chase_breached = True
+                        elif live_price < bar_close_price - (max_chase_pips * pip):
+                            logger.info(f"Skipping {pair_name} ({tf}) CCRS LONG: Live price {live_price} dropped {round((bar_close_price - live_price)/pip, 1)}p below bar close.")
+                            chase_breached = True
+                    else:
+                        if live_price < bar_close_price - (max_chase_pips * pip):
+                            logger.info(f"Skipping {pair_name} ({tf}) CCRS SHORT: Live price {live_price} extended {round((bar_close_price - live_price)/pip, 1)}p below bar close.")
+                            chase_breached = True
+                        elif live_price > bar_close_price + (max_chase_pips * pip):
+                            logger.info(f"Skipping {pair_name} ({tf}) CCRS SHORT: Live price {live_price} rallied {round((live_price - bar_close_price)/pip, 1)}p above bar close.")
+                            chase_breached = True
+
+                    if not chase_breached:
+                        # Dynamic Volatility-Anchored ATR Stop Loss (2.0x ATR bounded 20.0 to 25.0 pips, 30.0 to 37.5 pips TP)
+                        atr_val = closed_bar["atr"] if "atr" in closed_bar.index else (11.0 * pip)
+                        raw_sl_pips = (CCRS_ATR_MULTIPLIER * atr_val) / pip
+                        sl_pips = round(max(CCRS_MIN_SL_PIPS, min(CCRS_MAX_SL_PIPS, raw_sl_pips)), 1)
+                        tp_pips = round(sl_pips * CANONICAL_RISK_REWARD_RATIO, 1)
+
+                        retest_offset_pips = 3.0
+                        if direction == "LONG":
+                            stop_loss = round(entry - (sl_pips * pip), digits)
+                            take_profit = round(entry + (tp_pips * pip), digits)
+                            max_chase_price = round(entry + (max_chase_pips * pip), digits)
+                            ote_entry = round(entry - (retest_offset_pips * pip), digits)
+                        else:
+                            stop_loss = round(entry + (sl_pips * pip), digits)
+                            take_profit = round(entry - (tp_pips * pip), digits)
+                            max_chase_price = round(entry - (max_chase_pips * pip), digits)
+                            ote_entry = round(entry + (retest_offset_pips * pip), digits)
+
+                        # Position Sizing with Conservative Lot Flooring
+                        try:
+                            calc_lots = calculate_position_size(
+                                account_equity=DEFAULT_ACCOUNT_EQUITY,
+                                risk_pct=DEFAULT_RISK_PCT,
+                                sl_pips=sl_pips,
+                                symbol=pair_name,
+                                exchange_rate=entry,
+                            )
+                            calc_risk_usd = calculate_monetary_risk(
+                                lots=calc_lots,
+                                sl_pips=sl_pips,
+                                symbol=pair_name,
+                                exchange_rate=entry,
+                            )
+                        except Exception as e:
+                            logger.warning(f"Position sizing calculation warning for {pair_name}: {e}")
+                            calc_lots = 0.0
+                            calc_risk_usd = 0.0
+
+                        if calc_lots > 0.0:
+                            pair_currencies = {
+                                "EURUSD": ("EUR", "USD"), "GBPUSD": ("GBP", "USD"),
+                                "AUDUSD": ("AUD", "USD"), "USDJPY": ("USD", "JPY"),
+                                "USDCAD": ("USD", "CAD"), "USDCHF": ("USD", "CHF"),
+                            }
+                            base_c, quote_c = pair_currencies.get(pair_name, (pair_name[:3], pair_name[3:]))
+                            base_z = ccrs_matrix.get("latest_z", {}).get(base_c, 0.0)
+                            quote_z = ccrs_matrix.get("latest_z", {}).get(quote_c, 0.0)
+
+                            signals.append({
+                                "id": sig_id,
+                                "pair": pair_name,
+                                "timeframe": tf.upper(),
+                                "direction": direction,
+                                "strategy": STRATEGY_NAME,
+                                "strategy_type": "CCRS_MACRO_FLOW",
+                                "phase": f"Macro Order Flow Divergence ({base_c} vs {quote_c})",
+                                "model_j": f"Direct Target Model: {tp_pips}p TP ({CANONICAL_RISK_REWARD_RATIO:.2f}R) / {sl_pips}p SL",
+                                "divergence": round(float(pair_div_cur), 2),
+                                "base_currency": base_c,
+                                "quote_currency": quote_c,
+                                "base_z": round(float(base_z), 2),
+                                "quote_z": round(float(quote_z), 2),
+                                "time": bar_time_str,
+                                "entry": entry,
+                                "ote_entry": ote_entry,
+                                "bar_close_price": round(bar_close_price, digits),
+                                "max_chase_price": max_chase_price,
+                                "max_chase_pips": max_chase_pips,
+                                "stop_loss": stop_loss,
+                                "take_profit": take_profit,
+                                "sl_pips": sl_pips,
+                                "tp_pips": tp_pips,
+                                "rr": CANONICAL_RISK_REWARD_RATIO,
+                                "bank_pct": 0.0,
+                                "target_type": "Institutional 1:1.50 Factor Expansion Target",
+                                "donchian_len": donch_len,
+                                "rsi": float(round(closed_bar["rsi"], 1)) if "rsi" in closed_bar.index else 50.0,
+                                "atr": float(round(atr_val / pip, 1)),
+                                "adx": float(round(adx_val, 1)),
+                                "adx_regime": "Macro Trend Conviction",
+                                "session": session_name,
+                                "session_icon": session_icon,
+                                "score": 98,
+                                "suggested_lots": calc_lots,
+                                "calc_lots": calc_lots,
+                                "risk_usd": calc_risk_usd,
+                                "monetary_risk_usd": calc_risk_usd,
+                                "risk_budget_usd": DEFAULT_ACCOUNT_EQUITY * (DEFAULT_RISK_PCT / 100.0),
+                                "risk_pct": DEFAULT_RISK_PCT,
+                                "account_equity": DEFAULT_ACCOUNT_EQUITY,
+                                "max_hold_hours": 48.0,
+                            })
+                            state["alerted_signals"].append(sig_id)
+                            return signals
     
     # Asian Night Scalper Decommissioned (Per Empirical Audit & User Directive)
     # Reversion engine during Asian quiet hours produced negative expectancy and dragged down ICT alpha.
@@ -2493,6 +2712,22 @@ def format_alert_message(sig: dict) -> str:
     tf_label = "1-HOUR (1H)" if str(sig.get("timeframe", "")).upper() == "1H" else "15-MINUTE (15M)"
     setup_len = sig.get("donchian_len", 20)
 
+    # --- Institutional CCRS Factor Block ---
+    ccrs_block = ""
+    if sig.get("strategy_type") == "CCRS_MACRO_FLOW":
+        base_c = sig.get("base_currency", pair[:3] if len(pair) == 6 else "")
+        quote_c = sig.get("quote_currency", pair[3:] if len(pair) == 6 else "")
+        div_val = sig.get("divergence", 0.0)
+        base_z = sig.get("base_z", 0.0)
+        quote_z = sig.get("quote_z", 0.0)
+        ccrs_block = (
+            f"🌐 <b>INSTITUTIONAL CCRS FACTOR MATRIX</b>\n"
+            f"• <b>Pairwise Divergence:</b> <b>{div_val:+.2f}σ</b> <i>(Trigger: |D| ≥ 2.00σ)</i>\n"
+            f"• <b>Base ({base_c}) Relative Flow:</b> <code>{base_z:+.2f}σ</code>\n"
+            f"• <b>Quote ({quote_c}) Relative Flow:</b> <code>{quote_z:+.2f}σ</code>\n"
+            f"• <b>Factor Horizon:</b> <code>120h Momentum · 200h Normalization</code>\n\n"
+        )
+
     # --- Lower-Timeframe Confluence Block ---
     lf = sig.get("lf_trigger")  # May be None if no 5M trigger found
     if lf:
@@ -2541,6 +2776,7 @@ def format_alert_message(sig: dict) -> str:
         f"• <b>Live Entry:</b> <code>{sig['entry']}</code> <i>(Real-Time Executable Price)</i>\n"
         f"• <b>Trigger Bar Close:</b> <code>{sig.get('bar_close_price', sig['entry'])}</code>\n"
         f"• <b>Max Chase Cutoff:</b> <code>{sig.get('max_chase_price', sig['entry'])}</code> <i>(Hard Limit · ±{sig.get('max_chase_pips', 1.5)} pips)</i>\n\n"
+        f"{ccrs_block}"
         f"{lf_block}"
         f"<b>🎯 TARGETS & RISK (1:1.50 R:R)</b>\n"
         f"• <b>Stop Loss:</b> <code>{sig['stop_loss']}</code> <i>({sl_sign}{sig['sl_pips']} pips · -1.00R)</i>\n"
@@ -2665,6 +2901,17 @@ def run_scan_cycle():
     # 0. Watchdog: Guarantee 24/7 Telegram bot responsiveness
     ensure_telegram_webhook_active()
 
+    # Precompute Institutional Cross-Currency Relative Strength (CCRS) Matrix
+    ccrs_matrix = None
+    if not os.environ.get("PYTEST_CURRENT_TEST"):
+        try:
+            ccrs_matrix = compute_ccrs_matrix()
+            if ccrs_matrix and "latest_div" in ccrs_matrix:
+                div_summary = ", ".join([f"{k}: {v:+.2f}σ" for k, v in ccrs_matrix["latest_div"].items()])
+                logger.info(f"Institutional CCRS Factor Matrix active. Pairwise divergences: {div_summary}")
+        except Exception as e:
+            logger.warning(f"CCRS Matrix computation failed (fallback enabled): {e}")
+
     # 1. Monitor active floating positions for Take Profit / Stop Loss hits
     check_active_trades(records)
     active_trades_map = records.get("active_trades", {})
@@ -2722,7 +2969,7 @@ def run_scan_cycle():
                 continue
 
             try:
-                signals = scan_pair_timeframe(pair_name, cfg, tf, state)
+                signals = scan_pair_timeframe(pair_name, cfg, tf, state, ccrs_matrix=ccrs_matrix)
                 if not signals:
                     telemetry["slots_scanned"].append({"pair": pair_name, "tf": tf, "status": "NO_SETUP", "detail": "Conditions not met"})
                 else:

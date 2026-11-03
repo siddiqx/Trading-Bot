@@ -69,8 +69,8 @@ def test_config_gold_disabled():
     settings = get_settings()
     assert settings.GOLD_ENABLED is False
     assert "XAUUSD" not in settings.SUPPORTED_SYMBOLS
-    assert settings.TAKE_PROFIT_PIPS == 15.0
-    assert settings.STOP_LOSS_PIPS == 10.0
+    assert settings.TAKE_PROFIT_PIPS == 33.0
+    assert settings.STOP_LOSS_PIPS == 22.0
 
 
 # ==============================================================================

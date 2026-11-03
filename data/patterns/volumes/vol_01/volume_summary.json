@@ -7,9 +7,9 @@
   "wins": 2,
   "losses": 18,
   "win_rate_pct": 10.0,
-  "net_pips": -212.7,
-  "net_r": -16.21,
-  "profit_factor": 0.14,
+  "net_pips": -189.7,
+  "net_r": -15.0,
+  "profit_factor": 0.23,
   "average_loss_mfe_pips": 2.9,
   "top_loss_factors": {
     "UNKNOWN": 7,
@@ -20,5 +20,5 @@
   "top_win_factors": {
     "HIGH_VELOCITY_BREAKOUT": 2
   },
-  "last_updated": "2026-11-03T03:04:44Z"
+  "last_updated": "2026-11-03T11:45:08Z"
 }

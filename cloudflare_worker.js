@@ -72,17 +72,17 @@ function getBaseSymbol(key, trade = null) {
   return String(key || "").toUpperCase();
 }
 
-const CANONICAL_SL_PIPS = 10.0;
-const CANONICAL_TP_PIPS = 15.0;
+const CANONICAL_SL_PIPS = 22.0;
+const CANONICAL_TP_PIPS = 33.0;
 const CANONICAL_RR = 1.50;
 
 const PAIR_SCHEDULES = {
-  "EURUSD": { sl_pips: 10.0, tp_rr: 1.50, bank_pct: 0.0, hours: [6, 7, 9, 10, 11, 12, 13, 15] },
-  "USDCHF": { sl_pips: 10.0, tp_rr: 1.50, bank_pct: 0.0, hours: [6, 7, 10, 12, 13, 15] },
-  "AUDUSD": { sl_pips: 10.0, tp_rr: 1.50, bank_pct: 0.0, hours: [6, 7, 9, 10, 11, 15] },
-  "USDCAD": { sl_pips: 10.0, tp_rr: 1.50, bank_pct: 0.0, hours: [10, 11, 13, 14, 15] },
-  "USDJPY": { sl_pips: 10.0, tp_rr: 1.50, bank_pct: 0.0, hours: [6, 7, 9, 10, 11, 12, 13, 15] },
-  "GBPUSD": { sl_pips: 10.0, tp_rr: 1.50, bank_pct: 0.0, hours: [13, 14, 16] }
+  "EURUSD": { sl_pips: 22.0, tp_rr: 1.50, bank_pct: 0.0, hours: [7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17] },
+  "USDCHF": { sl_pips: 22.0, tp_rr: 1.50, bank_pct: 0.0, hours: [7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17] },
+  "AUDUSD": { sl_pips: 22.0, tp_rr: 1.50, bank_pct: 0.0, hours: [7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17] },
+  "USDCAD": { sl_pips: 22.0, tp_rr: 1.50, bank_pct: 0.0, hours: [7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17] },
+  "USDJPY": { sl_pips: 22.0, tp_rr: 1.50, bank_pct: 0.0, hours: [7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17] },
+  "GBPUSD": { sl_pips: 22.0, tp_rr: 1.50, bank_pct: 0.0, hours: [7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17] }
 };
 const _OLD_PAIR_SCHEDULES = {
   "EURUSD": { sl_pips: 16.0, tp_rr: 1.50, bank_pct: 0.0, hours: [6, 7, 9, 10, 11, 12, 13, 15] },
@@ -1452,7 +1452,7 @@ async function sendPerformanceMessage(chatId, filterPair = "ALL", env) {
   const expSign = parseFloat(expectancy) >= 0 ? "+" : "";
 
   const text = 
-    `📈 <b>STRATEGY PERFORMANCE (v5.0 High-Yield Quant Alpha)</b>\n` +
+    `📈 <b>STRATEGY PERFORMANCE (Institutional CCRS Factor Engine v3.0)</b>\n` +
     `━━━━━━━━━━━━━━━━━━\n` +
     `Scope: <b>${scopeLabel}</b>\n` +
     `Baseline: <code>2026-10-15</code> (Fresh Start Baseline)\n` +
@@ -1716,24 +1716,26 @@ async function sendStrategyMessage(chatId) {
   const text = 
     `🎯 <b>INSTITUTIONAL STRATEGY SPECIFICATION</b>\n` +
     `━━━━━━━━━━━━━━━━━━\n` +
-    `<b>ICT KILLZONE LIQUIDITY SWEEP &amp; PULLBACK ENGINE (v2.1)</b>\n\n` +
+    `<b>INSTITUTIONAL CCRS FACTOR ENGINE (v3.0)</b>\n\n` +
     `<b>1. Strategy Premise &amp; Institutional Edge</b>\n` +
-    `• <b>Market Edge:</b> Exploits institutional liquidity runs and stop hunts (Turtle Soup) during the high-volume London (07:00–10:00 UTC) and New York (12:00–15:00 UTC) Killzones.\n` +
-    `• <b>Liquidity Mechanics:</b> Captures price reclaims of the Asian Session High/Low and 10-bar fractal swing levels after liquidity sweeps, accompanied by strong candle body rejection (≥50% range) and Higher Timeframe trend alignment.\n\n` +
+    `• <b>Factor Model:</b> Cross-Currency Relative Strength (CCRS) Matrix.\n` +
+    `• <b>Mechanics:</b> Deconstructs the 6 institutional Forex pairs into 7 pure currency strength indices (USD, EUR, GBP, JPY, CAD, CHF, AUD).\n` +
+    `• <b>Signal Trigger:</b> Identifies high-conviction order flow divergence (|D| ≥ 2.00σ) over rolling 120-hour (5-day) momentum normalized across 200 hours.\n\n` +
     `<b>2. Signal Generation &amp; Execution Model</b>\n` +
-    `• <b>Primary Setup:</b> ICT Killzone Major Liquidity Sweep (Asian High/Low &amp; 10-bar fractal reclaim).\n` +
-    `• <b>Secondary Setup:</b> Two-Phase Pullback Engine (Donchian breakout impulse + retracement to 20-EMA/50% Fib value zone).\n` +
-    `• <b>Target Geometry:</b> Pure 1:1.50 Risk-Reward Ratio (Bounded 15.0–25.0 pips Take Profit and Stop Loss).\n` +
-    `• <b>Execution:</b> Non-repainting closed-candle signals with max 1.5-pip non-chasing real-time protection.\n\n` +
+    `• <b>Primary Timeframe:</b> 1-Hour (1H) non-repainting closed-candle execution.\n` +
+    `• <b>Stop Loss Architecture:</b> Dynamic Volatility-Anchored ATR Stops (2.0× 14-period 1H ATR bounded strictly between 20.0 and 25.0 pips, baseline 22.0 pips).\n` +
+    `• <b>Target Geometry:</b> Pure Binary 1:1.50 Risk-Reward Ratio (30.0–37.5 pips Take Profit, baseline 33.0 pips, Zero early breakeven choking).\n` +
+    `• <b>Execution:</b> Non-repainting closed-bar triggers with strict real-time non-chasing protection.\n\n` +
     `<b>3. Portfolio Risk &amp; Capital Protection</b>\n` +
-    `• <b>Position Risk:</b> <code>1.0% Equity</code> ($50 risk on a $5,000 reference account)\n` +
+    `• <b>Position Risk:</b> <code>1.0% Equity</code> ($50.00 max risk on $5,000 reference account)\n` +
+    `• <b>Conservative Lot Sizing:</b> Quote-to-USD conversion, conservative lot flooring, zero budget breaching.\n` +
     `• <b>Concurrency Cap:</b> Max 3 simultaneous unprotected trades across the 6-pair portfolio.\n` +
     `• <b>Directional Cap:</b> Max 2 trades in the same net USD direction.\n` +
     `• <b>Lockout Protection:</b> 60-minute post-loss cooldown and 3-loss / -2.5R daily circuit breaker.\n` +
     `• <b>Active Universe:</b> 6 Institutional Forex Pairs (<code>EURUSD · USDCAD · GBPUSD · USDJPY · USDCHF · AUDUSD</code>).\n` +
     `• <b>Exclusions:</b> Zero Gold (XAUUSD permanently disabled).\n` +
     `━━━━━━━━━━━━━━━━━━\n` +
-    `🛡 <i>Systematic, institutional liquidity execution engineered for prop firm compliance.</i>`;
+    `🛡 <i>Systematic, institutional factor execution engineered for verified live profitability and prop firm compliance.</i>`;
 
   const keyboard = {
     inline_keyboard: [
@@ -1757,13 +1759,13 @@ async function sendClearInstructions(chatId) {
     `<b>1. Live Ledger Baseline</b>\n` +
     `• All historical trade records have been <b>completely wiped</b>.\n` +
     `• The ledger tracks strictly live confirmed signals from <code>2026-10-15</code> onwards.\n` +
-    `• Strategy is locked at v5.0 High-Yield Quant Alpha (Pure Binary 1:1.50 R:R Execution).\n\n` +
+    `• Strategy is locked at Institutional CCRS Factor Engine (v3.0.0, Pure Binary 1:1.50 R:R Execution).\n\n` +
     `<b>2. To Clear Telegram Chat History</b>\n` +
     `• On Mobile / Desktop: Tap the <b>⋮ (Three Dots)</b> menu at the top right of this chat.\n` +
     `• Select <b>Clear History</b> (or <b>Delete Chat</b>).\n` +
     `• Type <code>/start</code> to resume with a 100% clean, fresh terminal!\n` +
     `━━━━━━━━━━━━━━━━━━\n` +
-    `✨ <i>v5.0 Production institutional session active.</i>`;
+    `✨ <i>v3.0 Production institutional session active.</i>`;
 
   const keyboard = {
     inline_keyboard: [
@@ -1789,7 +1791,7 @@ async function sendMenuMessage(chatId, env) {
   const activeLabel = activeCount > 0 ? ` (${activeCount} Active)` : "";
 
   const text = 
-    `🏛 <b>INSTITUTIONAL SIGNAL TERMINAL v5.0</b>\n` +
+    `🏛 <b>INSTITUTIONAL SIGNAL TERMINAL v3.0</b>\n` +
     `━━━━━━━━━━━━━━━━━━\n` +
     `Automated 24/7 Algorithmic Trading &amp; Forward Verification\n` +
     `Coverage: <b>6 Major Forex Pairs (Zero Gold)</b>\n\n` +
@@ -1800,7 +1802,7 @@ async function sendMenuMessage(chatId, env) {
     `4. /history ── Completed trade history ledger\n` +
     `5. /performance ── Win rate &amp; net return metrics\n` +
     `6. /patterns ── Volume post-mortems &amp; failure analysis\n` +
-    `7. /strategy ── ICT Liquidity Sweep &amp; Binary 1:1.50 Model\n` +
+    `7. /strategy ── Institutional CCRS Factor Engine (v3.0)\n` +
     `8. /status ── 24/7 serverless engine health\n` +
     `9. /close PAIR WIN|LOSS ── Admin force-close\n\n` +
     `Select a dashboard module below:`;

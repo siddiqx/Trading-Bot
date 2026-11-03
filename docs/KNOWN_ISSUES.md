@@ -163,3 +163,18 @@ This document tracks verified defects, architectural discrepancies, and security
   - Migrated `.github/workflows/scanner.yml` to primary offset schedule `2,17,32,47 * * * 1-5`: runs 120 seconds after candle close, ensuring candle consolidation and zero queue backlog.
   - Added redundant fallback schedule `9,24,39,54 * * * 1-5` providing 200% execution coverage. Because `market_scanner.py` tracks alerted bars in `state["alerted_signals"]`, backup runs are completely duplicate-free.
   - Enhanced Cloudflare Worker `/cron` endpoint to optionally dispatch GitHub Actions via repository dispatch when `env.GITHUB_TOKEN` is present.
+
+---
+
+### ISSUE-CCRS-01: Incomplete Forming 1H Candle Bar Masking CCRS Divergence Crossovers
+
+* **Severity:** **High** (Signal Generation Defect)
+* **Status:** **REMEDIATED IN CODE (2026-11-02)** — Verified with unit tests (`test_ccrs_matrix_trims_unclosed_bars`) and live market cycle.
+* **Affected Files:** `market_scanner.py` (`compute_ccrs_matrix`, lines 1024–1050)
+* **Root Cause:** In `market_scanner.py`, `compute_ccrs_matrix()` fetched raw 1H candle data from Yahoo Finance without filtering for completed bars (`close_time <= as_of`). Yahoo Finance includes the in-progress, unclosed bar for the current hour at index `[-1]`. Consequently, `latest_div` was calculated on the unclosed forming bar, while `prev_div` was calculated on the just-closed bar. When a true crossover occurred on the completed bar (e.g., AUDUSD crossing below $-2.0\sigma$ at 11:00 UTC), `prev_div` was already $\le -2.0\sigma$, causing `prev_div > -2.0` to evaluate to `False` and blinding the scanner to the valid breakout.
+* **Remediation Implemented:**
+  - Updated `compute_ccrs_matrix()` to accept `as_of: datetime | None = None` (defaulting to current UTC time).
+  - Explicitly compute each bar's close time (`close_time = time + 1h`) and trim any candle where `close_time > as_of`.
+  - Guaranteed exact 1:1 synchronization between CCRS factor matrix bars and `scan_pair_timeframe()` completed bars.
+  - Added unit regression test `test_ccrs_matrix_trims_unclosed_bars` in `tests/test_market_scanner.py`.
+
