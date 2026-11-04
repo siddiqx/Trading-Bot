@@ -1,6 +1,6 @@
 # SYSTEMATIC TRADING STRATEGY SPECIFICATION
 
-**Strategy Name:** Institutional Cross-Currency Relative Strength (CCRS) Factor Engine (v3.0)  
+**Strategy Name:** Institutional Dual-Timeframe CCRS Engine (v3.2.0)  
 **Implementation Files:** `market_scanner.py`, `core/config.py`, `core/instrument_validator.py`, `cloudflare_worker.js`  
 **Status:** Active Institutional Production Engine (Empirically Validated 2022–2026)  
 **Document Purpose:** Mathematical, algorithmic, and programmatic specification of all active trading rules.
@@ -13,16 +13,17 @@ The strategy operates exclusively on standard institutional Forex pairs. **Gold 
 
 | Symbol | Market Ticker | Pip Size | Digits | Canonical SL | Canonical TP | R:R | Active Volume Hours (UTC) | Base / Quote Currency |
 |---|---|---|---|---|---|---|---|---|
-| **EURUSD** | `EURUSD=X` | `0.0001` | 5 | 22.0p | 33.0p | 1:1.50 | `07:00 – 17:00 UTC` | EUR / USD |
-| **USDCAD** | `USDCAD=X` | `0.0001` | 5 | 22.0p | 33.0p | 1:1.50 | `07:00 – 17:00 UTC` | USD / CAD |
-| **GBPUSD** | `GBPUSD=X` | `0.0001` | 5 | 22.0p | 33.0p | 1:1.50 | `07:00 – 17:00 UTC` | GBP / USD |
-| **USDJPY** | `USDJPY=X` | `0.01` | 3 | 22.0p | 33.0p | 1:1.50 | `07:00 – 17:00 UTC` | USD / JPY |
-| **USDCHF** | `USDCHF=X` | `0.0001` | 5 | 22.0p | 33.0p | 1:1.50 | `07:00 – 17:00 UTC` | USD / CHF |
-| **AUDUSD** | `AUDUSD=X` | `0.0001` | 5 | 22.0p | 33.0p | 1:1.50 | `07:00 – 17:00 UTC` | AUD / USD |
+| **EURUSD** | `EURUSD=X` | `0.0001` | 5 | 22.0p | 33.0p | 1:1.50 | `06:00 – 17:00 UTC` | EUR / USD |
+| **USDCAD** | `USDCAD=X` | `0.0001` | 5 | 22.0p | 33.0p | 1:1.50 | `06:00 – 17:00 UTC` | USD / CAD |
+| **GBPUSD** | `GBPUSD=X` | `0.0001` | 5 | 22.0p | 33.0p | 1:1.50 | `06:00 – 17:00 UTC` | GBP / USD |
+| **USDJPY** | `USDJPY=X` | `0.01` | 3 | 22.0p | 33.0p | 1:1.50 | `06:00 – 17:00 UTC` | USD / JPY |
+| **USDCHF** | `USDCHF=X` | `0.0001` | 5 | 22.0p | 33.0p | 1:1.50 | `06:00 – 17:00 UTC` | USD / CHF |
+| **AUDUSD** | `AUDUSD=X` | `0.0001` | 5 | 22.0p | 33.0p | 1:1.50 | `06:00 – 17:00 UTC` | AUD / USD |
 
-### Monitored Timeframes
-- **Primary Execution Timeframe:** 1-Hour (`1h`) closed-candle execution
-- **Secondary Confluence Timeframe:** 15-Minute (`15m`) intraday momentum
+### Monitored Timeframes (Dual-Timeframe Architecture)
+- **Macro Order Flow Regime Timeframe:** 1-Hour (`1h`) CCRS Factor Matrix (|D| ≥ 1.75σ)
+- **Precision Execution Timeframe:** 15-Minute (`15m`) 20-EMA Pullbacks & 10-bar Fractal Liquidity Sweeps
+- **Frequency Profile:** ~80–90 trades/month across 6 pairs (~3–4 trades/day during London/NY sessions)
 
 ---
 

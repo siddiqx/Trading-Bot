@@ -46,17 +46,19 @@ EXCLUDED_SYMBOLS = EXCLUDED_GOLD_SYMBOLS.union({
 })
 
 # ==============================================================================
-# 2. CANONICAL STRATEGY GEOMETRY (INSTITUTIONAL CCRS FACTOR ENGINE v3.0)
+# 2. CANONICAL STRATEGY GEOMETRY (INSTITUTIONAL DUAL-TIMEFRAME CCRS ENGINE v3.2)
 # ==============================================================================
-STRATEGY_NAME: str = "Institutional CCRS Factor Engine"
-STRATEGY_VERSION: str = "3.0.0"
-CANONICAL_TIMEFRAME: str = "1h"
+STRATEGY_NAME: str = "Institutional Dual-Timeframe CCRS Engine"
+STRATEGY_VERSION: str = "3.2.0"
+CANONICAL_TIMEFRAME: str = "15m"
+MACRO_TIMEFRAME: str = "1h"
 
 # Cross-Currency Relative Strength (CCRS) Matrix Parameters
 CCRS_LOOKBACK_HOURS: int = 120         # 120-hour (5 trading days) momentum lookback
 CCRS_Z_WINDOW_HOURS: int = 200         # 200-hour rolling mean/std normalization window
-CCRS_Z_THRESHOLD: float = 2.0          # 2.0σ divergence trigger threshold
-CCRS_ATR_MULTIPLIER: float = 2.0       # 2.0x 14-period 1H ATR stop distance
+CCRS_Z_THRESHOLD: float = 1.75         # 1.75σ active macro flow divergence threshold
+CCRS_STATE_MODE: bool = True           # State-based continuous flow execution (retest/sweep entries)
+CCRS_ATR_MULTIPLIER: float = 2.0       # 2.0x 14-period ATR stop distance
 CCRS_MIN_SL_PIPS: float = 20.0         # Minimum stop loss ceiling (suppresses noise stopouts)
 CCRS_MAX_SL_PIPS: float = 25.0         # Maximum stop loss cap (calibrated to intraday ADR)
 

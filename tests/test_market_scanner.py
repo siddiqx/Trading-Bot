@@ -1675,3 +1675,195 @@ def test_ccrs_alert_message_formatting():
     assert "0.14 Lots" in msg
     assert "$49.00 USD" in msg
     assert "1 : 1.5" in msg
+
+
+def test_scan_pair_timeframe_dual_timeframe_long_pullback(monkeypatch):
+    """Verify 15M pullback rejection triggers when 1H CCRS is in bullish active flow."""
+    from market_scanner import scan_pair_timeframe
+
+    cfg = {"ticker": "EURUSD=X", "pip": 0.0001, "digits": 5, "donchian_len": 20}
+    state = {"alerted_signals": []}
+
+    now_utc = datetime(2026, 10, 15, 10, 30, tzinfo=timezone.utc)
+    t0 = now_utc - timedelta(minutes=15 * 60)
+    times = [t0 + timedelta(minutes=15 * i) for i in range(60)]
+    closes = [1.0850] * 60
+
+    # Build 15M candles: last bar tests EMA20 and closes bullish
+    df = pd.DataFrame({
+        "time": times,
+        "open": closes,
+        "high": [c + 0.0010 for c in closes],
+        "low": [c - 0.0005 for c in closes],
+        "close": closes,
+        "volume": [1000] * 60
+    })
+    # Make trigger bar test EMA and close strongly bullish
+    df.loc[59, "open"] = 1.0845
+    df.loc[59, "low"] = 1.0840
+    df.loc[59, "close"] = 1.0855
+    df.loc[59, "high"] = 1.0858
+
+    mock_ccrs = {
+        "latest_div": {"EURUSD": 2.10},
+        "prev_div": {"EURUSD": 2.05},
+        "latest_z": {"EUR": 1.50, "USD": -0.60},
+    }
+
+    monkeypatch.setenv("PYTEST_CURRENT_TEST", "1")
+    monkeypatch.setattr("market_scanner.is_forex_market_open", lambda *a, **kw: True)
+    monkeypatch.setattr("market_scanner.fetch_candles", lambda *a, **kw: df)
+    monkeypatch.setattr("market_scanner.get_live_price", lambda *a, **kw: 1.08550)
+    monkeypatch.setattr("market_scanner.check_htf_alignment", lambda *a, **kw: (True, "1H Bullish Aligned"))
+
+    signals = scan_pair_timeframe("EURUSD", cfg, "15m", state, ccrs_matrix=mock_ccrs)
+    assert len(signals) == 1
+    sig = signals[0]
+    assert sig["pair"] == "EURUSD"
+    assert sig["timeframe"] == "15M"
+    assert sig["direction"] == "LONG"
+    assert sig["strategy_type"] == "CCRS_DUAL_TF"
+    assert sig["divergence"] == 2.10
+    assert 20.0 <= sig["sl_pips"] <= 25.0
+    assert sig["tp_pips"] == round(sig["sl_pips"] * 1.50, 1)
+    assert sig["rr"] == 1.50
+
+
+def test_scan_pair_timeframe_dual_timeframe_short_sweep(monkeypatch):
+    """Verify 15M fractal liquidity sweep triggers when 1H CCRS is in bearish active flow."""
+    from market_scanner import scan_pair_timeframe
+
+    cfg = {"ticker": "USDCAD=X", "pip": 0.0001, "digits": 5, "donchian_len": 20}
+    state = {"alerted_signals": []}
+
+    now_utc = datetime(2026, 10, 15, 14, 0, tzinfo=timezone.utc)
+    t0 = now_utc - timedelta(minutes=15 * 60)
+    times = [t0 + timedelta(minutes=15 * i) for i in range(60)]
+    closes = [1.3850] * 60
+
+    df = pd.DataFrame({
+        "time": times,
+        "open": closes,
+        "high": [c + 0.0005 for c in closes],
+        "low": [c - 0.0005 for c in closes],
+        "close": closes,
+        "volume": [1000] * 60
+    })
+    # Sweep previous 10-bar high and close bearish
+    df.loc[59, "open"] = 1.3855
+    df.loc[59, "high"] = 1.3870 # Sweeps above 1.3855 high
+    df.loc[59, "close"] = 1.3840 # Closes back below
+    df.loc[59, "low"] = 1.3835
+
+    mock_ccrs = {
+        "latest_div": {"USDCAD": -2.25},
+        "prev_div": {"USDCAD": -2.10},
+        "latest_z": {"USD": -1.20, "CAD": 1.05},
+    }
+
+    monkeypatch.setenv("PYTEST_CURRENT_TEST", "1")
+    monkeypatch.setattr("market_scanner.is_forex_market_open", lambda *a, **kw: True)
+    monkeypatch.setattr("market_scanner.fetch_candles", lambda *a, **kw: df)
+    monkeypatch.setattr("market_scanner.get_live_price", lambda *a, **kw: 1.38400)
+    monkeypatch.setattr("market_scanner.check_htf_alignment", lambda *a, **kw: (True, "1H Bearish Aligned"))
+
+    signals = scan_pair_timeframe("USDCAD", cfg, "15m", state, ccrs_matrix=mock_ccrs)
+    assert len(signals) == 1
+    sig = signals[0]
+    assert sig["pair"] == "USDCAD"
+    assert sig["timeframe"] == "15M"
+    assert sig["direction"] == "SHORT"
+    assert sig["strategy_type"] == "CCRS_DUAL_TF"
+    assert sig["divergence"] == -2.25
+    assert 20.0 <= sig["sl_pips"] <= 25.0
+
+
+def test_scan_pair_timeframe_dual_timeframe_neutral_skip(monkeypatch):
+    """Verify 15M setup is skipped when 1H CCRS is in neutral noise zone (< 1.75s)."""
+    from market_scanner import scan_pair_timeframe
+
+    cfg = {"ticker": "GBPUSD=X", "pip": 0.0001, "digits": 5, "donchian_len": 20}
+    state = {"alerted_signals": []}
+
+    now_utc = datetime(2026, 10, 15, 10, 30, tzinfo=timezone.utc)
+    t0 = now_utc - timedelta(minutes=15 * 60)
+    times = [t0 + timedelta(minutes=15 * i) for i in range(60)]
+    closes = [1.3050] * 60
+
+    df = pd.DataFrame({
+        "time": times,
+        "open": closes,
+        "high": [c + 0.0010 for c in closes],
+        "low": [c - 0.0005 for c in closes],
+        "close": closes,
+        "volume": [1000] * 60
+    })
+
+    # Divergence is only +1.10s (Neutral noise zone)
+    mock_ccrs = {
+        "latest_div": {"GBPUSD": 1.10},
+        "prev_div": {"GBPUSD": 0.95},
+        "latest_z": {"GBP": 0.60, "USD": -0.50},
+    }
+
+    monkeypatch.setenv("PYTEST_CURRENT_TEST", "1")
+    monkeypatch.setattr("market_scanner.is_forex_market_open", lambda *a, **kw: True)
+    monkeypatch.setattr("market_scanner.fetch_candles", lambda *a, **kw: df)
+    monkeypatch.setattr("market_scanner.get_live_price", lambda *a, **kw: 1.30500)
+
+    signals = scan_pair_timeframe("GBPUSD", cfg, "15m", state, ccrs_matrix=mock_ccrs)
+    assert len(signals) == 0
+
+
+def test_dual_timeframe_alert_message_formatting():
+    """Verify Telegram alert formatting properly displays Dual-Timeframe CCRS block."""
+    from market_scanner import format_alert_message
+
+    sig = {
+        "pair": "EURUSD",
+        "timeframe": "15M",
+        "direction": "LONG",
+        "entry": 1.08500,
+        "bar_close_price": 1.08500,
+        "max_chase_price": 1.08515,
+        "max_chase_pips": 1.5,
+        "stop_loss": 1.08280,
+        "take_profit": 1.08830,
+        "sl_pips": 22.0,
+        "tp_pips": 33.0,
+        "rr": 1.50,
+        "strategy": "Institutional Dual-Timeframe CCRS Engine",
+        "strategy_type": "CCRS_DUAL_TF",
+        "setup_name": "15M 20-EMA Equilibrium Pullback Rejection",
+        "phase": "1H Macro Divergence (EUR vs USD: +2.10σ) + 15M 20-EMA Equilibrium Pullback Rejection",
+        "divergence": 2.10,
+        "base_currency": "EUR",
+        "quote_currency": "USD",
+        "base_z": 1.50,
+        "quote_z": -0.60,
+        "target_type": "Institutional Dual-Timeframe Target",
+        "donchian_len": 20,
+        "rsi": 54.2,
+        "atr": 18.0,
+        "adx": 22.0,
+        "adx_regime": "Macro Trend Conviction",
+        "session": "London Session",
+        "session_icon": "🇬🇧",
+        "score": 98,
+        "suggested_lots": 0.14,
+        "calc_lots": 0.14,
+        "risk_usd": 49.00,
+        "monetary_risk_usd": 49.00,
+        "risk_budget_usd": 50.00,
+        "risk_pct": 1.0,
+        "account_equity": 5000.0,
+        "time": "2026-10-15T10:15:00Z"
+    }
+
+    msg = format_alert_message(sig)
+    assert "15-MINUTE (15M) · 1H MACRO FLOW" in msg
+    assert "INSTITUTIONAL CCRS FACTOR MATRIX" in msg
+    assert "+2.10σ" in msg
+    assert "15M 20-EMA Equilibrium Pullback Rejection" in msg
+    assert "22.0 pips" in msg
+    assert "33.0 pips" in msg

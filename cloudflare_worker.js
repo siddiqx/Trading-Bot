@@ -1452,7 +1452,7 @@ async function sendPerformanceMessage(chatId, filterPair = "ALL", env) {
   const expSign = parseFloat(expectancy) >= 0 ? "+" : "";
 
   const text = 
-    `📈 <b>STRATEGY PERFORMANCE (Institutional CCRS Factor Engine v3.0)</b>\n` +
+    `📈 <b>STRATEGY PERFORMANCE (Institutional Dual-Timeframe CCRS Engine v3.2)</b>\n` +
     `━━━━━━━━━━━━━━━━━━\n` +
     `Scope: <b>${scopeLabel}</b>\n` +
     `Baseline: <code>2026-10-15</code> (Fresh Start Baseline)\n` +
@@ -1716,16 +1716,17 @@ async function sendStrategyMessage(chatId) {
   const text = 
     `🎯 <b>INSTITUTIONAL STRATEGY SPECIFICATION</b>\n` +
     `━━━━━━━━━━━━━━━━━━\n` +
-    `<b>INSTITUTIONAL CCRS FACTOR ENGINE (v3.0)</b>\n\n` +
+    `<b>INSTITUTIONAL DUAL-TIMEFRAME CCRS ENGINE (v3.2)</b>\n\n` +
     `<b>1. Strategy Premise &amp; Institutional Edge</b>\n` +
-    `• <b>Factor Model:</b> Cross-Currency Relative Strength (CCRS) Matrix.\n` +
-    `• <b>Mechanics:</b> Deconstructs the 6 institutional Forex pairs into 7 pure currency strength indices (USD, EUR, GBP, JPY, CAD, CHF, AUD).\n` +
-    `• <b>Signal Trigger:</b> Identifies high-conviction order flow divergence (|D| ≥ 2.00σ) over rolling 120-hour (5-day) momentum normalized across 200 hours.\n\n` +
+    `• <b>Dual-Timeframe Architecture:</b> Decouples Macro Order Flow Bias (1H CCRS) from Precision Execution Timing (15M Retest / Sweep).\n` +
+    `• <b>Factor Model:</b> 1H Cross-Currency Relative Strength (CCRS) Matrix deconstructs 6 Forex pairs into 7 pure currency strength indices.\n` +
+    `• <b>Macro Flow Regime:</b> Activates when pairwise order flow divergence reaches |D| ≥ 1.75σ (120h momentum · 200h normalization).\n\n` +
     `<b>2. Signal Generation &amp; Execution Model</b>\n` +
-    `• <b>Primary Timeframe:</b> 1-Hour (1H) non-repainting closed-candle execution.\n` +
-    `• <b>Stop Loss Architecture:</b> Dynamic Volatility-Anchored ATR Stops (2.0× 14-period 1H ATR bounded strictly between 20.0 and 25.0 pips, baseline 22.0 pips).\n` +
-    `• <b>Target Geometry:</b> Pure Binary 1:1.50 Risk-Reward Ratio (30.0–37.5 pips Take Profit, baseline 33.0 pips, Zero early breakeven choking).\n` +
-    `• <b>Execution:</b> Non-repainting closed-bar triggers with strict real-time non-chasing protection.\n\n` +
+    `• <b>Execution Timeframe:</b> 15-Minute (15M) closed-candle execution during London/NY institutional sessions (06:00–17:00 UTC).\n` +
+    `• <b>Precision Triggers:</b> 15M 20-EMA Equilibrium Pullbacks and 10-bar Fractal Liquidity Sweeps (Turtle Soup Reclaim).\n` +
+    `• <b>Stop Loss Architecture:</b> Dynamic Volatility-Anchored ATR Stops (2.0× 14-period ATR bounded between 20.0 and 25.0 pips, baseline 22.0 pips).\n` +
+    `• <b>Target Geometry:</b> Pure Binary 1:1.50 Risk-Reward Ratio (30.0–37.5 pips Take Profit, baseline 33.0 pips, Zero early choking).\n` +
+    `• <b>Expected Frequency:</b> High-conviction systematic execution (~80–90 trades/month across 6 pairs, ~3–4 trades/day).\n\n` +
     `<b>3. Portfolio Risk &amp; Capital Protection</b>\n` +
     `• <b>Position Risk:</b> <code>1.0% Equity</code> ($50.00 max risk on $5,000 reference account)\n` +
     `• <b>Conservative Lot Sizing:</b> Quote-to-USD conversion, conservative lot flooring, zero budget breaching.\n` +
@@ -1735,7 +1736,7 @@ async function sendStrategyMessage(chatId) {
     `• <b>Active Universe:</b> 6 Institutional Forex Pairs (<code>EURUSD · USDCAD · GBPUSD · USDJPY · USDCHF · AUDUSD</code>).\n` +
     `• <b>Exclusions:</b> Zero Gold (XAUUSD permanently disabled).\n` +
     `━━━━━━━━━━━━━━━━━━\n` +
-    `🛡 <i>Systematic, institutional factor execution engineered for verified live profitability and prop firm compliance.</i>`;
+    `🛡 <i>High-frequency institutional dual-timeframe factor execution engineered for verified live profitability and prop firm compliance.</i>`;
 
   const keyboard = {
     inline_keyboard: [
@@ -1759,7 +1760,7 @@ async function sendClearInstructions(chatId) {
     `<b>1. Live Ledger Baseline</b>\n` +
     `• All historical trade records have been <b>completely wiped</b>.\n` +
     `• The ledger tracks strictly live confirmed signals from <code>2026-10-15</code> onwards.\n` +
-    `• Strategy is locked at Institutional CCRS Factor Engine (v3.0.0, Pure Binary 1:1.50 R:R Execution).\n\n` +
+    `• Strategy is locked at Institutional Dual-Timeframe CCRS Engine (v3.2.0, Pure Binary 1:1.50 R:R Execution).\n\n` +
     `<b>2. To Clear Telegram Chat History</b>\n` +
     `• On Mobile / Desktop: Tap the <b>⋮ (Three Dots)</b> menu at the top right of this chat.\n` +
     `• Select <b>Clear History</b> (or <b>Delete Chat</b>).\n` +
@@ -1802,7 +1803,7 @@ async function sendMenuMessage(chatId, env) {
     `4. /history ── Completed trade history ledger\n` +
     `5. /performance ── Win rate &amp; net return metrics\n` +
     `6. /patterns ── Volume post-mortems &amp; failure analysis\n` +
-    `7. /strategy ── Institutional CCRS Factor Engine (v3.0)\n` +
+    `7. /strategy ── Institutional Dual-Timeframe CCRS Engine (v3.2)\n` +
     `8. /status ── 24/7 serverless engine health\n` +
     `9. /close PAIR WIN|LOSS ── Admin force-close\n\n` +
     `Select a dashboard module below:`;
