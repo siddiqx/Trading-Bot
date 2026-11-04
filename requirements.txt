@@ -10,3 +10,8 @@ reportlab>=4.0.0
 pytest>=8.0.0
 pytest-asyncio>=0.23.0
 websocket-client>=1.8.0
+ctrader-open-api>=0.9.2
+protobuf>=3.20.0,<5.0.0
+Twisted>=24.0.0
+service-identity>=23.0.0
+

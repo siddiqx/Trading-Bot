@@ -82,3 +82,28 @@
 
 ---
 
+### #4 · EURUSD (15M) — 🎯 WIN (+1.75R)
+
+- **Global Sequence**: Trade `#4`
+- **Direction**: `LONG` | **Outcome**: `WIN` (`+33.0 pips` / `1.5R`)
+- **Execution Range**: Entry ` 1.08 ` ➔ Exit ` 1.0833 `
+- **Targets**: Stop Loss ` 1.079 ` | Take Profit ` 1.0833 `
+- **Holding Time**: `0.78 hours` (3 bars)
+- **Window**: `2026-11-04 10:00:00 UTC` ➔ `2026-11-04 10:46:30 UTC`
+
+#### 📊 Excursion & Market Regime
+| Metric | Value | Detail |
+| :--- | :--- | :--- |
+| **Max Favorable Excursion (MFE)** | `+36.0 pips` | Reached `+3.6R` (100.0% of TP) |
+| **Max Adverse Excursion (MAE)** | `-2.0 pips` | Deepest drawdown `-0.2R` |
+| **Session** | `London Session` | Institutional Market Timing |
+| **Entry RSI (14)** | `50.0` | Momentum Baseline |
+| **EMA Alignment** | `BULLISH_EXPANDING` | Structural Trend Bias |
+
+#### 🔬 Post-Mortem Diagnosis: `CLEAN_MOMENTUM_EXPANSION`
+> **Analysis**: Flawless directional expansion with negligible adverse drawdown (0.2R). Institutional order flow propelled price directly to target.
+>
+> **Actionable Takeaway**: Prime candidate setup for runner scaling or full 1.75R capture.
+
+---
+
