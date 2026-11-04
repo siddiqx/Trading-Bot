@@ -107,3 +107,28 @@
 
 ---
 
+### #5 · USDJPY (15M) — 🛑 LOSS (-1.00R)
+
+- **Global Sequence**: Trade `#5`
+- **Direction**: `LONG` | **Outcome**: `LOSS` (`-22.0 pips` / `-1.0R`)
+- **Execution Range**: Entry ` 158.471 ` ➔ Exit ` 158.251 `
+- **Targets**: Stop Loss ` 158.251 ` | Take Profit ` 158.801 `
+- **Holding Time**: `2.16 hours` (9 bars)
+- **Window**: `2026-11-04 10:45:00 UTC` ➔ `2026-11-04 12:54:38 UTC`
+
+#### 📊 Excursion & Market Regime
+| Metric | Value | Detail |
+| :--- | :--- | :--- |
+| **Max Favorable Excursion (MFE)** | `+12.3 pips` | Reached `+0.56R` (37.3% of TP) |
+| **Max Adverse Excursion (MAE)** | `-23.1 pips` | Deepest drawdown `-1.05R` |
+| **Session** | `London Session` | Institutional Market Timing |
+| **Entry RSI (14)** | `50.0` | Momentum Baseline |
+| **EMA Alignment** | `BULLISH_EXPANDING` | Structural Trend Bias |
+
+#### 🔬 Post-Mortem Diagnosis: `STRUCTURAL_INVALIDATION`
+> **Analysis**: Order block level was invalidated by institutional flow after 1 bar(s). Stop-loss executed disciplined capital preservation.
+>
+> **Actionable Takeaway**: Trade adhered strictly to risk geometry. Invalidation was clean and preserved capital.
+
+---
+
