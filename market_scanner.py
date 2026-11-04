@@ -110,8 +110,20 @@ from core.config import (
     REFERENCE_ACCOUNT_EQUITY,
     REFERENCE_RISK_PCT,
     REFERENCE_RISK_BUDGET_USD,
+    PROP_FIRM_RISK_PCT,
+    PROP_FIRM_RISK_BUDGET_USD,
     STRATEGY_NAME,
     STRATEGY_VERSION,
+    VOLATILITY_CUSHION_ENABLED,
+    VOLATILITY_CUSHION_TIER1_R,
+    VOLATILITY_CUSHION_TIER1_SL_PIPS,
+    VOLATILITY_CUSHION_TIER2_R,
+    VOLATILITY_CUSHION_TIER2_SL_PIPS,
+    VOLATILITY_CUSHION_RUNNER_TP_PIPS,
+    DAILY_LOSS_CIRCUIT_BREAKER_COUNT,
+    DAILY_LOSS_CIRCUIT_BREAKER_R,
+    NEWS_FILTER_ENABLED,
+    NEWS_FILTER_BUFFER_MINUTES,
     NIGHT_SESSION_HOURS,
     NIGHT_BOLLINGER_STD,
     NIGHT_RSI_OVERSOLD,
@@ -127,8 +139,10 @@ STOP_LOSS_PIPS: float = FIXED_STOP_LOSS_PIPS      # 10.0 pips
 RISK_REWARD: float = FIXED_RISK_REWARD_RATIO      # 1:1.5 before costs
 
 # Prop Firm Account Sizing Parameters (Configurable via environment variables)
+from core.news_filter import is_news_window_active
+
 DEFAULT_ACCOUNT_EQUITY: float = float(os.environ.get("ACCOUNT_EQUITY", "5000.0"))
-DEFAULT_RISK_PCT: float = float(os.environ.get("RISK_PCT", "1.0"))
+DEFAULT_RISK_PCT: float = float(os.environ.get("RISK_PCT", str(PROP_FIRM_RISK_PCT)))
 
 # Monitored Pairs and Ticker Mapping - Standard Institutional Forex Only (Zero Gold)
 SYMBOLS = {
@@ -653,6 +667,54 @@ def check_active_trades(records: dict):
                 sl_pips = float(trade.get("sl_pips", 20.0))
                 sl_dist = sl_pips * pip
                 be_active = trade.get("be_active", False)
+
+                # Dynamic Volatility Cushion Trailing Stop Evaluation (v3.3.0)
+                if VOLATILITY_CUSHION_ENABLED:
+                    cushion_tier = trade.get("cushion_tier", 0)
+                    mfe_pips = (b_high - entry) / pip if is_long else (entry - b_low) / pip
+
+                    # Tier 1: Risk Halving at +1.20R (+26.4 pips)
+                    if cushion_tier == 0 and mfe_pips >= (VOLATILITY_CUSHION_TIER1_R * 22.0):
+                        trade["cushion_tier"] = 1
+                        new_sl = entry - (VOLATILITY_CUSHION_TIER1_SL_PIPS * pip) if is_long else entry + (VOLATILITY_CUSHION_TIER1_SL_PIPS * pip)
+                        trade["stop_loss"] = round(new_sl, digits)
+                        sl = trade["stop_loss"]
+                        trade["sl_pips"] = VOLATILITY_CUSHION_TIER1_SL_PIPS
+                        modified_pairs.append(pair)
+                        tier1_msg = (
+                            f"🛡️ <b>VOLATILITY CUSHION ACTIVE (TIER 1) · {pair} {trade.get('direction')}</b>\n"
+                            f"━━━━━━━━━━━━━━━━━━\n"
+                            f"• <b>MFE Excursion:</b> <code>+{mfe_pips:.1f} pips</code> (+{VOLATILITY_CUSHION_TIER1_R:.2f}R achieved)\n"
+                            f"• <b>New Stop Loss:</b> <code>{sl}</code> <i>(-{VOLATILITY_CUSHION_TIER1_SL_PIPS:.1f} pips · Risk cut 55%)</i>\n"
+                            f"• <b>Buffer Retained:</b> <code>{mfe_pips + VOLATILITY_CUSHION_TIER1_SL_PIPS:.1f} pips</code> from high\n"
+                            f"━━━━━━━━━━━━━━━━━━\n"
+                            f"🔒 <i>Risk halved to -0.45R while retaining generous breathing buffer against retest wicks.</i>"
+                        )
+                        send_telegram_alert(tier1_msg)
+                        logger.info(f"==> VOLATILITY CUSHION TIER 1: {pair} SL moved to {sl} (-10.0p)")
+
+                    # Tier 2: Profit Lock & Runner Expansion at +1.50R (+33.0 pips)
+                    elif cushion_tier == 1 and mfe_pips >= (VOLATILITY_CUSHION_TIER2_R * 22.0):
+                        trade["cushion_tier"] = 2
+                        new_sl = entry + (abs(VOLATILITY_CUSHION_TIER2_SL_PIPS) * pip) if is_long else entry - (abs(VOLATILITY_CUSHION_TIER2_SL_PIPS) * pip)
+                        new_tp = entry + (VOLATILITY_CUSHION_RUNNER_TP_PIPS * pip) if is_long else entry - (VOLATILITY_CUSHION_RUNNER_TP_PIPS * pip)
+                        trade["stop_loss"] = round(new_sl, digits)
+                        trade["take_profit"] = round(new_tp, digits)
+                        sl = trade["stop_loss"]
+                        tp = trade["take_profit"]
+                        trade["tp_pips"] = VOLATILITY_CUSHION_RUNNER_TP_PIPS
+                        trade["be_active"] = True
+                        modified_pairs.append(pair)
+                        tier2_msg = (
+                            f"🚀 <b>PROFIT LOCKED & RUNNER ACTIVE (TIER 2) · {pair} {trade.get('direction')}</b>\n"
+                            f"━━━━━━━━━━━━━━━━━━\n"
+                            f"• <b>Locked In:</b> <code>+{abs(VOLATILITY_CUSHION_TIER2_SL_PIPS):.1f} pips</code> (+0.50R guaranteed win)\n"
+                            f"• <b>Extended TP:</b> <code>{tp}</code> <i>(+{VOLATILITY_CUSHION_RUNNER_TP_PIPS:.1f} pips · +2.00R runner)</i>\n"
+                            f"━━━━━━━━━━━━━━━━━━\n"
+                            f"🏆 <i>Guaranteed profit locked. Runner active targeting +2.00R.</i>"
+                        )
+                        send_telegram_alert(tier2_msg)
+                        logger.info(f"==> VOLATILITY CUSHION TIER 2: {pair} Profit locked at {sl} (+11p), TP extended to {tp} (+44p)")
 
                 # Strict Exit Resolution with Retail Spread Clearance Buffer:
                 # Stop Loss takes absolute precedence over Take Profit.
@@ -1974,6 +2036,13 @@ def scan_pair_timeframe(pair_name: str, config: dict, tf: str, state: dict, ccrs
         logger.info(f"Skipping {pair_name} ({tf}): 15M US data release window (12:00 - 14:00 UTC). 1H setups active.")
         return []
 
+    # High-Impact Economic News Filter Guard: Suppress signals around major catalysts
+    if not os.environ.get("PYTEST_CURRENT_TEST") and NEWS_FILTER_ENABLED:
+        news_active, news_reason = is_news_window_active(pair_name, now_utc, buffer_minutes=NEWS_FILTER_BUFFER_MINUTES)
+        if news_active:
+            logger.info(f"Skipping {pair_name} ({tf}): {news_reason}. Fresh entry suppressed to protect against spread blowouts.")
+            return []
+
     # Post-Loss Cooldown Guard: Enforce 60-minute lockout on pairs that suffered a recent loss.
     # Prevents entering choppy whipsaw ranges or repeated consolidation stop-outs.
     if not os.environ.get("PYTEST_CURRENT_TEST"):
@@ -2198,11 +2267,13 @@ def scan_pair_timeframe(pair_name: str, config: dict, tf: str, state: dict, ccrs
                                 if direction == "LONG":
                                     stop_loss = round(entry - (sl_pips * pip), digits)
                                     take_profit = round(entry + (tp_pips * pip), digits)
+                                    runner_tp = round(entry + (VOLATILITY_CUSHION_RUNNER_TP_PIPS * pip), digits)
                                     max_chase_price = round(entry + (max_chase_pips * pip), digits)
                                     ote_entry = round(entry - (retest_offset_pips * pip), digits)
                                 else:
                                     stop_loss = round(entry + (sl_pips * pip), digits)
                                     take_profit = round(entry - (tp_pips * pip), digits)
+                                    runner_tp = round(entry - (VOLATILITY_CUSHION_RUNNER_TP_PIPS * pip), digits)
                                     max_chase_price = round(entry - (max_chase_pips * pip), digits)
                                     ote_entry = round(entry + (retest_offset_pips * pip), digits)
 
@@ -2258,6 +2329,7 @@ def scan_pair_timeframe(pair_name: str, config: dict, tf: str, state: dict, ccrs
                                         "max_chase_pips": max_chase_pips,
                                         "stop_loss": stop_loss,
                                         "take_profit": take_profit,
+                                        "runner_tp": runner_tp,
                                         "sl_pips": sl_pips,
                                         "tp_pips": tp_pips,
                                         "rr": CANONICAL_RISK_REWARD_RATIO,
@@ -2955,11 +3027,13 @@ def format_alert_message(sig: dict) -> str:
         f"• <b>Max Chase Cutoff:</b> <code>{sig.get('max_chase_price', sig['entry'])}</code> <i>(Hard Limit · ±{sig.get('max_chase_pips', 1.5)} pips)</i>\n\n"
         f"{ccrs_block}"
         f"{lf_block}"
-        f"<b>🎯 TARGETS & RISK (1:1.50 R:R)</b>\n"
+        f"<b>🎯 TARGETS & RISK (1:1.50 TO 1:2.00 R:R)</b>\n"
         f"• <b>Stop Loss:</b> <code>{sig['stop_loss']}</code> <i>({sl_sign}{sig['sl_pips']} pips · -1.00R)</i>\n"
         f"• <b>Take Profit:</b> <code>{sig['take_profit']}</code> <i>({tp_sign}{sig['tp_pips']} pips · +1.50R · {sig.get('target_type', 'Target')})</i>\n"
+        f"• <b>Extended Runner TP:</b> <code>{sig.get('runner_tp', 'Dynamic')}</code> <i>(+{VOLATILITY_CUSHION_RUNNER_TP_PIPS:.1f} pips · +2.00R)</i>\n"
         f"• <b>Risk / Reward:</b> <b>1 : {sig['rr']}</b> (Pure Binary Target · 100% Runner)\n"
         f"• <b>Trade Management:</b> <b>Pure Binary 1:1.50 Target (100% Runner to TP / SL, Zero Partials)</b>\n"
+        f"• <b>Volatility Cushion Trailing:</b> <b>Tier 1 @ +26.4p (SL -10p) · Tier 2 @ +33p (+11p lock & +44p runner)</b>\n"
         f"{risk_line}"
         f"<b>🔬 CONFLUENCE MODEL</b>\n"
         f"• <b>Engine:</b> <b>{sig.get('strategy', 'ICT Killzone Liquidity Sweep (Turtle Soup)')}</b>\n"
@@ -2997,12 +3071,12 @@ def check_daily_circuit_breaker(records: dict) -> tuple[bool, str]:
     today_r = sum(float(t.get("realized_r", 0.0)) for t in today_trades)
     loss_count = sum(1 for t in today_trades if t.get("outcome") == "LOSS")
     
-    # Daily Loss Circuit Breaker: Halt if daily loss <= -2.50R or >= 3 losses in a single day.
-    # On a $5,000 account risking $45.00 (0.90%), this caps maximum daily drawdown at <= $135.00 (2.70%),
-    # providing an ironclad $115.00 (46%) safety buffer before the 5.0% ($250.00) prop firm limit is ever threatened.
-    # (Note: Artificial profit cap removed — 5K 2-Step has NO consistency rule, allowing winning days to run freely).
-    if today_r <= -2.50 or loss_count >= 3:
-        return True, f"Daily Loss Circuit Breaker Triggered ({today_r:+.2f}R, {loss_count} losses today). Standing down until next UTC session to protect 5.0% daily drawdown limit."
+    # Daily Loss Circuit Breaker (v3.3.0 Prop Firm Optimized):
+    # Halt if daily loss <= -2.00R or >= 2 losses in a single day.
+    # On a $5,000 account risking $25.00 (0.50%), this caps maximum daily drawdown at <= $50.00 (1.00%),
+    # providing an ironclad 75% safety buffer before the 4.0% ($200.00) prop firm limit is ever threatened.
+    if today_r <= DAILY_LOSS_CIRCUIT_BREAKER_R or loss_count >= DAILY_LOSS_CIRCUIT_BREAKER_COUNT:
+        return True, f"Daily Loss Circuit Breaker Triggered ({today_r:+.2f}R, {loss_count} losses today). Standing down until next UTC session to protect daily drawdown limit."
         
     return False, ""
 

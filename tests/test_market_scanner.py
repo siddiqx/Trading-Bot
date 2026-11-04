@@ -1867,3 +1867,124 @@ def test_dual_timeframe_alert_message_formatting():
     assert "15M 20-EMA Equilibrium Pullback Rejection" in msg
     assert "22.0 pips" in msg
     assert "33.0 pips" in msg
+
+
+def test_v330_alert_message_volatility_cushion():
+    """Verify v3.3.0 alert message formats Volatility Cushion runner plan."""
+    from market_scanner import format_alert_message
+
+    sig = {
+        "pair": "EURUSD",
+        "timeframe": "15M",
+        "direction": "LONG",
+        "entry": 1.08500,
+        "bar_close_price": 1.08500,
+        "max_chase_price": 1.08515,
+        "max_chase_pips": 1.5,
+        "stop_loss": 1.08280,
+        "take_profit": 1.08830,
+        "runner_tp": 1.08940,
+        "sl_pips": 22.0,
+        "tp_pips": 33.0,
+        "rr": 1.50,
+        "strategy": "Institutional Dual-Timeframe CCRS Engine",
+        "strategy_type": "CCRS_DUAL_TF",
+        "setup_name": "15M 20-EMA Equilibrium Pullback Rejection",
+        "divergence": 2.10,
+        "base_currency": "EUR",
+        "quote_currency": "USD",
+        "base_z": 1.50,
+        "quote_z": -0.60,
+        "time": "2026-11-04T10:15:00Z"
+    }
+
+    msg = format_alert_message(sig)
+    assert "TARGETS & RISK" in msg
+    assert "Volatility Cushion Trailing" in msg
+    assert "Tier 1 @ +26.4p (SL -10p)" in msg
+    assert "Tier 2 @ +33p (+11p lock & +44p runner)" in msg
+    assert "1.0894" in msg or "Extended Runner TP" in msg
+
+
+def test_v330_daily_circuit_breaker_lockout():
+    """Verify daily circuit breaker trips on 2 losses (or -2.0R) to protect 4% daily DD."""
+    from market_scanner import check_daily_circuit_breaker
+
+    today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    records = {
+        "completed_trades": [
+            {
+                "pair": "EURUSD",
+                "closed_at": f"{today_str}T10:00:00Z",
+                "outcome": "LOSS",
+                "realized_r": -1.0
+            },
+            {
+                "pair": "GBPUSD",
+                "closed_at": f"{today_str}T11:30:00Z",
+                "outcome": "LOSS",
+                "realized_r": -1.0
+            }
+        ]
+    }
+
+    is_tripped, reason = check_daily_circuit_breaker(records)
+    assert is_tripped is True
+    assert "Daily Loss Circuit Breaker Triggered" in reason
+    assert "2 losses" in reason
+
+
+def test_v330_volatility_cushion_trailing(monkeypatch):
+    """Verify active trades advance SL to -10p at Tier 1 (+26.4p) and +11p / 44p runner at Tier 2 (+33p)."""
+    from market_scanner import check_active_trades
+
+    t_entry = datetime(2026, 11, 4, 10, 0, tzinfo=timezone.utc)
+    # Entry at 1.08000, SL at 1.07780 (22p SL). Pip = 0.0001
+    # Tier 1 (+26.4p) reached at 1.08270: SL moves to 1.07900 (-10p)
+    # Tier 2 (+33.0p) reached at 1.08350: SL moves to 1.08110 (+11p lock), TP extends to 1.08440 (+44p)
+    mock_df = pd.DataFrame({
+        "time": [t_entry + timedelta(minutes=15 * i) for i in range(3)],
+        "open": [1.08000, 1.08150, 1.08280],
+        "high": [1.08180, 1.08280, 1.08360],  # Bar 1 hits +28p (Tier 1), Bar 2 hits +36p (Tier 2)
+        "low": [1.07980, 1.08100, 1.08200],
+        "close": [1.08150, 1.08270, 1.08340],
+        "volume": [100] * 3
+    })
+
+    monkeypatch.setattr("market_scanner.is_forex_market_open", lambda *args, **kwargs: True)
+    monkeypatch.setattr("market_scanner.fetch_candles", lambda *args, **kwargs: mock_df)
+    monkeypatch.setattr("market_scanner.send_telegram_alert", lambda *args, **kwargs: None)
+    monkeypatch.setattr("market_scanner.sync_worker", lambda *args, **kwargs: None)
+    monkeypatch.setattr("market_scanner.save_trade_records", lambda *args, **kwargs: None)
+
+    records = {
+        "active_trades": {
+            "EURUSD": {
+                "trade_id": "EURUSD_CUSHION_TEST",
+                "pair": "EURUSD",
+                "symbol": "EURUSD",
+                "ticker": "EURUSD=X",
+                "direction": "LONG",
+                "timeframe": "15M",
+                "entry": 1.08000,
+                "stop_loss": 1.07780,  # 22p
+                "take_profit": 1.08330, # 33p
+                "sl_pips": 22.0,
+                "tp_pips": 33.0,
+                "rr": 1.50,
+                "pip": 0.0001,
+                "digits": 5,
+                "opened_at": t_entry.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "status": "OPEN",
+                "cushion_tier": 0
+            }
+        },
+        "completed_trades": []
+    }
+
+    check_active_trades(records)
+    trade = records["active_trades"]["EURUSD"]
+    # Should have advanced to Tier 2
+    assert trade["cushion_tier"] == 2
+    assert trade["stop_loss"] == 1.08110  # Locked +11 pips
+    assert trade["take_profit"] == 1.08440  # Extended +44 pips

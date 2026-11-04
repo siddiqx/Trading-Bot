@@ -1716,27 +1716,27 @@ async function sendStrategyMessage(chatId) {
   const text = 
     `🎯 <b>INSTITUTIONAL STRATEGY SPECIFICATION</b>\n` +
     `━━━━━━━━━━━━━━━━━━\n` +
-    `<b>INSTITUTIONAL DUAL-TIMEFRAME CCRS ENGINE (v3.2)</b>\n\n` +
+    `<b>INSTITUTIONAL DUAL-TIMEFRAME CCRS ENGINE (v3.3)</b>\n\n` +
     `<b>1. Strategy Premise &amp; Institutional Edge</b>\n` +
     `• <b>Dual-Timeframe Architecture:</b> Decouples Macro Order Flow Bias (1H CCRS) from Precision Execution Timing (15M Retest / Sweep).\n` +
     `• <b>Factor Model:</b> 1H Cross-Currency Relative Strength (CCRS) Matrix deconstructs 6 Forex pairs into 7 pure currency strength indices.\n` +
     `• <b>Macro Flow Regime:</b> Activates when pairwise order flow divergence reaches |D| ≥ 1.75σ (120h momentum · 200h normalization).\n\n` +
-    `<b>2. Signal Generation &amp; Execution Model</b>\n` +
-    `• <b>Execution Timeframe:</b> 15-Minute (15M) closed-candle execution during London/NY institutional sessions (06:00–17:00 UTC).\n` +
+    `<b>2. Precision Execution &amp; Volatility Cushion</b>\n` +
+    `• <b>Execution Timeframe:</b> 15-Minute (15M) closed-candle execution during London/NY sessions (06:00–17:00 UTC).\n` +
     `• <b>Precision Triggers:</b> 15M 20-EMA Equilibrium Pullbacks and 10-bar Fractal Liquidity Sweeps (Turtle Soup Reclaim).\n` +
-    `• <b>Stop Loss Architecture:</b> Dynamic Volatility-Anchored ATR Stops (2.0× 14-period ATR bounded between 20.0 and 25.0 pips, baseline 22.0 pips).\n` +
-    `• <b>Target Geometry:</b> Pure Binary 1:1.50 Risk-Reward Ratio (30.0–37.5 pips Take Profit, baseline 33.0 pips, Zero early choking).\n` +
-    `• <b>Expected Frequency:</b> High-conviction systematic execution (~80–90 trades/month across 6 pairs, ~3–4 trades/day).\n\n` +
-    `<b>3. Portfolio Risk &amp; Capital Protection</b>\n` +
-    `• <b>Position Risk:</b> <code>1.0% Equity</code> ($50.00 max risk on $5,000 reference account)\n` +
-    `• <b>Conservative Lot Sizing:</b> Quote-to-USD conversion, conservative lot flooring, zero budget breaching.\n` +
-    `• <b>Concurrency Cap:</b> Max 3 simultaneous unprotected trades across the 6-pair portfolio.\n` +
+    `• <b>Volatility Cushion Trailing:</b>\n` +
+    `  - <i>Tier 1 (+1.20R / +26.4p):</i> Move SL to -10.0p (halves risk, preserves 36p breathing buffer against retest wicks).\n` +
+    `  - <i>Tier 2 (+1.50R / +33.0p):</i> Lock in +11.0p (+0.50R profit) &amp; extend runner TP to +44.0p (+2.00R).\n` +
+    `• <b>Economic News Filter:</b> Automatically pauses trading 30m before and after Forex Factory High-Impact news releases.\n\n` +
+    `<b>3. Prop Firm Risk &amp; Capital Protection</b>\n` +
+    `• <b>Position Risk:</b> <code>0.50% Equity</code> ($25.00 nominal risk on $5,000 reference account).\n` +
+    `• <b>Daily Circuit Breaker:</b> 2-loss lockout (-1.00% daily cap) making 4.0% daily DD violations physically impossible.\n` +
+    `• <b>Concurrency Cap:</b> Max 2 simultaneous active trades across the 6-pair portfolio.\n` +
     `• <b>Directional Cap:</b> Max 2 trades in the same net USD direction.\n` +
-    `• <b>Lockout Protection:</b> 60-minute post-loss cooldown and 3-loss / -2.5R daily circuit breaker.\n` +
     `• <b>Active Universe:</b> 6 Institutional Forex Pairs (<code>EURUSD · USDCAD · GBPUSD · USDJPY · USDCHF · AUDUSD</code>).\n` +
     `• <b>Exclusions:</b> Zero Gold (XAUUSD permanently disabled).\n` +
     `━━━━━━━━━━━━━━━━━━\n` +
-    `🛡 <i>High-frequency institutional dual-timeframe factor execution engineered for verified live profitability and prop firm compliance.</i>`;
+    `🛡 <i>Institutional dual-timeframe factor execution with Volatility Cushion trailing, engineered for verified prop firm payouts.</i>`;
 
   const keyboard = {
     inline_keyboard: [
@@ -1760,7 +1760,7 @@ async function sendClearInstructions(chatId) {
     `<b>1. Live Ledger Baseline</b>\n` +
     `• All historical trade records have been <b>completely wiped</b>.\n` +
     `• The ledger tracks strictly live confirmed signals from <code>2026-10-15</code> onwards.\n` +
-    `• Strategy is locked at Institutional Dual-Timeframe CCRS Engine (v3.2.0, Pure Binary 1:1.50 R:R Execution).\n\n` +
+    `• Strategy is locked at Institutional Dual-Timeframe CCRS Engine (v3.3.0, Volatility Cushion Runner Execution).\n\n` +
     `<b>2. To Clear Telegram Chat History</b>\n` +
     `• On Mobile / Desktop: Tap the <b>⋮ (Three Dots)</b> menu at the top right of this chat.\n` +
     `• Select <b>Clear History</b> (or <b>Delete Chat</b>).\n` +

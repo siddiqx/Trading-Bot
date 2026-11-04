@@ -49,7 +49,7 @@ EXCLUDED_SYMBOLS = EXCLUDED_GOLD_SYMBOLS.union({
 # 2. CANONICAL STRATEGY GEOMETRY (INSTITUTIONAL DUAL-TIMEFRAME CCRS ENGINE v3.2)
 # ==============================================================================
 STRATEGY_NAME: str = "Institutional Dual-Timeframe CCRS Engine"
-STRATEGY_VERSION: str = "3.2.0"
+STRATEGY_VERSION: str = "3.3.0"
 CANONICAL_TIMEFRAME: str = "15m"
 MACRO_TIMEFRAME: str = "1h"
 
@@ -66,6 +66,19 @@ CCRS_MAX_SL_PIPS: float = 25.0         # Maximum stop loss cap (calibrated to in
 CANONICAL_STOP_LOSS_PIPS: float = 22.0
 CANONICAL_TAKE_PROFIT_PIPS: float = 33.0  # 22.0 * 1.50
 CANONICAL_RISK_REWARD_RATIO: float = 1.50
+
+# Volatility-Cushioned Trailing Stop Parameters (Protects against premature stopouts)
+VOLATILITY_CUSHION_ENABLED: bool = True
+VOLATILITY_CUSHION_TIER1_R: float = 1.20       # At +1.2R (+26.4 pips), advance SL to Tier 1
+VOLATILITY_CUSHION_TIER1_SL_PIPS: float = 10.0 # Halves risk to 10p, leaves 36p breathing buffer
+VOLATILITY_CUSHION_TIER2_R: float = 1.50       # At +1.5R (+33.0 pips), advance SL to Tier 2
+VOLATILITY_CUSHION_TIER2_SL_PIPS: float = -11.0 # Lock in +11.0 pips (+0.5R guaranteed profit)
+VOLATILITY_CUSHION_RUNNER_TP_PIPS: float = 44.0 # Extended runner TP (+2.0R)
+
+# Economic News Filter Parameters (Forex Factory Real-Time Calendar)
+NEWS_FILTER_ENABLED: bool = True
+NEWS_FILTER_BUFFER_MINUTES: int = 30
+NEWS_CALENDAR_URL: str = "https://nfs.faireconomy.media/ff_calendar_thisweek.json"
 
 # Aliases for backwards compatibility with existing imports
 FIXED_TAKE_PROFIT_PIPS: float = CANONICAL_TAKE_PROFIT_PIPS
@@ -85,8 +98,10 @@ NIGHT_MIN_TP_PIPS: float = 5.0
 # 3. ACCOUNT EQUITY, RISK BUDGET & LOT SIZE CONSTRAINTS
 # ==============================================================================
 REFERENCE_ACCOUNT_EQUITY: float = 5000.0  # Reference Prop Firm Account ($5,000 USD)
-REFERENCE_RISK_PCT: float = 1.0           # 1.0% per trade risk allocation
-REFERENCE_RISK_BUDGET_USD: float = 50.0   # $5,000.00 * 0.01 = $50.00 max nominal risk
+REFERENCE_RISK_PCT: float = 1.0           # 1.0% per trade reference ceiling
+PROP_FIRM_RISK_PCT: float = 0.50          # 0.50% per trade prop firm calibrated risk
+REFERENCE_RISK_BUDGET_USD: float = 50.0   # $5,000.00 * 0.01 = $50.00 max nominal ceiling
+PROP_FIRM_RISK_BUDGET_USD: float = 25.0   # $5,000.00 * 0.005 = $25.00 prop budget
 
 STANDARD_LOT_SIZE: float = 100_000.0      # 1 Standard Lot = 100,000 Base Currency units
 DEFAULT_MIN_LOT: float = 0.01             # Broker minimum lot constraint (micro-lot)
@@ -185,5 +200,6 @@ CANONICAL_TRANSACTION_COSTS: Dict[str, Dict[str, float]] = {
 MAX_CONCURRENT_UNPROTECTED_TRADES: int = 3
 MAX_CONCURRENT_USD_EXPOSURE: int = 2
 POST_LOSS_COOLDOWN_MINUTES: float = 60.0
-DAILY_LOSS_CIRCUIT_BREAKER_R: float = -2.50
-DAILY_LOSS_CIRCUIT_BREAKER_COUNT: int = 3
+DAILY_LOSS_CIRCUIT_BREAKER_R: float = -2.00
+DAILY_LOSS_CIRCUIT_BREAKER_COUNT: int = 2
+DAILY_LOSS_CIRCUIT_BREAKER_PCT: float = 1.0
