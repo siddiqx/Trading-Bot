@@ -1,15 +1,14 @@
 /**
  * 24/7 Institutional Cloudflare Worker for Telegram Trading Bot
- * System Version: v2.0-Frozen (Forensic Audit Release)
- * Strategy Freeze Date: 2026-10-02
+ * System Version: v3.3.0 (Institutional Dual-Timeframe CCRS Engine)
  * 
  * Features:
- * - Active Trade Tracking & Floating PnL with Break-Even state display
- * - Market Radar differentiating live trades vs surveillance (ADX-aware)
- * - /history command with pair and date range filtering
- * - /performance command calculated strictly from live trades taken from 2026-10-02 onwards
- * - /strategy command: full v2 rulebook incl. ADX filter, Model F TP, BE rule, session overlap block
- * - Modern, aesthetic, executive terminal formatting
+ * - Active Trade Tracking & Floating PnL with Volatility Cushion Trailing Display
+ * - 6-Asset Forex Market Radar (15M Execution / 1H CCRS Macro Flow Bias)
+ * - /history command: Real-time completed trade records (clean & unbloated)
+ * - /performance command: Win rate, Profit Factor, Net R-Return, and Net Pips
+ * - /strategy command: Full Institutional Dual-Timeframe CCRS Engine v3.3.0 Rulebook
+ * - Clean, aesthetic, executive terminal formatting (zero historical bloat)
  */
 
 // Module-level environment reference and credential accessors
@@ -605,7 +604,7 @@ export default {
             };
           })
         );
-        return new Response(JSON.stringify({ status: "RADAR_TEST_OK", version: "3.1.0-institutional-alpha", radarPreview }, null, 2), {
+        return new Response(JSON.stringify({ status: "RADAR_TEST_OK", version: "3.3.0-institutional-production", radarPreview }, null, 2), {
           status: 200,
           headers: { "Content-Type": "application/json" }
         });
@@ -614,7 +613,7 @@ export default {
       const ledger = await getLedger(env);
       return new Response(JSON.stringify({
         status: "OK",
-        version: "3.1.0-institutional-alpha",
+        version: "3.3.0-institutional-production",
         timestamp: new Date().toISOString(),
         kv_bound: !!kv,
         env_keys: env ? Object.keys(env) : [],
@@ -1355,9 +1354,11 @@ async function sendHistoryMessage(chatId, filterPair = "ALL", filterRange = "ALL
 
   let bodyText = "";
   if (closedRows.length > 0) {
-    bodyText = closedRows.join("\n\n") + "\n\n";
+    // Show maximum 5 most recent trades to keep chat clean and fast
+    const recentRows = closedRows.slice(-5).reverse();
+    bodyText = recentRows.join("\n\n") + "\n\n";
   } else {
-    bodyText = `<i>No completed trades found. System is tracking fresh from 2026-10-15 baseline.</i>\n\n`;
+    bodyText = `<i>No completed trades recorded in current session. Live trades will log here automatically upon TP/SL resolution.</i>\n\n`;
   }
 
   const text = 
@@ -1452,24 +1453,22 @@ async function sendPerformanceMessage(chatId, filterPair = "ALL", env) {
   const expSign = parseFloat(expectancy) >= 0 ? "+" : "";
 
   const text = 
-    `📈 <b>STRATEGY PERFORMANCE (Institutional Dual-Timeframe CCRS Engine v3.2)</b>\n` +
+    `📈 <b>STRATEGY PERFORMANCE (v3.3.0)</b>\n` +
     `━━━━━━━━━━━━━━━━━━\n` +
-    `Scope: <b>${scopeLabel}</b>\n` +
-    `Baseline: <code>2026-10-15</code> (Fresh Start Baseline)\n` +
+    `Scope: <b>${scopeLabel}</b> · Dual-Timeframe CCRS Engine\n` +
     `━━━━━━━━━━━━━━━━━━\n\n` +
-    `<b>1. TRADE EXECUTION</b>\n` +
-    `• Total Closed: <code>${totalClosed}</code>\n` +
-    `• Active Live: <code>${active.length} positions</code>\n` +
-    `• Win / Loss / BE: <b>${wins}W</b> · <b>${losses}L</b>${beLabel}${cancelled > 0 ? ` <i>(${cancelled} cancelled)</i>` : ""}\n` +
-    `• Win Rate: <b>${winRate}${decided > 0 ? "%" : ""}</b>\n\n` +
+    `<b>1. EXECUTION METRICS</b>\n` +
+    `• Decided Trades: <b>${decided}</b> (${wins}W · ${losses}L${beLabel})\n` +
+    `• Win Rate: <b>${winRate}${decided > 0 ? "%" : ""}</b>\n` +
+    `• Active Positions: <b>${active.length} / 2 Max Concurrent</b>\n\n` +
     `<b>2. RETURNS & PROFITABILITY</b>\n` +
-    `• Net Realized Pips: <b>${pipsSign}${netPips.toFixed(1)} pips</b>\n` +
-    `• Net Realized Return: <b>${rSign}${netR.toFixed(2)} R</b>\n` +
-    `• Expectancy / Trade: <b>${expSign}${expectancy} R</b>\n` +
+    `• Net Return: <b>${rSign}${netR.toFixed(2)} R</b>\n` +
+    `• Net Pips: <b>${pipsSign}${netPips.toFixed(1)} pips</b>\n` +
     `• Profit Factor: <code>${profitFactor}</code>\n` +
-    `• Target R:R: <code>1:1.50 (Pure Binary Target · 100% Runner to Pure TP)</code>\n\n` +
+    `• Target Geometry: <code>Pure Binary 1:1.50 R:R</code>\n` +
+    `• Risk per Trade: <code>0.50% Equity ($125 on $25k Prop Demo)</code>\n\n` +
     `━━━━━━━━━━━━━━━━━━\n` +
-    `⚡ <i>100% out-of-sample forward verification. Baseline reset 2026-10-15.</i>\n` +
+    `⚡ <i>Live prop firm metrics · 24/7 serverless tracking</i>\n` +
     `🕒 <code>${utcNow}</code>`;
 
   const keyboard = {
@@ -1672,25 +1671,49 @@ async function sendStatusMessage(chatId, env) {
     : "🟡 CLOSED (Weekend Session Hold · Opens Sun 21:00 UTC)";
 
   const text = 
-    `⚡ <b>SYSTEM OPERATIONAL STATUS</b>\n` +
-    `━━━━━━━━━━━━━━━━━━\n\n` +
-    `<b>🟢 INFRASTRUCTURE &amp; HEALTH</b>\n` +
-    `• <b>Engine Core:</b> <code>ONLINE (24/7 Serverless)</code>\n` +
-    `• <b>Cloud Edge:</b> <code>Cloudflare Global Worker</code>\n` +
-    `• <b>Market Scanner:</b> <code>Automated 15M Cycle (GitHub Actions)</code>\n` +
-    `• <b>Pricing Feed:</b> <code>Live Interbank Quotes</code>\n` +
-    `• <b>Market Status:</b> <code>${marketRegime}</code>\n\n` +
-    `<b>📊 PORTFOLIO &amp; RISK STATE</b>\n` +
-    `• <b>Active Positions:</b> <code>${activeCount} / 2 Max Concurrent</code>\n` +
-    `• <b>Capital Exposure:</b> <code>${exposurePct}% Equity (0.50% / Trade)</code>\n` +
-    `• <b>Monitored Universe:</b> <code>6 Major Forex Pairs</code>\n` +
-    `• <b>Gold (XAUUSD):</b> <code>PERMANENTLY EXCLUDED</code>\n\n` +
-    `<b>🛡 EXECUTION ARCHITECTURE</b>\n` +
-    `• <b>Target Model:</b> <code>Pure Binary 1:1.50 R:R</code>\n` +
-    `• <b>Position Management:</b> <code>100% Runner (Zero Partials)</code>\n` +
-    `• <b>Stop Management:</b> <code>Strict Structural Invalidation</code>\n` +
-    `• <b>Live Ledger:</b> <code>Synchronized (2026-10-15 Baseline)</code>\n` +
-    `━━━━━━━━━━━━━━━━━━\n` +
+    `⚡ <b>SYSTEM OPERATIONAL STATUS</b>
+` +
+    `━━━━━━━━━━━━━━━━━━
+
+` +
+    `<b>🟢 INFRASTRUCTURE & HEALTH</b>
+` +
+    `• <b>Engine Core:</b> <code>ONLINE (v3.3.0 Institutional)</code>
+` +
+    `• <b>Cloud Edge:</b> <code>Cloudflare Global Worker</code>
+` +
+    `• <b>Market Scanner:</b> <code>15M Automated Cycle (GitHub Actions 24/7)</code>
+` +
+    `• <b>Price Feed:</b> <code>Live Interbank Quotes</code>
+` +
+    `• <b>Market Status:</b> <code>${marketRegime}</code>
+
+` +
+    `<b>📊 PORTFOLIO & RISK STATE</b>
+` +
+    `• <b>Active Positions:</b> <code>${activeCount} / 2 Max Concurrent</code>
+` +
+    `• <b>Account Model:</b> <code>FTMO $25,000 Prop Demo</code>
+` +
+    `• <b>Risk Budget:</b> <code>0.50% ($125.00 / Trade)</code>
+` +
+    `• <b>Daily Circuit Breaker:</b> <code>2-Loss Lockout (-1.00% Cap)</code>
+` +
+    `• <b>Economic News Filter:</b> <code>ACTIVE (30m High-Impact Buffer)</code>
+` +
+    `• <b>Monitored Universe:</b> <code>6 Major Forex Pairs (Zero Gold)</code>
+
+` +
+    `<b>🛡 EXECUTION ENGINE</b>
+` +
+    `• <b>Strategy:</b> <code>Dual-Timeframe CCRS (15M Execution / 1H Macro)</code>
+` +
+    `• <b>Trailing Stop:</b> <code>Volatility Cushion (+1.2R / +1.5R Runners)</code>
+` +
+    `• <b>Target Geometry:</b> <code>Pure Binary 1:1.50 R:R</code>
+` +
+    `━━━━━━━━━━━━━━━━━━
+` +
     `🕒 <code>${utcNow}</code> · <i>Real-time Engine Diagnostics</i>`;
 
   const keyboard = {
@@ -1714,34 +1737,64 @@ async function sendStatusMessage(chatId, env) {
  */
 async function sendStrategyMessage(chatId) {
   const text = 
-    `🎯 <b>INSTITUTIONAL STRATEGY SPECIFICATION</b>\n` +
-    `━━━━━━━━━━━━━━━━━━\n` +
-    `<b>INSTITUTIONAL DUAL-TIMEFRAME CCRS ENGINE (v3.3)</b>\n\n` +
-    `<b>1. Strategy Premise &amp; Institutional Edge</b>\n` +
-    `• <b>Dual-Timeframe Architecture:</b> Decouples Macro Order Flow Bias (1H CCRS) from Precision Execution Timing (15M Retest / Sweep).\n` +
-    `• <b>Factor Model:</b> 1H Cross-Currency Relative Strength (CCRS) Matrix deconstructs 6 Forex pairs into 7 pure currency strength indices.\n` +
-    `• <b>Macro Flow Regime:</b> Activates when pairwise order flow divergence reaches |D| ≥ 1.75σ (120h momentum · 200h normalization).\n\n` +
-    `<b>2. Precision Execution &amp; Volatility Cushion</b>\n` +
-    `• <b>Execution Timeframe:</b> 15-Minute (15M) closed-candle execution during London/NY sessions (06:00–17:00 UTC).\n` +
-    `• <b>Precision Triggers:</b> 15M 20-EMA Equilibrium Pullbacks and 10-bar Fractal Liquidity Sweeps (Turtle Soup Reclaim).\n` +
-    `• <b>Volatility Cushion Trailing:</b>\n` +
-    `  - <i>Tier 1 (+1.20R / +26.4p):</i> Move SL to -10.0p (halves risk, preserves 36p breathing buffer against retest wicks).\n` +
-    `  - <i>Tier 2 (+1.50R / +33.0p):</i> Lock in +11.0p (+0.50R profit) &amp; extend runner TP to +44.0p (+2.00R).\n` +
-    `• <b>Economic News Filter:</b> Automatically pauses trading 30m before and after Forex Factory High-Impact news releases.\n\n` +
-    `<b>3. Prop Firm Risk &amp; Capital Protection</b>\n` +
-    `• <b>Position Risk:</b> <code>0.50% Equity</code> ($25.00 nominal risk on $5,000 reference account).\n` +
-    `• <b>Daily Circuit Breaker:</b> 2-loss lockout (-1.00% daily cap) making 4.0% daily DD violations physically impossible.\n` +
-    `• <b>Concurrency Cap:</b> Max 2 simultaneous active trades across the 6-pair portfolio.\n` +
-    `• <b>Directional Cap:</b> Max 2 trades in the same net USD direction.\n` +
-    `• <b>Active Universe:</b> 6 Institutional Forex Pairs (<code>EURUSD · USDCAD · GBPUSD · USDJPY · USDCHF · AUDUSD</code>).\n` +
-    `• <b>Exclusions:</b> Zero Gold (XAUUSD permanently disabled).\n` +
-    `━━━━━━━━━━━━━━━━━━\n` +
-    `🛡 <i>Institutional dual-timeframe factor execution with Volatility Cushion trailing, engineered for verified prop firm payouts.</i>`;
+    `🎯 <b>INSTITUTIONAL STRATEGY SPECIFICATION</b>
+` +
+    `━━━━━━━━━━━━━━━━━━
+` +
+    `<b>Institutional Dual-Timeframe CCRS Engine (v3.3.0)</b>
+
+` +
+    `<b>1. Macro Order Flow Bias</b>
+` +
+    `• <b>Factor Model:</b> 1H Cross-Currency Relative Strength (CCRS) Matrix
+` +
+    `• <b>Lookback & Normalization:</b> 120-hour momentum · 200-hour rolling window
+` +
+    `• <b>Divergence Trigger:</b> |D| ≥ 1.75σ active pairwise divergence
+
+` +
+    `<b>2. Precision Execution & Triggers</b>
+` +
+    `• <b>Execution Timeframe:</b> 15-Minute (15M) closed candles
+` +
+    `• <b>Active Windows:</b> London & NY Sessions (06:00–17:00 UTC)
+` +
+    `• <b>Confluence Models:</b> 20-EMA Equilibrium Pullbacks & 10-bar Fractal Sweeps
+` +
+    `• <b>Target Geometry:</b> Pure Binary 1:1.50 R:R (100% Runner)
+
+` +
+    `<b>3. Dynamic Volatility Cushion Trailing</b>
+` +
+    `• <b>Tier 1 (+1.20R / +26.4p):</b> Move SL to -10.0p (halves risk, preserves buffer)
+` +
+    `• <b>Tier 2 (+1.50R / +33.0p):</b> Lock +11.0p (+0.50R profit) & extend runner to +44.0p (+2.00R)
+
+` +
+    `<b>4. Prop Firm Risk Management</b>
+` +
+    `• <b>Position Risk:</b> <code>0.50% Equity</code> ($125 max risk on $25k Prop Demo)
+` +
+    `• <b>Daily Circuit Breaker:</b> 2-loss lockout (-1.00% daily loss cap)
+` +
+    `• <b>Economic News Filter:</b> 30-min blackout around Red Folder releases
+` +
+    `• <b>Monitored Universe:</b> 6 Forex Pairs (<code>EURUSD · USDCAD · GBPUSD · USDJPY · USDCHF · AUDUSD</code>)
+` +
+    `• <b>Strict Invariant:</b> Zero Gold (XAUUSD permanently disabled)
+` +
+    `━━━━━━━━━━━━━━━━━━
+` +
+    `🛡 <i>Systematic dual-timeframe momentum execution engineered for funded prop firm compliance.</i>`;
 
   const keyboard = {
     inline_keyboard: [
       [
-        { text: "📡 Market Radar", callback_data: "cmd_radar" },
+        { text: "⚡ Active Trades", callback_data: "cmd_active" },
+        { text: "📡 Market Radar", callback_data: "cmd_radar" }
+      ],
+      [
+        { text: "📈 Performance", callback_data: "cmd_performance" },
         { text: "« Main Menu", callback_data: "cmd_menu" }
       ]
     ]
@@ -1755,18 +1808,26 @@ async function sendStrategyMessage(chatId) {
  */
 async function sendClearInstructions(chatId) {
   const text =
-    `🧹 <b>CLEAN BOT CHAT & LEDGER STATUS</b>\n` +
-    `━━━━━━━━━━━━━━━━━━\n` +
-    `<b>1. Live Ledger Baseline</b>\n` +
-    `• All historical trade records have been <b>completely wiped</b>.\n` +
-    `• The ledger tracks strictly live confirmed signals from <code>2026-10-15</code> onwards.\n` +
-    `• Strategy is locked at Institutional Dual-Timeframe CCRS Engine (v3.3.0, Volatility Cushion Runner Execution).\n\n` +
-    `<b>2. To Clear Telegram Chat History</b>\n` +
-    `• On Mobile / Desktop: Tap the <b>⋮ (Three Dots)</b> menu at the top right of this chat.\n` +
-    `• Select <b>Clear History</b> (or <b>Delete Chat</b>).\n` +
-    `• Type <code>/start</code> to resume with a 100% clean, fresh terminal!\n` +
-    `━━━━━━━━━━━━━━━━━━\n` +
-    `✨ <i>v3.0 Production institutional session active.</i>`;
+    `🧹 <b>LEDGER RESET COMPLETE</b>
+` +
+    `━━━━━━━━━━━━━━━━━━
+` +
+    `• Active trades wiped: <b>0</b>
+` +
+    `• Completed history wiped: <b>0</b>
+` +
+    `• Strategy: <b>Institutional Dual-Timeframe CCRS Engine v3.3.0</b>
+` +
+    `• Status: <b>Clean slate ready for live prop firm execution</b>
+
+` +
+    `<b>Telegram Chat Tip:</b>
+` +
+    `Tap the <b>⋮ (Three Dots)</b> menu at top right and select <b>Clear History</b> to keep your chat completely fresh.
+` +
+    `━━━━━━━━━━━━━━━━━━
+` +
+    `✨ <i>v3.3.0 Production session active.</i>`;
 
   const keyboard = {
     inline_keyboard: [
@@ -1803,7 +1864,7 @@ async function sendMenuMessage(chatId, env) {
     `4. /history ── Completed trade history ledger\n` +
     `5. /performance ── Win rate &amp; net return metrics\n` +
     `6. /patterns ── Volume post-mortems &amp; failure analysis\n` +
-    `7. /strategy ── Institutional Dual-Timeframe CCRS Engine (v3.2)\n` +
+    `7. /strategy ── Institutional Dual-Timeframe CCRS Engine (v3.3.0)\n` +
     `8. /status ── 24/7 serverless engine health\n` +
     `9. /close PAIR WIN|LOSS ── Admin force-close\n\n` +
     `Select a dashboard module below:`;
