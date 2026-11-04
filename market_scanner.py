@@ -140,6 +140,7 @@ RISK_REWARD: float = FIXED_RISK_REWARD_RATIO      # 1:1.5 before costs
 
 # Prop Firm Account Sizing Parameters (Configurable via environment variables)
 from core.news_filter import is_news_window_active
+from core.ctrader_executor import execute_ctrader_order, modify_ctrader_position
 
 DEFAULT_ACCOUNT_EQUITY: float = float(os.environ.get("ACCOUNT_EQUITY", "5000.0"))
 DEFAULT_RISK_PCT: float = float(os.environ.get("RISK_PCT", str(PROP_FIRM_RISK_PCT)))
@@ -692,6 +693,12 @@ def check_active_trades(records: dict):
                         )
                         send_telegram_alert(tier1_msg)
                         logger.info(f"==> VOLATILITY CUSHION TIER 1: {pair} SL moved to {sl} (-10.0p)")
+                        pos_id = trade.get("ctrader_position_id")
+                        if pos_id:
+                            try:
+                                modify_ctrader_position(pos_id, stop_loss=sl, take_profit=tp)
+                            except Exception as ex:
+                                logger.warning(f"cTrader trailing amendment error for position #{pos_id}: {ex}")
 
                     # Tier 2: Profit Lock & Runner Expansion at +1.50R (+33.0 pips)
                     elif cushion_tier == 1 and mfe_pips >= (VOLATILITY_CUSHION_TIER2_R * 22.0):
@@ -715,6 +722,12 @@ def check_active_trades(records: dict):
                         )
                         send_telegram_alert(tier2_msg)
                         logger.info(f"==> VOLATILITY CUSHION TIER 2: {pair} Profit locked at {sl} (+11p), TP extended to {tp} (+44p)")
+                        pos_id = trade.get("ctrader_position_id")
+                        if pos_id:
+                            try:
+                                modify_ctrader_position(pos_id, stop_loss=sl, take_profit=tp)
+                            except Exception as ex:
+                                logger.warning(f"cTrader trailing amendment error for position #{pos_id}: {ex}")
 
                 # Strict Exit Resolution with Retail Spread Clearance Buffer:
                 # Stop Loss takes absolute precedence over Take Profit.
@@ -3034,6 +3047,7 @@ def format_alert_message(sig: dict) -> str:
         f"• <b>Risk / Reward:</b> <b>1 : {sig['rr']}</b> (Pure Binary Target · 100% Runner)\n"
         f"• <b>Trade Management:</b> <b>Pure Binary 1:1.50 Target (100% Runner to TP / SL, Zero Partials)</b>\n"
         f"• <b>Volatility Cushion Trailing:</b> <b>Tier 1 @ +26.4p (SL -10p) · Tier 2 @ +33p (+11p lock & +44p runner)</b>\n"
+        f"{f'• <b>cTrader Execution:</b> <code>' + ('🟢 Live Demo Executed' if sig.get('ctrader_receipt', {}).get('status') == 'EXECUTED' else '📝 Simulated Demo Fill') + '</code> <i>(Account: ' + str(sig.get('ctrader_receipt', {}).get('account_id', 'Demo/Simulated')) + ')</i>' + chr(10) if sig.get('ctrader_receipt') else ''}"
         f"{risk_line}"
         f"<b>🔬 CONFLUENCE MODEL</b>\n"
         f"• <b>Engine:</b> <b>{sig.get('strategy', 'ICT Killzone Liquidity Sweep (Turtle Soup)')}</b>\n"
@@ -3250,6 +3264,14 @@ def run_scan_cycle():
                     total_signals += 1
                     telemetry["signals_generated"] += 1
                     logger.info(f"==> NEW SIGNAL: {sig['pair']} {sig['timeframe']} {sig['direction']} @ {sig['entry']}")
+
+                    # Stage 2 Automated Prop Execution (cTrader Demo / Dry-Run)
+                    try:
+                        ctrader_receipt = execute_ctrader_order(sig)
+                        sig["ctrader_receipt"] = ctrader_receipt
+                    except Exception as ex:
+                        logger.warning(f"cTrader auto-execution hook error: {ex}")
+
                     msg = format_alert_message(sig)
                     telemetry["telegram_attempts"] += 1
                     sent = send_telegram_alert(msg)
@@ -3258,8 +3280,11 @@ def run_scan_cycle():
 
                     # Register newly opened active trade as OPEN market execution
                     bar_time = sig.get("time") or datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+                    pos_id = sig.get("ctrader_receipt", {}).get("position_id")
                     new_trade_entry = {
                         "trade_id": sig["id"],
+                        "ctrader_position_id": pos_id,
+                        "ctrader_receipt": sig.get("ctrader_receipt"),
                         "pair": sig["pair"],
                         "symbol": pair_name,
                         "ticker": cfg["ticker"],
