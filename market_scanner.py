@@ -873,8 +873,14 @@ def check_active_trades(records: dict):
             except Exception as e:
                 logger.error(f"Error recording post-mortem for {pair}: {e}")
 
-            msg = format_exit_message(trade, outcome, exit_price, realized_pips, realized_r, pm_record)
-            send_telegram_alert(msg)
+            trade_id = trade.get("trade_id", "")
+            alerted_exits = records.setdefault("alerted_exits", [])
+            if trade_id not in alerted_exits:
+                msg = format_exit_message(trade, outcome, exit_price, realized_pips, realized_r, pm_record)
+                send_telegram_alert(msg)
+                alerted_exits.append(trade_id)
+            else:
+                logger.info(f"Exit alert already dispatched for {trade_id}. Suppressing duplicate.")
 
             records.setdefault("completed_trades", []).append(completed_record)
             records.get("active_trades", {}).pop(trade_key, None)
@@ -907,8 +913,14 @@ def check_active_trades(records: dict):
             except Exception as e:
                 logger.error(f"Error recording post-mortem for {pair}: {e}")
 
-            msg = format_exit_message(trade, outcome, exit_price, realized_pips, realized_r, pm_record)
-            send_telegram_alert(msg)
+            trade_id = trade.get("trade_id", "")
+            alerted_exits = records.setdefault("alerted_exits", [])
+            if trade_id not in alerted_exits:
+                msg = format_exit_message(trade, outcome, exit_price, realized_pips, realized_r, pm_record)
+                send_telegram_alert(msg)
+                alerted_exits.append(trade_id)
+            else:
+                logger.info(f"Exit alert already dispatched for {trade_id}. Suppressing duplicate.")
 
             records.setdefault("completed_trades", []).append(completed_record)
             records.get("active_trades", {}).pop(trade_key, None)

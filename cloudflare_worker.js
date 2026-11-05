@@ -226,13 +226,22 @@ let STORED_COMPLETED_TRADES = [];
 function sanitizeLedger(ledger) {
   if (!ledger) return { active: {}, completed: [] };
   const cleanActive = {};
+  const completedList = ledger.completed || [];
+  const completedIds = new Set(
+    completedList.map(t => t.trade_id || t.id).filter(Boolean)
+  );
+
   for (const [k, t] of Object.entries(ledger.active || {})) {
     const sym = getBaseSymbol(k, t);
+    const tradeId = t?.trade_id || t?.id;
     if (sym !== "XAUUSD" && sym !== "GOLD" && !sym.includes("XAU")) {
+      if ((tradeId && completedIds.has(tradeId)) || t?.status === "CLOSED" || t?.status === "COMPLETED") {
+        continue; // Closed / completed trades must NEVER appear as active!
+      }
       cleanActive[k] = t;
     }
   }
-  const cleanCompleted = (ledger.completed || []).filter(t => {
+  const cleanCompleted = completedList.filter(t => {
     const sym = getBaseSymbol(t.pair || t.symbol, t);
     return sym !== "XAUUSD" && sym !== "GOLD" && !sym.includes("XAU");
   });
@@ -260,8 +269,8 @@ async function getLedger(env) {
     }
   }
 
-  // If KV has active trades, return them immediately
-  if (active && typeof active === "object" && Object.keys(active).length > 0) {
+  // If KV is bound and successfully returned active trades (even if empty {}), KV IS AUTHORITATIVE!
+  if (active !== null && typeof active === "object") {
     return sanitizeLedger({
       active: active,
       completed: completed || []
@@ -472,6 +481,25 @@ async function runActiveTradeChecks(env) {
           await autoResolveTrade(symbol, t, rawOutcome, exitPrice, env, ledger);
           resolved.push({ symbol, outcome: rawOutcome, exitPrice });
 
+          // Alert De-duplication Watchdog: prevent duplicate broadcasts
+          const tradeId = t.trade_id || `${symbol}_${t.opened_at}`;
+          const alertKey = `alerted_exit_${tradeId}`;
+          let alreadyAlerted = false;
+          if (kv) {
+            try {
+              alreadyAlerted = !!(await kv.get(alertKey));
+            } catch(e) {}
+          }
+          if (alreadyAlerted) {
+            console.log(`[Watchdog] Exit alert already sent for ${tradeId}. Suppressing duplicate.`);
+            continue;
+          }
+          if (kv) {
+            try {
+              await kv.put(alertKey, "true", { expirationTtl: 86400 * 7 });
+            } catch(e) {}
+          }
+
           const isWin = rawOutcome === "WIN";
           const finalR = isWin ? (t.rr || 1.50) : -1.00;
           const finalPips = isWin ? (t.tp_pips || Math.round(slPips * 1.5 * 10) / 10) : -(t.sl_pips || Math.round(slPips * 10) / 10);
@@ -673,17 +701,7 @@ export default {
           currentCompleted = STORED_COMPLETED_TRADES || [];
         }
 
-        // If KV active trades were empty, fallback to ledger retrieval
-        if (Object.keys(currentActive).length === 0) {
-          try {
-            const fallbackLedger = await getLedger(env);
-            if (fallbackLedger && fallbackLedger.active && Object.keys(fallbackLedger.active).length > 0) {
-              currentActive = { ...fallbackLedger.active };
-            }
-          } catch (err) {
-            console.error("Ledger fallback error during sync:", err);
-          }
-        }
+        // KV active trades empty means zero active trades in cloud - do not resurrect from git
 
         // Start with current active trades in cloud, then overlay incoming active trades
         const mergedActive = { ...currentActive, ...incomingActive };
