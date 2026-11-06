@@ -115,10 +115,10 @@ def dispatch_ctrader_tls_order(
     timeout: float = 5.0
 ) -> Dict[str, Any]:
     """Execute live order dispatch directly over TLS socket with cTrader Open API."""
-    from ctrader_open_api.messages.OpenApiModelMessages_pb2 import ProtoOAPayloadType
+    from ctrader_open_api.messages.OpenApiModelMessages_pb2 import ProtoOAPayloadType, ProtoOAOrderType
     from ctrader_open_api.messages.OpenApiMessages_pb2 import (
         ProtoOAApplicationAuthReq, ProtoOAAccountAuthReq,
-        ProtoOAExecutionEvent, ProtoOAErrorRes
+        ProtoOAExecutionEvent, ProtoOAErrorRes, ProtoOAAmendPositionSLTPReq
     )
 
     ctx = ssl.create_default_context()
@@ -153,6 +153,18 @@ def dispatch_ctrader_tls_order(
             return {"status": "ACCOUNT_AUTH_ERROR", "error": err.description}
 
         # 3. New Order Dispatch
+        # For MARKET orders, cTrader Open API rejects absolute stopLoss/takeProfit directly inside ProtoOANewOrderReq.
+        # Record desired SL/TP and attach them atomically via ProtoOAAmendPositionSLTPReq immediately upon fill.
+        desired_sl = None
+        desired_tp = None
+        if getattr(order_req, "orderType", None) == ProtoOAOrderType.MARKET:
+            if order_req.HasField("stopLoss") and order_req.stopLoss > 0:
+                desired_sl = order_req.stopLoss
+                order_req.ClearField("stopLoss")
+            if order_req.HasField("takeProfit") and order_req.takeProfit > 0:
+                desired_tp = order_req.takeProfit
+                order_req.ClearField("takeProfit")
+
         order_res = _send_tls_frame(s, ProtoOAPayloadType.PROTO_OA_NEW_ORDER_REQ, order_req)
         if not order_res:
             return {"status": "ERROR", "error": "No response to ProtoOANewOrderReq"}
@@ -161,6 +173,28 @@ def dispatch_ctrader_tls_order(
             event.ParseFromString(order_res[1])
             pos_id = getattr(event.position, "positionId", 0) if event.HasField("position") else 0
             ord_id = getattr(event.order, "orderId", 0) if event.HasField("order") else 0
+
+            # Step 4: Two-Step Atomic SL/TP Attachment via ProtoOAAmendPositionSLTPReq
+            if pos_id and (desired_sl is not None or desired_tp is not None):
+                try:
+                    amend_req = ProtoOAAmendPositionSLTPReq()
+                    amend_req.ctidTraderAccountId = account_id
+                    amend_req.positionId = int(pos_id)
+                    if desired_sl is not None:
+                        amend_req.stopLoss = float(desired_sl)
+                    if desired_tp is not None:
+                        amend_req.takeProfit = float(desired_tp)
+
+                    amend_res = _send_tls_frame(s, ProtoOAPayloadType.PROTO_OA_AMEND_POSITION_SLTP_REQ, amend_req)
+                    if amend_res and amend_res[0] == ProtoOAPayloadType.PROTO_OA_ERROR_RES:
+                        err = ProtoOAErrorRes()
+                        err.ParseFromString(amend_res[1])
+                        logger.warning(f"[cTrader Open API] SL/TP Amendment Notice: {err.errorCode} - {err.description}")
+                    else:
+                        logger.info(f"[cTrader Open API] Position #{pos_id} broker SL ({desired_sl}) & TP ({desired_tp}) attached successfully.")
+                except Exception as amend_err:
+                    logger.warning(f"[cTrader Open API] Post-order SL/TP attachment warning: {amend_err}")
+
             return {"status": "EXECUTED", "position_id": pos_id, "order_id": ord_id}
         elif order_res[0] == ProtoOAPayloadType.PROTO_OA_ERROR_RES:
             err = ProtoOAErrorRes()

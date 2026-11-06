@@ -1176,6 +1176,45 @@ async function sendRadarMessage(chatId, env) {
     })
   );
 
+  // Spot Gold Satellite Surveillance Card
+  const kv = (env || CURRENT_ENV) && ((env || CURRENT_ENV).TRADE_LEDGER || (env || CURRENT_ENV).TRADES_KV || (env || CURRENT_ENV).KV);
+  try {
+    const goldP = await getLivePriceFast({ symbol: "XAUUSD", ticker: "GC=F", digits: 2 }, 3500);
+    const goldQuoteStr = (goldP !== null && !isNaN(goldP)) ? `$${goldP.toFixed(2)}` : "Awaiting Tick";
+    let goldActive = {};
+    if (kv) {
+      try {
+        goldActive = (await kv.get("gold_active_trades", "json")) || {};
+      } catch (e) {}
+    }
+    const goldActiveEntries = Object.entries(goldActive);
+    if (goldActiveEntries.length > 0) {
+      const [gKey, gTrade] = goldActiveEntries[0];
+      activeCount++;
+      const isLong = gTrade.direction === "LONG";
+      const icon = isLong ? "🟢" : "🔴";
+      const gPips = (goldP !== null && !isNaN(goldP)) ? ((goldP - gTrade.entry) * 10 * (isLong ? 1 : -1)).toFixed(1) : "0.0";
+      const pnlSign = Number(gPips) >= 0 ? "+" : "";
+      const runnerText = gTrade.runner_active ? " 🏃<b>Runner Extended</b>" : (gTrade.cushion_active ? " 🛡<b>Risk Halved</b>" : "");
+      results.push(
+        `🌟 <b>SPOT GOLD (XAUUSD)</b> · <code>${goldQuoteStr}</code>\n` +
+        `${icon} <b>LIVE ${gTrade.direction}</b> (1H Satellite)${runnerText}\n` +
+        `• Float: <code>${pnlSign}${gPips} pips</code>\n` +
+        `• Entry: <code>${gTrade.entry}</code>\n` +
+        `• SL: <code>${gTrade.stop_loss}</code> | TP: <code>${gTrade.take_profit}</code> (1:${gTrade.rr || "1.50"}R)`
+      );
+    } else {
+      const d = new Date();
+      const utcMins = d.getUTCHours() * 60 + d.getUTCMinutes();
+      const isRollover = (utcMins >= 1230 && utcMins <= 1350);
+      const goldStatus = isRollover ? "🛡 <b>Rollover Blackout</b> (20:30-22:30 UTC)" : "🧭 <b>Macro Surveillance Active</b> (USD Flow)";
+      results.push(
+        `🌟 <b>SPOT GOLD (XAUUSD)</b> · <code>${goldQuoteStr}</code>\n` +
+        `${goldStatus}`
+      );
+    }
+  } catch (ge) {}
+
   if (hasImminentBreakout && isMarketOpen()) {
     triggerGitHubScanner(env).catch(() => {});
   }
@@ -1200,7 +1239,8 @@ async function sendRadarMessage(chatId, env) {
         { text: "⚡ Active Trades", callback_data: "cmd_active" }
       ],
       [
-        { text: "📜 Completed History", callback_data: "cmd_history" },
+        { text: "🌟 Spot Gold", callback_data: "cmd_gold" },
+        { text: "📜 History", callback_data: "cmd_history" },
         { text: "📈 Performance", callback_data: "cmd_performance" }
       ],
       [
