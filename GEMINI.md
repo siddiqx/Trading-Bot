@@ -10,7 +10,7 @@ This repository contains an institutional-grade, systematic algorithmic trading 
 
 * **Primary 24/7 Engine:** Standalone Python market scanner (`market_scanner.py`) executed every 15 minutes during Forex market hours via GitHub Actions (`.github/workflows/scanner.yml`).
 * **Edge Gateway & Telegram Cockpit:** Cloudflare Global Edge V8 Worker (`cloudflare_worker.js`) synchronizing active/completed trade ledgers in KV and serving Telegram slash commands (`/radar`, `/prices`, `/history`, `/performance`, `/strategy`, `/status`, `/active`).
-* **Active Universe:** 6 standard institutional Forex pairs (`EURUSD`, `USDCAD`, `GBPUSD`, `USDJPY`, `USDCHF`, `AUDUSD`). **Gold (`XAUUSD`) and all commodity/crypto derivatives are strictly excluded.**
+* **Active Universe:** 6 standard institutional Forex pairs (`EURUSD`, `USDCAD`, `GBPUSD`, `USDJPY`, `USDCHF`, `AUDUSD`) + Isolated Gold Commodity Satellite (`XAUUSD`) with cross-engine USD correlation interlock.
 * **Strategy Engine:** Structural Donchian Breakout combined with ICT Killzone Liquidity Sweeps (Asian High/Low & 10-bar fractal reclaim) and Two-Phase Pullback Rejections. Dynamic liquidity-anchored TP/SL bounded between 15.0 and 25.0 pips (Pure Binary 1:1.50 R:R execution).
 * **Secondary / Legacy Framework:** FastAPI webhook service (`app/`) with SQLite database (`forex_signals.db`) for TradingView alert ingestion.
 

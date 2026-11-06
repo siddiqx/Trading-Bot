@@ -22,7 +22,7 @@ The system operates primarily via a **24/7 Serverless Cloud Architecture**:
 | Parameter | Canonical Specification | Code Reality (`core/config.py`, `market_scanner.py`, `cloudflare_worker.js`) |
 |---|---|---|
 | **Strategy Identity** | Institutional Dual-Timeframe CCRS Engine (v3.3.0) | Cross-Currency Relative Strength (CCRS) Factor Engine with Volatility-Cushioned Trailing and Real-Time Economic News Filtering. Decouples Macro Order Flow Bias (1H CCRS) from Precision Execution Timing (15M Retest / Sweep). Decomposes 6 Forex pairs into 7 pure currency strength indices, calculates rolling 200h volatility-normalized Z-scores over 120-hour lookbacks, and trades active macro flow regimes (\|D\| ≥ 1.75σ) on 15M confirmed pullbacks and fractal sweeps. Verified 6-month performance: +1,096.8 net pips, 1.26 Profit Factor, and 2.0% max daily drawdown. |
-| **Asset Universe** | 6 Institutional Forex Pairs (Zero Gold) | **6 Forex Pairs:** `EURUSD`, `USDCAD`, `GBPUSD`, `USDJPY`, `USDCHF`, `AUDUSD`. Gold (`XAUUSD`) and all commodities/crypto are strictly excluded. |
+| **Asset Universe** | 6 Institutional Forex Majors + Isolated Gold Satellite | **Forex Core:** EURUSD, USDCAD, GBPUSD, USDJPY, USDCHF, AUDUSD (Core 15M Engine). **Commodity Satellite:** XAUUSD / GC=F (Decoupled 1H CCRS Macro Engine with Correlation Interlock). |
 | **Timeframes** | Dual-Timeframe (1H Macro + 15M Execution) | 1H closed-candle CCRS Macro Flow calculation; 15M closed-candle precision execution every 15 minutes via GitHub Actions. |
 | **Active Volume Hours** | Institutional Volume Hours (07:00–17:00 UTC) | Strictly institutional London & NY overlap volume hours. Daily rollover spread spike window (22:00 UTC) and weekends strictly bypassed. |
 | **Take Profit & Trailing** | Volatility Cushion Runner (1:1.50 to 1:2.00 R:R) | Base 33.0p TP (+1.50R). Volatility Cushion: Tier 1 @ +1.20R (+26.4p) halves risk by moving SL to -10.0p (retains 36p breathing buffer); Tier 2 @ +1.50R (+33.0p) locks in +11.0p (+0.50R profit) and extends runner TP to +44.0p (+2.00R). |
@@ -48,6 +48,8 @@ The system operates primarily via a **24/7 Serverless Cloud Architecture**:
 * **Volume Journal:** `journals/VOLUME_BENCHMARKS.md`, `data/patterns/volume_index.json`
 * **Test Suites:** `tests/test_canonical_strategy.py`, `tests/test_position_sizing.py`, `tests/test_market_scanner.py`, `tests/test_post_mortem.py`, `tests/test_telegram.py`
 * **Cron Runner:** `.github/workflows/scanner.yml` (Runs `*/15 5-21 * * 1-5`)
+* **Dedicated Gold Satellite Module:** `satellite/market_scanner_gold.py`, `satellite/gold_config.py`, `satellite/gold_validator.py` (Decoupled commodity alpha engine with cross-engine correlation interlock)
+* **Gold Trade Ledger:** `data/gold_trade_records.json`
 * **Legacy Webhook Service:** `app/main.py`, `app/config.py`, `app/api/webhook.py`
 * **TradingView Strategies:** `pinescript/adaptive_trend_momentum_breakout.pine`
 
@@ -79,6 +81,15 @@ python scripts/run_canonical_backtest.py --markdown
 
 # Run historical prop firm challenge simulation ($5,000 account)
 python scripts/simulate_prop_firm_5k.py
+
+# Execute single scan cycle on isolated Gold Satellite Engine
+python satellite/market_scanner_gold.py
+
+# Run Gold Satellite Engine in continuous 24/7 background loop
+python satellite/market_scanner_gold.py --loop
+
+# Dispatch sample developer test alert for Gold
+python satellite/market_scanner_gold.py --test
 ```
 
 ---

@@ -40,9 +40,10 @@ DEFAULT_SYMBOL_MAP = {
     "EURUSD": 1,
     "GBPUSD": 2,
     "USDJPY": 4,
-    "USDCHF": 5,
-    "AUDUSD": 6,
-    "USDCAD": 9,
+    "AUDUSD": 5,
+    "USDCHF": 6,
+    "USDCAD": 8,
+    "XAUUSD": 41,
 }
 
 # Allow overriding via environment variable JSON
@@ -67,8 +68,14 @@ def has_valid_credentials() -> bool:
 
 
 def get_symbol_id(pair: str) -> Optional[int]:
-    """Resolve 6-character currency pair to cTrader integer symbol ID."""
-    clean = pair.replace("=X", "").replace("/", "").upper()
+    """Resolve currency pair or commodity symbol to cTrader integer symbol ID."""
+    clean = (
+        pair.replace("=X", "")
+        .replace("/", "")
+        .replace("GC=F", "XAUUSD")
+        .replace("GOLD", "XAUUSD")
+        .upper()
+    )
     return SYMBOL_MAP.get(clean)
 
 
@@ -172,16 +179,22 @@ def execute_ctrader_order(sig: Dict[str, Any]) -> Dict[str, Any]:
     Returns:
         Execution status receipt dictionary.
     """
-    pair = sig.get("pair", "")
+    pair = sig.get("pair") or sig.get("symbol", "")
     direction = sig.get("direction", "LONG").upper()
-    entry = float(sig.get("entry", 0.0))
-    stop_loss = float(sig.get("stop_loss", 0.0))
-    take_profit = float(sig.get("take_profit", 0.0))
-    lots = float(sig.get("suggested_lots") or sig.get("calc_lots") or 0.10)
+    entry = float(sig.get("entry") or sig.get("entry_price") or 0.0)
+    stop_loss = float(sig.get("stop_loss") or sig.get("sl_price") or 0.0)
+    take_profit = float(sig.get("take_profit") or sig.get("tp_price") or 0.0)
+    lots = float(sig.get("suggested_lots") or sig.get("calc_lots") or sig.get("lots") or 0.10)
 
     symbol_id = get_symbol_id(pair)
-    units = int(round(lots * 100_000))
-    volume_cents = units * 100  # cTrader Protocol expects subunits (units * 100)
+    is_gold = "XAU" in pair.upper() or "GOLD" in pair.upper()
+    if is_gold:
+        contract_size = 100.0  # 100 Troy Ounces per standard lot
+        units = int(round(lots * contract_size))
+        volume_cents = int(round(lots * contract_size * 100))
+    else:
+        units = int(round(lots * 100_000))
+        volume_cents = units * 100  # cTrader Protocol expects subunits (units * 100)
 
     # 1. Fallback to Simulated Demo / Dry-Run Mode if unconfigured
     if not ENABLE_CTRADER_EXECUTION or not has_valid_credentials():

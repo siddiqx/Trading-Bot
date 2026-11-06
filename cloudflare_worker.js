@@ -743,6 +743,22 @@ export default {
         return new Response("Trades Synced", { status: 200 });
       }
 
+      // Handle Sync from Gold Satellite Engine
+      if (payload.event === "sync_gold_trades") {
+        const kv = env && (env.TRADE_LEDGER || env.TRADES_KV || env.KV);
+        const incomingActive = payload.active_trades || {};
+        const incomingCompleted = payload.completed_trades || [];
+        if (kv) {
+          try {
+            await kv.put("gold_active_trades", JSON.stringify(incomingActive));
+            await kv.put("gold_completed_trades", JSON.stringify(incomingCompleted));
+          } catch (e) {
+            console.error("KV save error for gold trades:", e);
+          }
+        }
+        return new Response("Gold Trades Synced", { status: 200 });
+      }
+
       // Handle Telegram User Updates
       if (payload.update_id) {
         return await handleTelegramUpdate(payload, env);
@@ -786,6 +802,7 @@ async function handleTelegramUpdate(update, env) {
     }
     else if (action === "cmd_active") await sendActiveMessage(chatId, env);
     else if (action === "cmd_prices") await sendPricesMessage(chatId);
+    else if (action === "cmd_gold") await sendGoldMessage(chatId, env);
     else if (action === "cmd_history") await sendHistoryMessage(chatId, "ALL", "ALL", env);
     else if (action === "cmd_performance") await sendPerformanceMessage(chatId, "ALL", env);
     else if (action === "cmd_patterns") await sendPatternsMessage(chatId, env);
@@ -830,6 +847,8 @@ async function handleTelegramUpdate(update, env) {
       await sendRadarMessage(chatId, env);
     } else if (cmd === "/prices" || cmd === "/quotes") {
       await sendPricesMessage(chatId);
+    } else if (cmd === "/gold" || cmd === "/xauusd") {
+      await sendGoldMessage(chatId, env);
     } else if (cmd === "/history") {
       let filterPair = "ALL";
       let filterRange = "ALL";
@@ -1632,6 +1651,89 @@ async function sendPatternsMessage(chatId, env) {
 /**
  * /prices - Raw live price table
  */
+
+/**
+ * /gold - Dedicated Gold Satellite Engine Status & Live Spot Quote
+ */
+async function sendGoldMessage(chatId, env = null) {
+  const utcNow = new Date().toISOString().replace("T", " ").substring(0, 16) + " UTC";
+  const p = await getLivePriceFast({ symbol: "XAUUSD", ticker: "GC=F", digits: 2 }, 4000);
+  const quoteStr = (p !== null && !isNaN(p)) ? `$${p.toFixed(2)}` : "Awaiting Tick";
+
+  const d = new Date();
+  const utcMins = d.getUTCHours() * 60 + d.getUTCMinutes();
+  const isRollover = (utcMins >= 1230 && utcMins <= 1350);
+  const rolloverStatus = isRollover 
+    ? "⚠️ ACTIVE (20:30-22:30 UTC - Execution Suppressed)"
+    : "🟢 INACTIVE (Clean Execution Window)";
+
+  // Check Cloudflare KV for running Gold satellite positions
+  const kv = (env || CURRENT_ENV) && ((env || CURRENT_ENV).TRADE_LEDGER || (env || CURRENT_ENV).TRADES_KV || (env || CURRENT_ENV).KV);
+  let goldActive = {};
+  if (kv) {
+    try {
+      goldActive = (await kv.get("gold_active_trades", "json")) || {};
+    } catch (e) {}
+  }
+  const activeEntries = Object.entries(goldActive);
+  let activePosText = "• <b>Active Position:</b> <code>NONE (Standby for CCRS Macro Trigger)</code>\n";
+  if (activeEntries.length > 0) {
+    const [tId, t] = activeEntries[0];
+    const dir = (t.direction || "LONG").toUpperCase();
+    const dirIcon = dir === "LONG" ? "🟢" : "🔴";
+    const entryPrice = parseFloat(t.entry_price || t.entry || 0);
+    const slPrice = parseFloat(t.current_sl_price || t.sl_price || t.stop_loss || 0);
+    const tpPrice = parseFloat(t.current_tp_price || t.tp_price || t.take_profit || 0);
+    const lots = parseFloat(t.lots || 0.01);
+    let floatPnlText = "";
+    if (p !== null && !isNaN(p) && entryPrice > 0) {
+      const oz = lots * 100.0;
+      const rawDiff = dir === "LONG" ? (p - entryPrice) : (entryPrice - p);
+      const floatPnl = (rawDiff * oz) - (oz * 0.36);
+      const sign = floatPnl >= 0 ? "+" : "";
+      floatPnlText = ` · Floating: <b>${sign}$${floatPnl.toFixed(2)}</b>`;
+    }
+    const stage = t.cushion_stage || 0;
+    const stageDesc = stage === 2 ? " [Runner Extended]" : stage === 1 ? " [Risk Halved]" : "";
+    activePosText = 
+      `• <b>Active Position:</b> ${dirIcon} <b>${dir} ${lots.toFixed(2)} Lots</b> @ $${entryPrice.toFixed(2)}
+` +
+      `  • Current SL: <code>$${slPrice.toFixed(2)}</code> | TP: <code>$${tpPrice.toFixed(2)}</code>${stageDesc}${floatPnlText}\n`;
+  }
+
+  const text = 
+    `🟡 <b>GOLD SATELLITE ENGINE (XAUUSD)</b>\n` +
+    `━━━━━━━━━━━━━━━━━━\n` +
+    `• <b>Live Spot Quote:</b> <code>${quoteStr} / oz</code>\n` +
+    activePosText +
+    `• <b>Engine Status:</b> <code>ONLINE (Isolated Satellite Mode)</code>\n` +
+    `• <b>Contract Sizing:</b> <code>100 oz / Std Lot ($100/pt · 0.01 Min)</code>\n` +
+    `• <b>Stop Loss Model:</b> <code>2.0× ATR(14) Dynamic ($20.0 - $35.0 pts)</code>\n` +
+    `• <b>Target Geometry:</b> <code>1:1.50 R:R + Volatility Cushion Runner</code>\n` +
+    `• <b>Trailing Protection:</b> <code>Tier 1 (+1.2R halving) · Tier 2 (+1.5R profit lock)</code>\n` +
+    `• <b>Macro Factor:</b> <code>CCRS USD Factor (|Z_USD| ≥ 1.75σ)</code>\n` +
+    `• <b>Correlation Interlock:</b> <code>Max 2 Net USD Exposure (Cross-Engine)</code>\n` +
+    `• <b>Rollover Blackout:</b> <code>${rolloverStatus}</code>\n` +
+    `• <b>Weekend Cutoff:</b> <code>Friday 16:00 UTC Mandatory Flat Exit</code>\n` +
+    `━━━━━━━━━━━━━━━━━━\n` +
+    `🕒 <code>${utcNow}</code> · <i>GC=F Interbank Feed</i>`;
+
+  const keyboard = {
+    inline_keyboard: [
+      [
+        { text: "🔄 Refresh Gold Quote", callback_data: "cmd_gold" },
+        { text: "📊 All Quotes", callback_data: "cmd_prices" }
+      ],
+      [
+        { text: "📡 Market Radar", callback_data: "cmd_radar" },
+        { text: "⚡ Active Trades", callback_data: "cmd_active" }
+      ]
+    ]
+  };
+
+  await sendTelegramMessage(chatId, text, keyboard);
+}
+
 async function sendPricesMessage(chatId) {
   const utcNow = new Date().toISOString().replace("T", " ").substring(0, 16) + " UTC";
   const marketStatus = isMarketOpen()
@@ -1665,7 +1767,8 @@ async function sendPricesMessage(chatId) {
     inline_keyboard: [
       [
         { text: "📡 Market Radar", callback_data: "cmd_radar" },
-        { text: "🔄 Refresh Quotes", callback_data: "cmd_prices" }
+        { text: "🔄 Refresh Quotes", callback_data: "cmd_prices" },
+        { text: "🟡 Spot Gold", callback_data: "cmd_gold" }
       ],
       [
         { text: "« Main Menu", callback_data: "cmd_menu" }
@@ -1719,7 +1822,7 @@ async function sendStatusMessage(chatId, env) {
 ` +
     `• <b>Economic News Filter:</b> <code>ACTIVE (30m High-Impact Buffer)</code>
 ` +
-    `• <b>Monitored Universe:</b> <code>6 Major Forex Pairs (Zero Gold)</code>
+    `• <b>Monitored Universe:</b> <code>6 Major Forex Pairs + Gold Satellite (XAUUSD)</code>
 
 ` +
     `<b>🛡 EXECUTION ENGINE</b>
@@ -1920,9 +2023,68 @@ async function handleIncomingSignal(payload, env) {
 
   const rawSymbol = String(payload.symbol || payload.pair || "").toUpperCase();
   if (rawSymbol.includes("XAU") || rawSymbol.includes("GOLD")) {
-    console.warn(`Gold signal rejected: ${rawSymbol} is permanently excluded.`);
-    return new Response(JSON.stringify({ status: "REJECTED", message: "Gold trading is permanently disabled. Forex pairs only." }), {
-      status: 400,
+    const isLong = (payload.direction || "").toUpperCase() === "LONG" || (payload.direction || "").toUpperCase() === "BUY";
+    const dir = isLong ? "LONG" : "SHORT";
+    const icon = isLong ? "🟡 🟢" : "🟡 🔴";
+    const actionText = isLong ? "BUY / LONG" : "SELL / SHORT";
+    const entryPrice = parseFloat(payload.entry || payload.entry_price || payload.price || 0);
+    const slPrice = parseFloat(payload.stop_loss || payload.sl_price || 0);
+    const tpPrice = parseFloat(payload.take_profit || payload.tp_price || 0);
+    const slPts = Math.abs(entryPrice - slPrice);
+    const tpPts = Math.abs(tpPrice - entryPrice);
+    const lots = parseFloat(payload.lots || 0.01);
+    const barTime = payload.signal_time || payload.time || new Date().toISOString();
+
+    alertMessage = 
+      `🟡 <b>NEW TRADE SIGNAL · GOLD SATELLITE (XAUUSD)</b>\n` +
+      `━━━━━━━━━━━━━━━━━━\n` +
+      `🧭 <b>Direction:</b> <b>${actionText}</b>\n` +
+      `⏱ <b>Timeframe:</b> <b>1H (CCRS Macro Flow)</b>\n` +
+      `━━━━━━━━━━━━━━━━━━\n\n` +
+      `<b>📋 TRADE PARAMETERS (100 oz / Std Lot)</b>\n` +
+      `• <b>Live Entry:</b> <code>$${entryPrice.toFixed(2)}</code>\n` +
+      `• <b>Stop Loss:</b> <code>$${slPrice.toFixed(2)}</code> (${slPts.toFixed(1)} pts)\n` +
+      `• <b>Take Profit:</b> <code>$${tpPrice.toFixed(2)}</code> (${tpPts.toFixed(1)} pts · 1:1.50)\n` +
+      `• <b>Position Size:</b> <b>${lots.toFixed(2)} Lots</b> (${(lots * 100).toFixed(0)} oz)\n` +
+      `• <b>Risk Model:</b> Dynamic 2.0× ATR + Volatility Cushion\n\n` +
+      `<b>🔬 CONFLUENCE MODEL</b>\n` +
+      `• <b>Setup:</b> ${payload.strategy || "CCRS USD Macro Flow + Donchian Reclaim"}\n` +
+      `• <b>Interlock:</b> Max 2 Net USD Exposure Enforced\n\n` +
+      `━━━━━━━━━━━━━━━━━━\n` +
+      `🕒 <b>Confirmed Bar:</b> <code>${barTime}</code>`;
+
+    const goldTradeEntry = {
+      trade_id: payload.id || `GOLD_${Date.now()}`,
+      symbol: "XAUUSD",
+      direction: dir,
+      entry_price: entryPrice,
+      sl_price: slPrice,
+      tp_price: tpPrice,
+      current_sl_price: slPrice,
+      current_tp_price: tpPrice,
+      init_sl_points: slPts,
+      lots: lots,
+      entry_time: barTime,
+      status: "OPEN"
+    };
+
+    const kv = env && (env.TRADE_LEDGER || env.TRADES_KV || env.KV);
+    if (kv) {
+      try {
+        const active = (await kv.get("gold_active_trades", "json")) || {};
+        active[goldTradeEntry.trade_id] = goldTradeEntry;
+        await kv.put("gold_active_trades", JSON.stringify(active));
+      } catch (e) {
+        console.error("KV save error on gold incoming signal:", e);
+      }
+    }
+
+    const tgChatId = payload.chat_id || getTelegramChatId(env);
+    if (alertMessage && tgChatId) {
+      await sendTelegramMessage(tgChatId, alertMessage);
+    }
+    return new Response(JSON.stringify({ status: "SUCCESS", message: "Gold signal processed and dispatched" }), {
+      status: 200,
       headers: { "Content-Type": "application/json" }
     });
   }

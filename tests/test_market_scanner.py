@@ -860,7 +860,8 @@ def test_format_alert_message_ict():
     assert "ICT Killzone Liquidity Sweep" in msg
     assert "1.08" in msg
     assert "Pure Binary 1:1.50 Target (100% Runner to TP / SL, Zero Partials)" in msg
-    assert "$5,000.00 USD" in msg
+    import market_scanner
+    assert f"${market_scanner.DEFAULT_ACCOUNT_EQUITY:,.2f} USD" in msg
     assert "Risk Budget" in msg
 
 
@@ -1618,7 +1619,8 @@ def test_scan_pair_timeframe_ccrs_divergence_signal(monkeypatch):
     assert 20.0 <= sig["sl_pips"] <= 25.0
     assert sig["tp_pips"] == round(sig["sl_pips"] * 1.50, 1)
     assert sig["rr"] == 1.50
-    assert sig["monetary_risk_usd"] <= 50.00
+    import market_scanner
+    assert sig["monetary_risk_usd"] <= market_scanner.DEFAULT_ACCOUNT_EQUITY * 0.01
 
 
 def test_ccrs_alert_message_formatting():

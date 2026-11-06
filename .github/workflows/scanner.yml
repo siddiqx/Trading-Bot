@@ -88,7 +88,10 @@ jobs:
           ACCOUNT_EQUITY: ${{ secrets.ACCOUNT_EQUITY || '25000.0' }}
           RISK_PCT: ${{ secrets.RISK_PCT || '0.50' }}
         run: |
+          echo "=== [1/2] Scanning Forex Markets (6 Institutional Pairs) ==="
           python market_scanner.py
+          echo "=== [2/2] Scanning Gold Satellite Engine (XAUUSD) ==="
+          python satellite/market_scanner_gold.py
 
       - name: Commit & Push Updated Trade Records
         if: always()

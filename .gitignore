@@ -38,6 +38,7 @@ ENV/
 *.sqlite3
 data/*
 !data/patterns/
+!data/gold_trade_records.json
 
 # Testing
 .pytest_cache/

@@ -1051,15 +1051,7 @@ def get_live_price(ticker: str, pip: float, digits: int) -> float | None:
     except Exception as e:
         logger.debug(f"get_live_price notice for {ticker}: {e}")
         return None
-    except Exception as e:
-        logger.debug(f"get_live_price notice for {ticker}: {e}")
-        return None
 
-
-def fetch_spot_gold_candles(interval: str, n_bars: int = 100) -> pd.DataFrame:
-    """Disabled: Gold trading and data fetching are permanently removed."""
-    logger.warning("fetch_spot_gold_candles rejected: Gold trading is permanently disabled.")
-    return pd.DataFrame()
 
 
 def fetch_candles(ticker: str, interval: str, range_days: str = "7d") -> pd.DataFrame:
