@@ -994,6 +994,9 @@ def check_active_trades(records: dict):
 
 def send_telegram_alert(text: str, max_retries: int = 3) -> bool:
     """Send Telegram message with exponential backoff on rate limit (HTTP 429)."""
+    if os.environ.get("PYTEST_CURRENT_TEST"):
+        logger.info(f"[TELEGRAM SUPPRESSED — test mode] {text[:120]}")
+        return True
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
         if not os.environ.get("PYTEST_CURRENT_TEST"):
             logger.error("Configuration Error: TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID is missing from environment. Outbound alert dropped.")
@@ -3032,7 +3035,14 @@ def format_alert_message(sig: dict) -> str:
         )
     risk_line = risk_block
 
+    is_test = sig.get("is_test") or "TEST" in str(sig.get("id", "")).upper()
+    test_banner = (
+        "🧪 <b>[SYSTEM VERIFICATION TEST · NOT A LIVE TRADE]</b>\n"
+        "━━━━━━━━━━━━━━━━━━\n"
+    ) if is_test else ""
+
     return (
+        f"{test_banner}"
         f"{icon} <b>NEW TRADE SIGNAL · {display_pair}</b>\n"
         f"━━━━━━━━━━━━━━━━━━\n"
         f"🧭 <b>Direction:</b> <b>{action_text}</b>\n"
@@ -3345,6 +3355,7 @@ if __name__ == "__main__":
             tp, sl = calculate_tp_sl(live_price, "LONG", "EURUSD", tp_pips=TAKE_PROFIT_PIPS, sl_pips=STOP_LOSS_PIPS)
             test_sig = {
                 "id": "EURUSD_15M_TEST_LONG",
+                "is_test": True,
                 "pair": "EURUSD",
                 "timeframe": "15M",
                 "direction": "LONG",
@@ -3380,6 +3391,7 @@ if __name__ == "__main__":
             tp, sl = calculate_tp_sl(1.08250, "LONG", "EURUSD", tp_pips=TAKE_PROFIT_PIPS, sl_pips=STOP_LOSS_PIPS)
             test_sig = {
                 "id": "EURUSD_15M_TEST_LONG",
+                "is_test": True,
                 "pair": "EURUSD", "timeframe": "15M", "direction": "LONG",
                 "time": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
                 "entry": 1.08250, "bar_close_price": 1.08250,

@@ -1215,6 +1215,7 @@ def test_in_cycle_max_unprotected_cap(monkeypatch):
     monkeypatch.setattr("market_scanner.load_state", lambda: {"alerted_signals": []})
     monkeypatch.setattr("market_scanner.save_state", lambda *args, **kwargs: None)
     monkeypatch.setattr("market_scanner.sync_worker", lambda *args, **kwargs: None)
+    monkeypatch.setattr("market_scanner.send_telegram_alert", lambda *args, **kwargs: None)
 
     # Mock returning a signal for GBPUSD 15M
     def mock_scan(pair_name, cfg, tf, state, **kwargs):

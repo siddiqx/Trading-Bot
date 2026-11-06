@@ -97,6 +97,9 @@ WORKER_SYNC_URL = "https://tradingview-telegram-relay.siddiqsiddiq00012.workers.
 
 def send_telegram_alert(text: str, max_retries: int = 3) -> bool:
     """Dispatches Telegram notifications for Gold signals and exits with 429 backoff."""
+    if os.environ.get("PYTEST_CURRENT_TEST"):
+        logger.info(f"[TELEGRAM SUPPRESSED — test mode] {text[:120]}")
+        return True
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
         if not os.environ.get("PYTEST_CURRENT_TEST"):
             logger.warning("Telegram credentials not configured in environment. Outbound alert suppressed.")
@@ -521,7 +524,13 @@ def check_active_gold_trades(records: Dict[str, Any], cur_bar: pd.Series, record
 
 def send_signal_alert(sig: Dict[str, Any]) -> None:
     """Formats and dispatches Telegram notification for fresh Gold entries."""
+    is_test = sig.get("is_test") or "TEST" in str(sig.get("id", "")).upper()
+    test_banner = (
+        "🧪 <b>[SYSTEM VERIFICATION TEST · NOT A LIVE TRADE]</b>\n"
+        "━━━━━━━━━━━━━━━━━━\n"
+    ) if is_test else ""
     text = (
+        f"{test_banner}"
         f"🟡 <b>[GOLD SATELLITE ENGINE] FRESH SIGNAL</b>\n\n"
         f"• <b>Instrument:</b> {sig['symbol']} (Spot Gold)\n"
         f"• <b>Direction:</b> <b>{sig['direction']}</b>\n"
@@ -778,6 +787,7 @@ def main():
             "h4_bull": True,
             "usd_exposure": 0,
             "max_usd_exposure": 2,
+            "is_test": True,
         }
         send_signal_alert(test_payload)
         return
