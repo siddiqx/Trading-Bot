@@ -132,3 +132,28 @@
 
 ---
 
+### #6 · USDCHF (15M) — 🛑 LOSS (-1.00R)
+
+- **Global Sequence**: Trade `#6`
+- **Direction**: `LONG` | **Outcome**: `LOSS` (`-20.0 pips` / `-1.0R`)
+- **Execution Range**: Entry ` 0.82094 ` ➔ Exit ` 0.81894 `
+- **Targets**: Stop Loss ` 0.81894 ` | Take Profit ` 0.82394 `
+- **Holding Time**: `2.05 hours` (8 bars)
+- **Window**: `2026-11-09 17:45:00 UTC` ➔ `2026-11-09 19:47:50 UTC`
+
+#### 📊 Excursion & Market Regime
+| Metric | Value | Detail |
+| :--- | :--- | :--- |
+| **Max Favorable Excursion (MFE)** | `+2.2 pips` | Reached `+0.11R` (7.3% of TP) |
+| **Max Adverse Excursion (MAE)** | `-22.3 pips` | Deepest drawdown `-1.11R` |
+| **Session** | `New York Afternoon` | Institutional Market Timing |
+| **Entry RSI (14)** | `50.0` | Momentum Baseline |
+| **EMA Alignment** | `BULLISH_EXPANDING` | Structural Trend Bias |
+
+#### 🔬 Post-Mortem Diagnosis: `STRUCTURAL_INVALIDATION`
+> **Analysis**: Order block level was invalidated by institutional flow after 1 bar(s). Stop-loss executed disciplined capital preservation.
+>
+> **Actionable Takeaway**: Trade adhered strictly to risk geometry. Invalidation was clean and preserved capital.
+
+---
+
