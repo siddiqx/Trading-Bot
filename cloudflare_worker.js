@@ -405,6 +405,8 @@ async function autoResolveTrade(symbol, t, outcome, exitPrice, env, prefetchedLe
   await triggerGitHubScanner(env);
 }
 
+let LAST_GITHUB_DISPATCH_TIME = 0;
+
 /**
  * Dispatches GitHub Actions scanner workflow via REST API
  */
@@ -413,11 +415,19 @@ async function triggerGitHubScanner(env) {
     console.log("Forex market is closed for the weekend. Skipping GitHub scanner dispatch.");
     return false;
   }
-  const token = (env && (env.GITHUB_TOKEN || env.GH_TOKEN)) || DEFAULT_GH_TOKEN;
+  const token = (env && (env.GITHUB_TOKEN || env.GH_TOKEN || env.GITHUB_PAT)) || DEFAULT_GH_TOKEN;
   if (!token) {
     console.warn("GITHUB_TOKEN missing from environment. Workflow dispatch skipped.");
     return false;
   }
+
+  const now = Date.now();
+  // Prevent duplicate concurrent dispatches within 60 seconds
+  if (now - LAST_GITHUB_DISPATCH_TIME < 60000) {
+    console.log("[GitHub Dispatch] Debounce active: Dispatch already sent in the last 60s. Skipping duplicate.");
+    return true;
+  }
+
   try {
     const res = await fetch("https://api.github.com/repos/siddiqx/Trading-Bot/actions/workflows/scanner.yml/dispatches", {
       method: "POST",
@@ -428,7 +438,15 @@ async function triggerGitHubScanner(env) {
       },
       body: JSON.stringify({ ref: "main" })
     });
-    return res.status === 204;
+    if (res.status === 204) {
+      LAST_GITHUB_DISPATCH_TIME = now;
+      console.log("[GitHub Dispatch] Successfully triggered scanner.yml workflow on siddiqx/Trading-Bot (HTTP 204).");
+      return true;
+    } else {
+      const errBody = await res.text().catch(() => "");
+      console.error(`[GitHub Dispatch] Workflow dispatch rejected (HTTP ${res.status}): ${errBody}`);
+      return false;
+    }
   } catch (e) {
     console.error("Workflow dispatch error:", e);
     return false;
@@ -575,25 +593,14 @@ export default {
       if (url.pathname === "/cron" || url.pathname === "/tick" || url.pathname === "/check" || url.pathname === "/dispatch_scan") {
         await ensureWebhookRegistered(env);
         const result = await runActiveTradeChecks(env);
-        let ghDispatchResult = null;
-        const ghToken = env && (env.GH_TOKEN || env.GITHUB_TOKEN || env.GITHUB_PAT);
-        if (ghToken) {
-          try {
-            const ghResp = await fetch("https://api.github.com/repos/siddiqx/Trading-Bot/actions/workflows/scanner.yml/dispatches", {
-              method: "POST",
-              headers: {
-                "Authorization": `Bearer ${ghToken}`,
-                "Accept": "application/vnd.github.v3+json",
-                "User-Agent": "Cloudflare-Worker-Market-Scanner-Relay"
-              },
-              body: JSON.stringify({ ref: "main" })
-            });
-            ghDispatchResult = { status: ghResp.status, ok: ghResp.ok };
-          } catch(err) {
-            ghDispatchResult = { error: String(err) };
-          }
-        }
-        return new Response(JSON.stringify({ status: "CRON_EXECUTED", gh_dispatch: ghDispatchResult, ...result }, null, 2), {
+        const ghDispatched = await triggerGitHubScanner(env);
+        const tokenConfigured = !!(env && (env.GH_TOKEN || env.GITHUB_TOKEN || env.GITHUB_PAT));
+        return new Response(JSON.stringify({
+          status: "CRON_EXECUTED",
+          github_token_configured: tokenConfigured,
+          github_scanner_dispatched: ghDispatched,
+          ...result
+        }, null, 2), {
           status: 200,
           headers: { "Content-Type": "application/json" }
         });
@@ -644,6 +651,8 @@ export default {
         version: "3.3.0-institutional-production",
         timestamp: new Date().toISOString(),
         kv_bound: !!kv,
+        github_token_configured: !!(env && (env.GH_TOKEN || env.GITHUB_TOKEN || env.GITHUB_PAT)),
+        cron_trigger: "2,17,32,47 * * * *",
         env_keys: env ? Object.keys(env) : [],
         kv_active: kvActive,
         kv_completed: kvCompleted,
@@ -773,11 +782,15 @@ export default {
 
   /**
    * Cloudflare Worker Scheduled Cron Trigger (Runs 24/7 without GitHub Actions delays)
+   * Dispatches GitHub Actions market scanner workflow every 15 minutes, monitors active trades,
+   * and verifies Telegram webhook vitality.
    */
   async scheduled(event, env, ctx) {
     CURRENT_ENV = env;
+    console.log(`[Cloudflare Cron] Scheduled trigger fired at ${new Date().toISOString()} (cron: ${event && event.cron ? event.cron : "15m-interval"})`);
     ctx.waitUntil(Promise.all([
       runActiveTradeChecks(env),
+      triggerGitHubScanner(env),
       ensureWebhookRegistered(env)
     ]));
   }

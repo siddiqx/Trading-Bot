@@ -106,7 +106,8 @@ Until explicitly authorized by the user:
 
 ## 6. Recent Remediation & Next Recommended Task
 
-### Completed Remediation (October 28, 2026)
+### Completed Remediation (October 28 - November 9, 2026)
+- **ISS-CRON-01 (Cloudflare Edge 15M Cron Trigger & GitHub Dispatch):** Configured Cloudflare Worker cron triggers in `wrangler.toml` (`crons = ["2,17,32,47 * * * *"]`) and hardened `cloudflare_worker.js` with 60-second debounce and multi-token fallback (`GITHUB_TOKEN`, `GH_TOKEN`, `GITHUB_PAT`). Bypasses throttled GitHub Actions schedule queues by reliably dispatching `workflow_dispatch` to `.github/workflows/scanner.yml` on every 15M candle close.
 - **ISS-SEC-01 & ISS-SEC-02 (Credential Security):** Cleansed plaintext Telegram token, chat ID, and GitHub PAT fallbacks from `market_scanner.py` and `cloudflare_worker.js`. Mandated environment variables and encrypted secret bindings. Created `.env.example` and updated `.gitignore`.
 - **ISS-RISK-01 (Multi-Currency Position Sizing):** Implemented `calculate_pip_value_usd()`, updated `calculate_position_size()`, and `calculate_monetary_risk()` in `core/instrument_validator.py`. Connected `market_scanner.py` signal generation and alert formatter. Added exhaustive unit tests in `tests/test_position_sizing.py`.
 - **ISS-STRAT-01 (Strategy Exit Alignment & Single Source of Truth):** Created `core/config.py` establishing canonical 15.0p TP and 10.0p SL (1:1.50 R:R), $5,000 equity, 1% risk ($50), and 6 Forex pairs (zero Gold). Aligned `market_scanner.py`, `core/instrument_validator.py`, `app/config.py`, and `cloudflare_worker.js`. Enforced budget protection: trades are safely skipped if min permitted lot (0.01) would breach dollar budget.

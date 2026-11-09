@@ -5,3 +5,10 @@ compatibility_date = "2024-01-01"
 [[kv_namespaces]]
 binding = "TRADE_LEDGER"
 id = "365dee334052469887369b3b7659fc97"
+
+# 24/7 Cloudflare Edge Cron Trigger:
+# Executes every 15 minutes at :02, :17, :32, :47 (2 minutes after 15M candle close)
+# to guarantee reliable, zero-delay market scanner invocation via GitHub workflow_dispatch.
+[triggers]
+crons = ["2,17,32,47 * * * *"]
+
