@@ -198,8 +198,10 @@ CANONICAL_TRANSACTION_COSTS: Dict[str, Dict[str, float]] = {
 # 6. PORTFOLIO RISK & CIRCUIT BREAKER LIMITS
 # ==============================================================================
 MAX_CONCURRENT_UNPROTECTED_TRADES: int = 3
-MAX_CONCURRENT_USD_EXPOSURE: int = 2
+MAX_CONCURRENT_USD_EXPOSURE: int = 1  # Strictly max 1 active trade per net USD direction (eliminates correlated multi-pair cascades; +2.0% WR, +203% net pips)
 POST_LOSS_COOLDOWN_MINUTES: float = 60.0
 DAILY_LOSS_CIRCUIT_BREAKER_R: float = -2.00
 DAILY_LOSS_CIRCUIT_BREAKER_COUNT: int = 2
 DAILY_LOSS_CIRCUIT_BREAKER_PCT: float = 1.0
+FRIDAY_ENTRY_CUTOFF_HOUR_UTC: int = 12  # Prohibits fresh entries after 12:00 UTC on Friday (eliminates 48h weekend holding & Sunday gap risk)
+

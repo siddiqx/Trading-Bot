@@ -369,7 +369,7 @@ def simulate_portfolio_backtest(
         if len(active_positions) >= MAX_CONCURRENT_UNPROTECTED_TRADES:
             continue
 
-        # Max USD directional exposure (cap at 2 in same direction)
+        # Max USD directional exposure (capped by MAX_CONCURRENT_USD_EXPOSURE)
         sig_bias = get_usd_directional_bias(pair, direction)
         if sig_bias != 0:
             current_bias_count = sum(

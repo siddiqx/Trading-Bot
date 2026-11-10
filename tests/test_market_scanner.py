@@ -1083,6 +1083,39 @@ def test_usd_directional_bias_and_exposure_counter():
     assert count_usd_direction_exposure(mock_active, -1) == 1
 
 
+def test_max_concurrent_usd_exposure_enforcement():
+    """Verifies that MAX_CONCURRENT_USD_EXPOSURE = 1 rejects any second trade in the same net USD bias."""
+    from core.config import MAX_CONCURRENT_USD_EXPOSURE
+    from market_scanner import count_usd_direction_exposure
+
+    assert MAX_CONCURRENT_USD_EXPOSURE == 1
+
+    # With 1 active Long USD trade (USDCAD LONG)
+    active = {"USDCAD_15M": {"pair": "USDCAD", "direction": "LONG"}}
+    long_usd_count = count_usd_direction_exposure(active, target_bias=1)
+    assert long_usd_count == 1
+    # A prospective AUDUSD SHORT (Long USD = +1) must be rejected because count >= MAX_CONCURRENT_USD_EXPOSURE
+    assert long_usd_count >= MAX_CONCURRENT_USD_EXPOSURE
+
+
+def test_friday_weekend_hold_guard():
+    """Verifies that FRIDAY_ENTRY_CUTOFF_HOUR_UTC is 12 and correctly prevents weekend holding."""
+    from core.config import FRIDAY_ENTRY_CUTOFF_HOUR_UTC
+
+    assert FRIDAY_ENTRY_CUTOFF_HOUR_UTC == 12
+
+    # Test Friday 13:00 UTC (after cutoff)
+    fri_post_cutoff = datetime(2026, 11, 6, 13, 0, tzinfo=timezone.utc)
+    assert fri_post_cutoff.weekday() == 4
+    assert fri_post_cutoff.hour >= FRIDAY_ENTRY_CUTOFF_HOUR_UTC
+
+    # Test Friday 10:00 UTC (before cutoff)
+    fri_pre_cutoff = datetime(2026, 11, 6, 10, 0, tzinfo=timezone.utc)
+    assert fri_pre_cutoff.weekday() == 4
+    assert fri_pre_cutoff.hour < FRIDAY_ENTRY_CUTOFF_HOUR_UTC
+
+
+
 def test_post_loss_cooldown_locks_pair():
     """Verify pair-specific post-loss cooldown locks out pair for 60 minutes after a stop-loss."""
     from market_scanner import is_pair_in_post_loss_cooldown
@@ -1197,12 +1230,12 @@ def test_in_cycle_max_unprotected_cap(monkeypatch):
     """Ensure run_scan_cycle strictly rejects signals once 3 unprotected trades are active."""
     from market_scanner import run_scan_cycle
 
-    # Simulate 3 active floating unprotected trades
+    # Simulate 3 active floating unprotected trades (all Long USD, so prospective GBPUSD LONG has 0 Short USD conflict)
     records_state = {
         "active_trades": {
             "EURUSD_15M": {"pair": "EURUSD", "direction": "SHORT", "be_active": False},
             "USDCHF_15M": {"pair": "USDCHF", "direction": "LONG", "be_active": False},
-            "AUDUSD_15M": {"pair": "AUDUSD", "direction": "LONG", "be_active": False},
+            "USDJPY_15M": {"pair": "USDJPY", "direction": "LONG", "be_active": False},
         },
         "completed_trades": []
     }

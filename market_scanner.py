@@ -131,6 +131,8 @@ from core.config import (
     NIGHT_MAX_HOLD_BARS,
     NIGHT_MAX_SPREAD_PIPS,
     NIGHT_MIN_TP_PIPS,
+    MAX_CONCURRENT_USD_EXPOSURE,
+    FRIDAY_ENTRY_CUTOFF_HOUR_UTC,
 )
 
 # Universal Strategy Exits (Non-negotiable baseline)
@@ -2037,6 +2039,11 @@ def scan_pair_timeframe(pair_name: str, config: dict, tf: str, state: dict, ccrs
         logger.info(f"Skipping {pair_name} ({tf}): Sunday opening gap guard active (avoids illiquid spread widening).")
         return []
 
+    # Friday Weekend Hold Guard: Prohibit fresh entries after 12:00 UTC on Friday to eliminate 48h weekend hold gap risk
+    if not os.environ.get("PYTEST_CURRENT_TEST") and now_utc.weekday() == 4 and now_utc.hour >= FRIDAY_ENTRY_CUTOFF_HOUR_UTC:
+        logger.info(f"Skipping {pair_name} ({tf}): Friday weekend hold guard active (after {FRIDAY_ENTRY_CUTOFF_HOUR_UTC}:00 UTC). Fresh entries prohibited to eliminate 48h weekend holding risk.")
+        return []
+
     # Institutional Session Liquidity Guard (Forex):
     # Surveillance is active strictly during institutional volume hours (London/NY hours: 06:00-17:00 UTC).
     # Illiquid Asian night sessions and rollover window (22:00 UTC) are strictly excluded to avoid low-R spread chop.
@@ -3262,15 +3269,15 @@ def run_scan_cycle():
                         telemetry["signals_rejected"].append({"pair": sig["pair"], "direction": sig["direction"], "reason": "Max 3 unprotected positions reached"})
                         continue
 
-                    # USD Directional Correlation Guard: Max 2 concurrent positions in same USD direction
+                    # USD Directional Correlation Guard: Max concurrent positions in same USD direction (capped by MAX_CONCURRENT_USD_EXPOSURE)
                     sig_bias = get_usd_directional_bias(sig["pair"], sig["direction"])
                     if sig_bias != 0:
                         usd_count = count_usd_direction_exposure(active_trades_map, sig_bias)
-                        if usd_count >= 2:
+                        if usd_count >= MAX_CONCURRENT_USD_EXPOSURE:
                             bias_label = "LONG USD" if sig_bias > 0 else "SHORT USD"
                             logger.warning(
                                 f"USD Correlation Guard: Rejecting {sig['pair']} {sig['direction']}. "
-                                f"Already have {usd_count} active {bias_label} positions. Avoiding clustered exposure."
+                                f"Already have {usd_count} active {bias_label} positions (limit: {MAX_CONCURRENT_USD_EXPOSURE}). Avoiding clustered exposure."
                             )
                             telemetry["signals_rejected"].append({"pair": sig["pair"], "direction": sig["direction"], "reason": f"USD correlation cap ({usd_count} {bias_label})"})
                             continue

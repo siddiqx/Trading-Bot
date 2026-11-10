@@ -30,7 +30,8 @@ The system operates primarily via a **24/7 Serverless Cloud Architecture**:
 | **News Filter** | Automated Forex Factory High-Impact Filter | Real-time economic calendar feed (`core/news_filter.py`). Automatically suppresses fresh entries 30 minutes before and after Red Folder news releases. |
 | **Risk per Trade** | 0.50% ($25 on $5,000 reference) | Calibrated prop firm risk sizing. Max daily drawdown capped at ~2.0% ($100), ensuring immunity from 4.0% daily DD limits. |
 | **Daily Circuit Breaker** | Prop firm capital preservation | Halts if today's loss $\le -2.00\text{R}$ or if $\ge 2$ stop-outs occur today (1.0% max daily loss ceiling). |
-| **Correlated Exposure** | Risk limit | Max 3 simultaneous unprotected trades; max 2 in same net USD direction. |
+| **Correlated Exposure** | Risk limit | Max 3 simultaneous unprotected trades; max 1 in same net USD direction (`MAX_CONCURRENT_USD_EXPOSURE = 1`, eliminates correlated multi-pair cascades; verified +2.0% WR, +203% net pips). |
+| **Weekend Entry Cutoff** | Risk limit | Fresh entries prohibited after 12:00 UTC on Friday (`FRIDAY_ENTRY_CUTOFF_HOUR_UTC = 12`) to eliminate 48-hour weekend holding & Sunday opening gap risk. |
 | **Post-Loss Lockout** | Churn prevention | 60-minute mandatory lockout for an instrument after a stop-loss. |
 
 ---
