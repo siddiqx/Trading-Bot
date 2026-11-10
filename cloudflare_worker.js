@@ -593,7 +593,7 @@ export default {
       if (url.pathname === "/cron" || url.pathname === "/tick" || url.pathname === "/check" || url.pathname === "/dispatch_scan") {
         await ensureWebhookRegistered(env);
         const result = await runActiveTradeChecks(env);
-        const ghDispatched = await triggerGitHubScanner(env);
+        const ghDispatched = result.github_scanner_dispatched;
         const tokenConfigured = !!(env && (env.GH_TOKEN || env.GITHUB_TOKEN || env.GITHUB_PAT));
         return new Response(JSON.stringify({
           status: "CRON_EXECUTED",
@@ -789,8 +789,7 @@ export default {
     CURRENT_ENV = env;
     console.log(`[Cloudflare Cron] Scheduled trigger fired at ${new Date().toISOString()} (cron: ${event && event.cron ? event.cron : "15m-interval"})`);
     ctx.waitUntil(Promise.all([
-      runActiveTradeChecks(env),
-      triggerGitHubScanner(env),
+      runActiveTradeChecks(env), // Automatically dispatches GitHub Actions market scanner internally
       ensureWebhookRegistered(env)
     ]));
   }
