@@ -232,3 +232,28 @@
 
 ---
 
+### #10 · USDCAD (15M) — 🎯 WIN (+1.75R)
+
+- **Global Sequence**: Trade `#10`
+- **Direction**: `LONG` | **Outcome**: `WIN` (`+30.8 pips` / `1.5R`)
+- **Execution Range**: Entry ` 1.4239 ` ➔ Exit ` 1.42698 `
+- **Targets**: Stop Loss ` 1.4229 ` | Take Profit ` 1.42698 `
+- **Holding Time**: `6.55 hours` (26 bars)
+- **Window**: `2026-11-11 15:45:00 UTC` ➔ `2026-11-11 22:17:54 UTC`
+
+#### 📊 Excursion & Market Regime
+| Metric | Value | Detail |
+| :--- | :--- | :--- |
+| **Max Favorable Excursion (MFE)** | `+61.0 pips` | Reached `+6.1R` (100.0% of TP) |
+| **Max Adverse Excursion (MAE)** | `-7.0 pips` | Deepest drawdown `-0.7R` |
+| **Session** | `London/New York Overlap` | Institutional Market Timing |
+| **Entry RSI (14)** | `50.0` | Momentum Baseline |
+| **EMA Alignment** | `BULLISH_EXPANDING` | Structural Trend Bias |
+
+#### 🔬 Post-Mortem Diagnosis: `HIGH_VELOCITY_BREAKOUT`
+> **Analysis**: Take-profit hit within 1 bar(s). High momentum impulse confirmed structural breakout conviction.
+>
+> **Actionable Takeaway**: Validates the 20-period Donchian channel breakout trigger.
+
+---
+
