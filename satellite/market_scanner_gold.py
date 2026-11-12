@@ -667,16 +667,16 @@ def run_gold_scan_cycle() -> None:
         tested_ema = (cur_l <= last_bar["ema20"] * 1.0005) and (cur_c > cur_o)
         swept_low = (cur_l < prev_bar["donch_l10"]) and (cur_c > prev_bar["donch_l10"])
         rsi_ok = last_bar["rsi14"] <= 75.0
-        h4_align = last_bar["bull_4h"]
-        if (tested_ema or swept_low) and rsi_ok and h4_align:
+        # 4H MA filter removed: CCRS USD macro flow and 1H precision triggers govern execution
+        if (tested_ema or swept_low) and rsi_ok:
             trigger = True
             trigger_type = "EMA20 Retest Rejection" if tested_ema else "10-Bar Donchian Liquidity Sweep"
     else:
         tested_ema = (cur_h >= last_bar["ema20"] * 0.9995) and (cur_c < cur_o)
         swept_high = (cur_h > prev_bar["donch_h10"]) and (cur_c < prev_bar["donch_h10"])
         rsi_ok = last_bar["rsi14"] >= 25.0
-        h4_align = last_bar["bear_4h"]
-        if (tested_ema or swept_high) and rsi_ok and h4_align:
+        # 4H MA filter removed: CCRS USD macro flow and 1H precision triggers govern execution
+        if (tested_ema or swept_high) and rsi_ok:
             trigger = True
             trigger_type = "EMA20 Retest Rejection" if tested_ema else "10-Bar Donchian Liquidity Sweep"
 
