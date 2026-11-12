@@ -226,10 +226,45 @@ def execute_ctrader_order(sig: Dict[str, Any]) -> Dict[str, Any]:
     entry = float(sig.get("entry") or sig.get("entry_price") or 0.0)
     stop_loss = float(sig.get("stop_loss") or sig.get("sl_price") or 0.0)
     take_profit = float(sig.get("take_profit") or sig.get("tp_price") or 0.0)
-    lots = float(sig.get("suggested_lots") or sig.get("calc_lots") or sig.get("lots") or 0.10)
+    lots = float(sig.get("suggested_lots") or sig.get("calc_lots") or sig.get("lots") or 0.0)
+
+    # Dynamic Account Equity & Risk Resolution for cTrader Execution
+    env_equity = float(os.environ.get("ACCOUNT_EQUITY", "25000.0"))
+    env_risk_pct = float(os.environ.get("RISK_PCT", "1.00"))
+    sig_equity = float(sig.get("account_equity") or sig.get("equity") or 0.0)
 
     symbol_id = get_symbol_id(pair)
     is_gold = "XAU" in pair.upper() or "GOLD" in pair.upper()
+
+    # If lots is missing/zero, or if sig was generated on a mismatched reference equity (e.g. 5,000 vs 25,000):
+    # Dynamically recalculate lots to guarantee execution risk matches live account equity
+    if lots <= 0.0 or (sig_equity > 0 and abs(sig_equity - env_equity) > 1.0):
+        try:
+            if is_gold:
+                from satellite.gold_validator import calculate_gold_position_size
+                sl_points = float(sig.get("sl_points") or sig.get("init_sl_points") or abs(entry - stop_loss) or 25.0)
+                recalc_lots, _ = calculate_gold_position_size(env_equity, env_risk_pct, sl_points)
+                if recalc_lots > 0:
+                    lots = recalc_lots
+            else:
+                from core.instrument_validator import calculate_position_size
+                pip_size = 0.01 if "JPY" in pair.upper() else 0.0001
+                sl_pips = float(sig.get("sl_pips") or (abs(entry - stop_loss) / pip_size) or 22.0)
+                recalc_lots = calculate_position_size(
+                    account_equity=env_equity,
+                    risk_pct=env_risk_pct,
+                    sl_pips=sl_pips,
+                    symbol=pair,
+                    exchange_rate=entry if entry > 0 else None
+                )
+                if recalc_lots > 0:
+                    lots = recalc_lots
+        except Exception as recalc_err:
+            logger.warning(f"cTrader dynamic lot recalculation notice: {recalc_err}. Using original lots: {lots}")
+
+    if lots <= 0.0:
+        lots = 0.10  # Fallback micro-lot
+
     if is_gold:
         contract_size = 100.0  # 100 Troy Ounces per standard lot
         units = int(round(lots * contract_size))

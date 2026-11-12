@@ -128,3 +128,42 @@ def test_live_demo_close_position_structure(monkeypatch):
     assert res["volume_cents"] == 5_600_000
     assert res["account_id"] == "12345678"
 
+
+def test_dynamic_25k_account_lot_sizing(monkeypatch):
+    """Verify that a 25k account dynamically sizes Forex and Gold to avoid low-profit under-sizing."""
+    import core.ctrader_executor as ce
+    monkeypatch.setattr(ce, "ENABLE_CTRADER_EXECUTION", False)
+    monkeypatch.setenv("ACCOUNT_EQUITY", "25000.0")
+    monkeypatch.setenv("RISK_PCT", "1.00")
+
+    # 1. Forex EURUSD with 22p stop: $250 budget / (22 * $10) = 1.13 lots
+    sig_forex = {
+        "pair": "EURUSD",
+        "direction": "LONG",
+        "entry": 1.08500,
+        "stop_loss": 1.08280,
+        "take_profit": 1.08850,
+        "sl_pips": 22.0,
+        "account_equity": 5000.0, # Old/mismatched signal equity
+        "suggested_lots": 0.11
+    }
+    res_forex = ce.execute_ctrader_order(sig_forex)
+    assert res_forex["lots"] == 1.13
+    assert res_forex["units"] == 113_000
+
+    # 2. Gold XAUUSD with 25pt stop: $250 budget / (25 * $100) = 0.10 lots
+    sig_gold = {
+        "pair": "XAUUSD",
+        "direction": "SHORT",
+        "entry": 4050.0,
+        "stop_loss": 4075.0,
+        "take_profit": 4012.5,
+        "sl_points": 25.0,
+        "account_equity": 5000.0,
+        "suggested_lots": 0.01
+    }
+    res_gold = ce.execute_ctrader_order(sig_gold)
+    assert res_gold["lots"] == 0.10
+    assert res_gold["units"] == 10 # 10 oz
+
+
