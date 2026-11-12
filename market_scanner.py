@@ -142,7 +142,7 @@ RISK_REWARD: float = FIXED_RISK_REWARD_RATIO      # 1:1.5 before costs
 
 # Prop Firm Account Sizing Parameters (Configurable via environment variables)
 from core.news_filter import is_news_window_active
-from core.ctrader_executor import execute_ctrader_order, modify_ctrader_position
+from core.ctrader_executor import execute_ctrader_order, modify_ctrader_position, close_ctrader_position
 
 DEFAULT_ACCOUNT_EQUITY: float = float(os.environ.get("ACCOUNT_EQUITY", "5000.0"))
 DEFAULT_RISK_PCT: float = float(os.environ.get("RISK_PCT", str(PROP_FIRM_RISK_PCT)))
@@ -858,6 +858,23 @@ def check_active_trades(records: dict):
 
             logger.info(f"==> TRADE RESOLVED (FULL TARGET REACHED): {pair} {trade.get('direction')} (+{realized_pips} pips, +{realized_r} R)")
 
+            # Dispatch Market Close to cTrader to prevent orphaned live positions
+            pos_id = trade.get("ctrader_position_id") or trade.get("ctrader_receipt", {}).get("position_id")
+            ctrader_close_res = None
+            if pos_id:
+                try:
+                    vol_units = trade.get("units") or trade.get("ctrader_receipt", {}).get("units")
+                    lots_val = trade.get("lots") or trade.get("ctrader_receipt", {}).get("lots")
+                    ctrader_close_res = close_ctrader_position(
+                        position_id=int(pos_id),
+                        volume_units=int(vol_units) if vol_units else None,
+                        lots=float(lots_val) if lots_val else None,
+                        pair=pair
+                    )
+                    logger.info(f"[cTrader Auto-Close] Position #{pos_id} close response: {ctrader_close_res.get('status')}")
+                except Exception as ex:
+                    logger.error(f"[cTrader Auto-Close] Error closing position #{pos_id} on TP: {ex}")
+
             completed_record = {
                 **trade,
                 "exit_price": float(exit_price),
@@ -865,7 +882,8 @@ def check_active_trades(records: dict):
                 "realized_pips": float(round(realized_pips, 1)),
                 "realized_r": float(round(realized_r, 2)),
                 "closed_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-                "status": "CLOSED"
+                "status": "CLOSED",
+                "ctrader_close_receipt": ctrader_close_res
             }
 
             # Run Institutional Post-Mortem Diagnostics and Volume Logging
@@ -898,6 +916,23 @@ def check_active_trades(records: dict):
 
             logger.info(f"==> TRADE RESOLVED (STOP LOSS HIT): {pair} {trade.get('direction')} ({realized_pips} pips, {realized_r} R)")
 
+            # Dispatch Market Close to cTrader to prevent orphaned live positions
+            pos_id = trade.get("ctrader_position_id") or trade.get("ctrader_receipt", {}).get("position_id")
+            ctrader_close_res = None
+            if pos_id:
+                try:
+                    vol_units = trade.get("units") or trade.get("ctrader_receipt", {}).get("units")
+                    lots_val = trade.get("lots") or trade.get("ctrader_receipt", {}).get("lots")
+                    ctrader_close_res = close_ctrader_position(
+                        position_id=int(pos_id),
+                        volume_units=int(vol_units) if vol_units else None,
+                        lots=float(lots_val) if lots_val else None,
+                        pair=pair
+                    )
+                    logger.info(f"[cTrader Auto-Close] Position #{pos_id} close response: {ctrader_close_res.get('status')}")
+                except Exception as ex:
+                    logger.error(f"[cTrader Auto-Close] Error closing position #{pos_id} on SL: {ex}")
+
             completed_record = {
                 **trade,
                 "exit_price": float(exit_price),
@@ -905,7 +940,8 @@ def check_active_trades(records: dict):
                 "realized_pips": float(round(realized_pips, 1)),
                 "realized_r": float(round(realized_r, 2)),
                 "closed_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-                "status": "CLOSED"
+                "status": "CLOSED",
+                "ctrader_close_receipt": ctrader_close_res
             }
 
             # Run Institutional Post-Mortem Diagnostics and Volume Logging
@@ -950,6 +986,23 @@ def check_active_trades(records: dict):
             outcome = "WIN" if realized_r > 0.05 else ("LOSS" if realized_r < -0.05 else "BREAK_EVEN")
             logger.info(f"==> TRADE RESOLVED (EMA INVALIDATION): {pair} {trade.get('direction')} ({realized_pips:+.1f} pips, {realized_r:+.2f}R)")
 
+            # Dispatch Market Close to cTrader to prevent orphaned live positions
+            pos_id = trade.get("ctrader_position_id") or trade.get("ctrader_receipt", {}).get("position_id")
+            ctrader_close_res = None
+            if pos_id:
+                try:
+                    vol_units = trade.get("units") or trade.get("ctrader_receipt", {}).get("units")
+                    lots_val = trade.get("lots") or trade.get("ctrader_receipt", {}).get("lots")
+                    ctrader_close_res = close_ctrader_position(
+                        position_id=int(pos_id),
+                        volume_units=int(vol_units) if vol_units else None,
+                        lots=float(lots_val) if lots_val else None,
+                        pair=pair
+                    )
+                    logger.info(f"[cTrader Auto-Close] Position #{pos_id} close response: {ctrader_close_res.get('status')}")
+                except Exception as ex:
+                    logger.error(f"[cTrader Auto-Close] Error closing position #{pos_id} on EMA invalidation: {ex}")
+
             completed_record = {
                 **trade,
                 "exit_price": float(exit_price),
@@ -958,7 +1011,8 @@ def check_active_trades(records: dict):
                 "realized_r": float(round(realized_r, 2)),
                 "closed_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
                 "status": "CLOSED",
-                "exit_reason": "EMA20_INVALIDATION"
+                "exit_reason": "EMA20_INVALIDATION",
+                "ctrader_close_receipt": ctrader_close_res
             }
 
             pm_record = None
@@ -3302,10 +3356,14 @@ def run_scan_cycle():
                     # Register newly opened active trade as OPEN market execution
                     bar_time = sig.get("time") or datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
                     pos_id = sig.get("ctrader_receipt", {}).get("position_id")
+                    trade_lots = float(sig.get("suggested_lots") or sig.get("calc_lots") or sig.get("lots") or 0.10)
+                    trade_units = int(sig.get("ctrader_receipt", {}).get("units") or round(trade_lots * 100_000))
                     new_trade_entry = {
                         "trade_id": sig["id"],
                         "ctrader_position_id": pos_id,
                         "ctrader_receipt": sig.get("ctrader_receipt"),
+                        "lots": trade_lots,
+                        "units": trade_units,
                         "pair": sig["pair"],
                         "symbol": pair_name,
                         "ticker": cfg["ticker"],

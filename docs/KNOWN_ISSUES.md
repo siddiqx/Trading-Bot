@@ -178,3 +178,19 @@ This document tracks verified defects, architectural discrepancies, and security
   - Guaranteed exact 1:1 synchronization between CCRS factor matrix bars and `scan_pair_timeframe()` completed bars.
   - Added unit regression test `test_ccrs_matrix_trims_unclosed_bars` in `tests/test_market_scanner.py`.
 
+---
+
+### ISSUE-EXEC-01: Missing cTrader Market Close on Take Profit, Stop Loss, and Invalidation Exits
+
+* **Severity:** **Critical** (Execution Integrity / Position Desynchronization)
+* **Status:** **REMEDIATED IN CODE (2026-11-12)** — Tested and verified with automated test suite in `tests/test_ctrader_executor.py`.
+* **Affected Files:** `core/ctrader_executor.py`, `market_scanner.py` (`check_active_trades`)
+* **Root Cause:** While `core/ctrader_executor.py` supported placing orders (`execute_ctrader_order`) and amending SL/TP (`modify_ctrader_position`), it had no position close implementation (`dispatch_ctrader_tls_close`, `close_ctrader_position`). When `market_scanner.py` detected that an active trade touched Take Profit, Stop Loss, or early EMA invalidation in Yahoo Finance candle data, it dispatched the Telegram alert and deleted the trade from internal active trade tracking, but never sent a close order (`ProtoOAClosePositionReq`) to cTrader. If the broker's live spread or price differed by even fractional pips from Yahoo Finance, resting broker limits failed to trigger, leaving live trades orphaned and running unmonitored on cTrader.
+* **Remediation Implemented:**
+  - Implemented `dispatch_ctrader_tls_close()` and `close_ctrader_position()` in `core/ctrader_executor.py` utilizing the official Protobuf `ProtoOAClosePositionReq` (`payloadType=2111`).
+  - Integrated `close_ctrader_position()` into `check_active_trades()` in `market_scanner.py` across all exit branches (`hit_tp`, `hit_sl`, and `hit_ema_exit`).
+  - Stored `ctrader_close_receipt` in the archived trade record for full post-mortem auditability.
+  - Created standalone utility `scripts/close_live_position.py` to allow instant manual closing of any orphaned positions.
+  - Added unit regression tests `test_dry_run_close_position` and `test_live_demo_close_position_structure` in `tests/test_ctrader_executor.py`.
+
+

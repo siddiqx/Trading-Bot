@@ -6,6 +6,7 @@ from core.ctrader_executor import (
     has_valid_credentials,
     execute_ctrader_order,
     modify_ctrader_position,
+    close_ctrader_position,
     DEFAULT_SYMBOL_MAP
 )
 
@@ -96,3 +97,34 @@ def test_live_demo_execution_structure(monkeypatch):
     assert res["units"] == 8_000
     assert res["pair"] == "GBPUSD"
     assert res["direction"] == "SHORT"
+
+
+def test_dry_run_close_position(monkeypatch):
+    """Verify position close safely falls back to Simulated Demo / Dry-Run when unconfigured."""
+    import core.ctrader_executor as ce
+    monkeypatch.setattr(ce, "ENABLE_CTRADER_EXECUTION", False)
+
+    res = close_ctrader_position(position_id=9990001, volume_units=86000, pair="USDCAD")
+    assert res["status"] == "SIMULATED_CLOSE"
+    assert res["mode"] == "DRY_RUN"
+    assert res["position_id"] == 9990001
+    assert res["volume_cents"] == 8_600_000
+
+
+def test_live_demo_close_position_structure(monkeypatch):
+    """Verify ProtoOAClosePositionReq dispatch when credentials and execution are enabled."""
+    import core.ctrader_executor as ce
+    monkeypatch.setattr(ce, "ENABLE_CTRADER_EXECUTION", True)
+    monkeypatch.setattr(ce, "CTRADER_CLIENT_ID", "mock_client_id")
+    monkeypatch.setattr(ce, "CTRADER_CLIENT_SECRET", "mock_client_secret")
+    monkeypatch.setattr(ce, "CTRADER_ACCESS_TOKEN", "mock_access_token")
+    monkeypatch.setattr(ce, "CTRADER_ACCOUNT_ID", "12345678")
+    monkeypatch.setattr(ce, "CTRADER_ENV", "demo")
+
+    res = ce.close_ctrader_position(position_id=16254441, lots=0.56, pair="GBPUSD")
+    assert res["status"] == "CLOSED"
+    assert res["mode"] == "LIVE_DEMO"
+    assert res["position_id"] == 16254441
+    assert res["volume_cents"] == 5_600_000
+    assert res["account_id"] == "12345678"
+
