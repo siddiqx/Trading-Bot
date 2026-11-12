@@ -91,6 +91,7 @@ def test_check_active_trades_skips_pre_entry_bars(monkeypatch):
     monkeypatch.setattr("market_scanner.send_telegram_alert", lambda *args, **kwargs: None)
     monkeypatch.setattr("market_scanner.sync_worker", lambda *args, **kwargs: None)
     monkeypatch.setattr("market_scanner.save_trade_records", lambda *args, **kwargs: None)
+    monkeypatch.setattr("market_scanner.VOLATILITY_CUSHION_ENABLED", True)
 
     # Trade was entered at 01:15 (bar 1). Bar 0 happened BEFORE entry.
     records = {
@@ -145,6 +146,7 @@ def test_check_active_trades_pending_order_fill(monkeypatch):
     monkeypatch.setattr("market_scanner.send_telegram_alert", lambda msg: alerts.append(msg))
     monkeypatch.setattr("market_scanner.sync_worker", lambda *args, **kwargs: None)
     monkeypatch.setattr("market_scanner.save_trade_records", lambda *args, **kwargs: None)
+    monkeypatch.setattr("market_scanner.VOLATILITY_CUSHION_ENABLED", True)
 
     records = {
         "active_trades": {
@@ -200,6 +202,7 @@ def test_check_active_trades_pending_order_cancellation(monkeypatch):
     monkeypatch.setattr("market_scanner.send_telegram_alert", lambda msg: alerts.append(msg))
     monkeypatch.setattr("market_scanner.sync_worker", lambda *args, **kwargs: None)
     monkeypatch.setattr("market_scanner.save_trade_records", lambda *args, **kwargs: None)
+    monkeypatch.setattr("market_scanner.VOLATILITY_CUSHION_ENABLED", True)
 
     records = {
         "active_trades": {
@@ -262,6 +265,7 @@ def test_check_active_trades_pending_order_timeout(monkeypatch):
     monkeypatch.setattr("market_scanner.send_telegram_alert", lambda msg: alerts.append(msg))
     monkeypatch.setattr("market_scanner.sync_worker", lambda *args, **kwargs: None)
     monkeypatch.setattr("market_scanner.save_trade_records", lambda *args, **kwargs: None)
+    monkeypatch.setattr("market_scanner.VOLATILITY_CUSHION_ENABLED", True)
 
     records = {
         "active_trades": {
@@ -385,6 +389,7 @@ def test_check_active_trades_ema20_invalidation_exit(monkeypatch):
     monkeypatch.setattr("market_scanner.send_telegram_alert", lambda *args, **kwargs: None)
     monkeypatch.setattr("market_scanner.sync_worker", lambda *args, **kwargs: None)
     monkeypatch.setattr("market_scanner.save_trade_records", lambda *args, **kwargs: None)
+    monkeypatch.setattr("market_scanner.VOLATILITY_CUSHION_ENABLED", True)
     monkeypatch.setattr("market_scanner.compute_indicators", lambda df, **kwargs: df)
     monkeypatch.setattr("market_scanner.record_trade_post_mortem", lambda *args, **kwargs: None)
 
@@ -551,6 +556,7 @@ def test_fixed_tp_and_sl_trade_resolution(monkeypatch):
     monkeypatch.setattr("market_scanner.send_telegram_alert", lambda *args, **kwargs: None)
     monkeypatch.setattr("market_scanner.sync_worker", lambda *args, **kwargs: None)
     monkeypatch.setattr("market_scanner.save_trade_records", lambda *args, **kwargs: None)
+    monkeypatch.setattr("market_scanner.VOLATILITY_CUSHION_ENABLED", True)
     monkeypatch.setattr("market_scanner.record_trade_post_mortem", lambda *args, **kwargs: None)
 
     records = {
@@ -612,6 +618,7 @@ def test_stage_1_breakeven_lock_at_75_r(monkeypatch):
     monkeypatch.setattr("market_scanner.send_telegram_alert", lambda *args, **kwargs: None)
     monkeypatch.setattr("market_scanner.sync_worker", lambda *args, **kwargs: None)
     monkeypatch.setattr("market_scanner.save_trade_records", lambda *args, **kwargs: None)
+    monkeypatch.setattr("market_scanner.VOLATILITY_CUSHION_ENABLED", True)
     monkeypatch.setattr("market_scanner.record_trade_post_mortem", lambda *args, **kwargs: None)
 
     records = {
@@ -889,6 +896,7 @@ def test_binary_target_execution_no_partial_banking_at_1r(monkeypatch):
     monkeypatch.setattr("market_scanner.send_telegram_alert", lambda msg: alerts.append(msg))
     monkeypatch.setattr("market_scanner.sync_worker", lambda *args, **kwargs: None)
     monkeypatch.setattr("market_scanner.save_trade_records", lambda *args, **kwargs: None)
+    monkeypatch.setattr("market_scanner.VOLATILITY_CUSHION_ENABLED", True)
 
     records = {
         "active_trades": {
@@ -949,6 +957,7 @@ def test_binary_target_execution_reaches_full_tp_for_win(monkeypatch):
     monkeypatch.setattr("market_scanner.send_telegram_alert", lambda msg: alerts.append(msg))
     monkeypatch.setattr("market_scanner.sync_worker", lambda *args, **kwargs: None)
     monkeypatch.setattr("market_scanner.save_trade_records", lambda *args, **kwargs: None)
+    monkeypatch.setattr("market_scanner.VOLATILITY_CUSHION_ENABLED", True)
     monkeypatch.setattr("market_scanner.record_trade_post_mortem", lambda *args, **kwargs: None)
 
     records = {
@@ -1012,6 +1021,7 @@ def test_stop_loss_priority_over_take_profit_on_volatile_bar(monkeypatch):
     monkeypatch.setattr("market_scanner.send_telegram_alert", lambda msg: alerts.append(msg))
     monkeypatch.setattr("market_scanner.sync_worker", lambda *args, **kwargs: None)
     monkeypatch.setattr("market_scanner.save_trade_records", lambda *args, **kwargs: None)
+    monkeypatch.setattr("market_scanner.VOLATILITY_CUSHION_ENABLED", True)
     monkeypatch.setattr("market_scanner.record_trade_post_mortem", lambda *args, **kwargs: None)
 
     records = {
@@ -1420,7 +1430,7 @@ def test_calculate_liquidity_bounds_tp_sl():
         min_pips=15.0, max_pips=25.0
     )
     assert sl_pips == 22.0
-    assert tp_pips == 33.0
+    assert tp_pips == 35.0
     assert sl_pips == 22.0
     assert rr >= 1.0
     assert sl < entry
@@ -1433,7 +1443,7 @@ def test_calculate_liquidity_bounds_tp_sl():
         min_pips=15.0, max_pips=25.0
     )
     assert sl_pips == 22.0
-    assert tp_pips == 33.0
+    assert tp_pips == 35.0
     assert rr >= 1.0
 
     # Test SHORT
@@ -1443,7 +1453,7 @@ def test_calculate_liquidity_bounds_tp_sl():
         min_pips=15.0, max_pips=25.0
     )
     assert sl_pips == 22.0
-    assert tp_pips == 33.0
+    assert tp_pips == 35.0
     assert sl_pips == 22.0
     assert rr >= 1.0
     assert sl > entry
@@ -1651,8 +1661,9 @@ def test_scan_pair_timeframe_ccrs_divergence_signal(monkeypatch):
     assert sig["base_currency"] == "EUR"
     assert sig["quote_currency"] == "USD"
     assert 20.0 <= sig["sl_pips"] <= 25.0
-    assert sig["tp_pips"] == round(sig["sl_pips"] * 1.50, 1)
-    assert sig["rr"] == 1.50
+    from core.config import CANONICAL_RISK_REWARD_RATIO
+    assert sig["tp_pips"] == round(sig["sl_pips"] * CANONICAL_RISK_REWARD_RATIO, 1)
+    assert sig["rr"] == CANONICAL_RISK_REWARD_RATIO
     import market_scanner
     assert sig["monetary_risk_usd"] <= market_scanner.DEFAULT_ACCOUNT_EQUITY * 0.01
 
@@ -1761,8 +1772,9 @@ def test_scan_pair_timeframe_dual_timeframe_long_pullback(monkeypatch):
     assert sig["strategy_type"] == "CCRS_DUAL_TF"
     assert sig["divergence"] == 2.10
     assert 20.0 <= sig["sl_pips"] <= 25.0
-    assert sig["tp_pips"] == round(sig["sl_pips"] * 1.50, 1)
-    assert sig["rr"] == 1.50
+    from core.config import CANONICAL_RISK_REWARD_RATIO
+    assert sig["tp_pips"] == round(sig["sl_pips"] * CANONICAL_RISK_REWARD_RATIO, 1)
+    assert sig["rr"] == CANONICAL_RISK_REWARD_RATIO
 
 
 def test_scan_pair_timeframe_dual_timeframe_short_sweep(monkeypatch):
@@ -1992,6 +2004,7 @@ def test_v330_volatility_cushion_trailing(monkeypatch):
     monkeypatch.setattr("market_scanner.send_telegram_alert", lambda *args, **kwargs: None)
     monkeypatch.setattr("market_scanner.sync_worker", lambda *args, **kwargs: None)
     monkeypatch.setattr("market_scanner.save_trade_records", lambda *args, **kwargs: None)
+    monkeypatch.setattr("market_scanner.VOLATILITY_CUSHION_ENABLED", True)
 
     records = {
         "active_trades": {

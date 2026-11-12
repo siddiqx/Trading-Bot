@@ -48,9 +48,9 @@ from market_scanner import calculate_liquidity_bounds_tp_sl, format_alert_messag
 
 def test_canonical_config_constants():
     """Verify single source of truth configuration values in core.config."""
-    assert CANONICAL_TAKE_PROFIT_PIPS == 33.0
+    assert CANONICAL_TAKE_PROFIT_PIPS == 35.0
     assert CANONICAL_STOP_LOSS_PIPS == 22.0
-    assert CANONICAL_RISK_REWARD_RATIO == 1.50
+    assert CANONICAL_RISK_REWARD_RATIO == 1.59
     assert REFERENCE_ACCOUNT_EQUITY == 5000.0
     assert REFERENCE_RISK_PCT == 1.0
     assert REFERENCE_RISK_BUDGET_USD == 50.00
@@ -64,16 +64,16 @@ def test_canonical_config_constants():
 def test_module_configuration_alignment():
     """Verify all modules inherit identical canonical exit geometry."""
     # core.instrument_validator
-    assert FIXED_TAKE_PROFIT_PIPS == 33.0
+    assert FIXED_TAKE_PROFIT_PIPS == 35.0
     assert FIXED_STOP_LOSS_PIPS == 22.0
     for sym in CANONICAL_SYMBOLS:
         assert PAIR_SCHEDULES[sym]["sl_pips"] == 22.0
-        assert PAIR_SCHEDULES[sym]["tp_pips"] == 33.0
+        assert PAIR_SCHEDULES[sym]["tp_pips"] == 35.0
 
     # app.config
-    assert app_config.TAKE_PROFIT_PIPS == 33.0
+    assert app_config.TAKE_PROFIT_PIPS == 35.0
     assert app_config.STOP_LOSS_PIPS == 22.0
-    assert app_config.DEFAULT_RISK_REWARD == 1.50
+    assert app_config.DEFAULT_RISK_REWARD == 1.59
     assert set(app_config.SUPPORTED_SYMBOLS) == set(CANONICAL_SYMBOLS)
 
     # market_scanner calculate_liquidity_bounds_tp_sl
@@ -85,26 +85,26 @@ def test_module_configuration_alignment():
         pip=0.0001,
         digits=5,
     )
-    assert tp_pips == 33.0
+    assert tp_pips == 35.0
     assert sl_pips == 22.0
-    assert rr == 1.50
+    assert rr == 1.59
 
 
 def test_calculate_tp_sl_prices():
     """Verify exact target and stop loss price calculations."""
-    # EURUSD Long at 1.0850: SL 22p = 1.08280, TP 33p = 1.08830
+    # EURUSD Long at 1.0850: SL 22p = 1.08280, TP 35p = 1.08850
     tp, sl = calculate_tp_sl(entry=1.0850, direction="LONG", symbol="EURUSD")
-    assert tp == 1.08830
+    assert tp == 1.08850
     assert sl == 1.08280
 
-    # EURUSD Short at 1.0850: SL 22p = 1.08720, TP 33p = 1.08170
+    # EURUSD Short at 1.0850: SL 22p = 1.08720, TP 35p = 1.08150
     tp_s, sl_s = calculate_tp_sl(entry=1.0850, direction="SHORT", symbol="EURUSD")
-    assert tp_s == 1.08170
+    assert tp_s == 1.08150
     assert sl_s == 1.08720
 
-    # USDJPY Long at 155.00: SL 22p (0.22) = 154.78, TP 33p (0.33) = 155.33
+    # USDJPY Long at 155.00: SL 22p (0.22) = 154.78, TP 35p (0.35) = 155.35
     tp_j, sl_j = calculate_tp_sl(entry=155.00, direction="LONG", symbol="USDJPY")
-    assert pytest.approx(tp_j, abs=1e-4) == 155.33
+    assert pytest.approx(tp_j, abs=1e-4) == 155.35
     assert pytest.approx(sl_j, abs=1e-4) == 154.78
 
 

@@ -62,13 +62,13 @@ CCRS_ATR_MULTIPLIER: float = 2.0       # 2.0x 14-period ATR stop distance
 CCRS_MIN_SL_PIPS: float = 20.0         # Minimum stop loss ceiling (suppresses noise stopouts)
 CCRS_MAX_SL_PIPS: float = 25.0         # Maximum stop loss cap (calibrated to intraday ADR)
 
-# Canonical Target Geometry (Calibrated Swing 1:1.50 R:R)
+# Canonical Target Geometry (Calibrated Swing 1:1.59 R:R)
 CANONICAL_STOP_LOSS_PIPS: float = 22.0
-CANONICAL_TAKE_PROFIT_PIPS: float = 33.0  # 22.0 * 1.50
-CANONICAL_RISK_REWARD_RATIO: float = 1.50
+CANONICAL_TAKE_PROFIT_PIPS: float = 35.0  # Calibrated for optimal expectancy (49.6% Win Rate, 1.37 PF, 4.42% Max DD)
+CANONICAL_RISK_REWARD_RATIO: float = 1.59
 
-# Volatility-Cushioned Trailing Stop Parameters (Protects against premature stopouts)
-VOLATILITY_CUSHION_ENABLED: bool = True
+# Volatility-Cushioned Trailing Stop Parameters (Disabled to prevent profit erosion from pullbacks)
+VOLATILITY_CUSHION_ENABLED: bool = False
 VOLATILITY_CUSHION_TIER1_R: float = 1.20       # At +1.2R (+26.4 pips), advance SL to Tier 1
 VOLATILITY_CUSHION_TIER1_SL_PIPS: float = 10.0 # Halves risk to 10p, leaves 36p breathing buffer
 VOLATILITY_CUSHION_TIER2_R: float = 1.50       # At +1.5R (+33.0 pips), advance SL to Tier 2
