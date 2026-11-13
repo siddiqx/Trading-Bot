@@ -105,8 +105,16 @@ class SignalValidator:
                 cutoff = self.settings.FOREX_FRIDAY_CUTOFF_HOUR
                 if dt.hour >= cutoff:
                     return False, f"Friday PM cutoff active: Signal at {dt.hour:02d}:00 UTC reaches or exceeds {payload.symbol} Friday cutoff ({cutoff:02d}:00 UTC)."
+            elif dt.weekday() == 0:  # Monday
+                start_h = self.settings.FOREX_MONDAY_START_HOUR
+                cutoff_h = self.settings.FOREX_MONDAY_CUTOFF_HOUR
+                if dt.hour < start_h or dt.hour >= cutoff_h:
+                    return False, (
+                        f"Monday session filter active: Signal at {dt.hour:02d}:00 UTC outside permitted "
+                        f"{payload.symbol} London window ({start_h:02d}:00–{cutoff_h:02d}:00 UTC)."
+                    )
         except Exception as e:
-            logger.debug(f"Unable to parse timestamp for Friday cutoff check: {e}")
+            logger.debug(f"Unable to parse timestamp for Friday/Monday window check: {e}")
 
         # 2. ADX minimum threshold check
         if payload.adx < self.settings.DEFAULT_ADX_MIN:

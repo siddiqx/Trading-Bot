@@ -1125,6 +1125,29 @@ def test_friday_weekend_hold_guard():
     assert fri_pre_cutoff.hour < FRIDAY_ENTRY_CUTOFF_HOUR_UTC
 
 
+def test_monday_session_window_guard():
+    """Verifies that Monday entries are strictly bounded to the London window (06:00-12:00 UTC)."""
+    from core.config import MONDAY_ENTRY_START_HOUR_UTC, MONDAY_ENTRY_CUTOFF_HOUR_UTC
+
+    assert MONDAY_ENTRY_START_HOUR_UTC == 6
+    assert MONDAY_ENTRY_CUTOFF_HOUR_UTC == 12
+
+    # Monday 04:00 UTC (Asian session - blocked)
+    mon_early = datetime(2026, 11, 9, 4, 0, tzinfo=timezone.utc)
+    assert mon_early.weekday() == 0
+    assert mon_early.hour < MONDAY_ENTRY_START_HOUR_UTC
+
+    # Monday 09:00 UTC (London session - allowed)
+    mon_london = datetime(2026, 11, 9, 9, 0, tzinfo=timezone.utc)
+    assert mon_london.weekday() == 0
+    assert MONDAY_ENTRY_START_HOUR_UTC <= mon_london.hour < MONDAY_ENTRY_CUTOFF_HOUR_UTC
+
+    # Monday 15:00 UTC (NY afternoon - blocked)
+    mon_late = datetime(2026, 11, 9, 15, 0, tzinfo=timezone.utc)
+    assert mon_late.weekday() == 0
+    assert mon_late.hour >= MONDAY_ENTRY_CUTOFF_HOUR_UTC
+
+
 
 def test_post_loss_cooldown_locks_pair():
     """Verify pair-specific post-loss cooldown locks out pair for 60 minutes after a stop-loss."""

@@ -12,7 +12,7 @@ def test_adx_threshold_validation():
     payload_data = {
         "symbol": "EURUSD",
         "direction": "LONG",
-        "signal_time": "2026-03-09T14:00:00Z",
+        "signal_time": "2026-03-10T14:00:00Z",
         "price": 1.0850,
         "entry": 1.0850,
         "stop_loss": 1.0830,
@@ -37,7 +37,7 @@ def test_signal_score_validation():
     payload_data = {
         "symbol": "EURUSD",
         "direction": "LONG",
-        "signal_time": "2026-03-09T14:00:00Z",
+        "signal_time": "2026-03-10T14:00:00Z",
         "price": 1.0850,
         "entry": 1.0850,
         "stop_loss": 1.0830,
@@ -102,7 +102,7 @@ def test_institutional_whitelist_pairs_accepted():
         payload_data = {
             "symbol": pair,
             "direction": "LONG",
-            "signal_time": "2026-03-09T14:00:00Z",
+            "signal_time": "2026-03-10T14:00:00Z",
             "price": price,
             "entry": price,
             "stop_loss": sl,
@@ -129,7 +129,7 @@ def test_gold_exclusion_and_aliases_rejected():
             payload = SignalPayload(
                 symbol=alias,
                 direction="LONG",
-                signal_time="2026-03-09T14:00:00Z",
+                signal_time="2026-03-10T14:00:00Z",
                 price=2000.0,
                 entry=2000.0,
                 stop_loss=1980.0,
@@ -191,6 +191,70 @@ def test_friday_cutoff_forex():
     ok_eur_bl, reason_eur = validator.validate(p_eur_blocked)
     assert not ok_eur_bl
     assert "Friday PM cutoff active" in reason_eur
+
+
+def test_monday_session_window_forex():
+    settings = Settings()
+    validator = SignalValidator(settings)
+
+    # 1. EURUSD Monday 04:00 UTC (Before 06:00 UTC -> BLOCKED)
+    p_mon_early = SignalPayload(
+        symbol="EURUSD",
+        direction="LONG",
+        signal_time="2026-03-09T04:00:00Z",  # Monday
+        price=1.0850,
+        entry=1.0850,
+        stop_loss=1.0830,
+        take_profit=1.0890,
+        signal_score=85.0,
+        adx=25.0,
+        atr=0.0010,
+        roc=0.5,
+        htf_regime="BULLISH",
+        webhook_secret="test-secret-key-12345",
+    )
+    ok_early, reason_early = validator.validate(p_mon_early)
+    assert not ok_early
+    assert "Monday session filter active" in reason_early
+
+    # 2. EURUSD Monday 09:00 UTC (Inside London window -> PERMITTED)
+    p_mon_london = SignalPayload(
+        symbol="EURUSD",
+        direction="LONG",
+        signal_time="2026-03-09T09:00:00Z",  # Monday
+        price=1.0850,
+        entry=1.0850,
+        stop_loss=1.0830,
+        take_profit=1.0890,
+        signal_score=85.0,
+        adx=25.0,
+        atr=0.0010,
+        roc=0.5,
+        htf_regime="BULLISH",
+        webhook_secret="test-secret-key-12345",
+    )
+    ok_london, _ = validator.validate(p_mon_london)
+    assert ok_london
+
+    # 3. EURUSD Monday 15:00 UTC (After 12:00 UTC -> BLOCKED)
+    p_mon_late = SignalPayload(
+        symbol="EURUSD",
+        direction="LONG",
+        signal_time="2026-03-09T15:00:00Z",  # Monday
+        price=1.0850,
+        entry=1.0850,
+        stop_loss=1.0830,
+        take_profit=1.0890,
+        signal_score=85.0,
+        adx=25.0,
+        atr=0.0010,
+        roc=0.5,
+        htf_regime="BULLISH",
+        webhook_secret="test-secret-key-12345",
+    )
+    ok_late, reason_late = validator.validate(p_mon_late)
+    assert not ok_late
+    assert "Monday session filter active" in reason_late
 
 
 def test_tp_sl_and_position_sizing_specifications():

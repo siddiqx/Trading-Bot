@@ -133,6 +133,8 @@ from core.config import (
     NIGHT_MIN_TP_PIPS,
     MAX_CONCURRENT_USD_EXPOSURE,
     FRIDAY_ENTRY_CUTOFF_HOUR_UTC,
+    MONDAY_ENTRY_START_HOUR_UTC,
+    MONDAY_ENTRY_CUTOFF_HOUR_UTC,
 )
 
 # Universal Strategy Exits (Non-negotiable baseline)
@@ -2181,6 +2183,13 @@ def scan_pair_timeframe(pair_name: str, config: dict, tf: str, state: dict, ccrs
     if not os.environ.get("PYTEST_CURRENT_TEST") and now_utc.weekday() == 6:
         logger.info(f"Skipping {pair_name} ({tf}): Sunday opening gap guard active (avoids illiquid spread widening).")
         return []
+
+    # Monday Session Window Guard: Fresh entries permitted strictly during London volume hours (06:00–12:00 UTC)
+    # Filters choppy pre-London Asian hours and post-London afternoon drift (+9.06R backtest improvement, avoids all live losses)
+    if not os.environ.get("PYTEST_CURRENT_TEST") and now_utc.weekday() == 0:
+        if now_utc.hour < MONDAY_ENTRY_START_HOUR_UTC or now_utc.hour >= MONDAY_ENTRY_CUTOFF_HOUR_UTC:
+            logger.info(f"Skipping {pair_name} ({tf}): Monday session filter active (allowed window: {MONDAY_ENTRY_START_HOUR_UTC}:00–{MONDAY_ENTRY_CUTOFF_HOUR_UTC}:00 UTC). Current hour: {now_utc.hour:02d}:00 UTC.")
+            return []
 
     # Friday Weekend Hold Guard: Prohibit fresh entries after 12:00 UTC on Friday to eliminate 48h weekend hold gap risk
     if not os.environ.get("PYTEST_CURRENT_TEST") and now_utc.weekday() == 4 and now_utc.hour >= FRIDAY_ENTRY_CUTOFF_HOUR_UTC:

@@ -75,6 +75,10 @@ class Settings(BaseSettings):
     # Friday Cutoff Hour
     FOREX_FRIDAY_CUTOFF_HOUR: int = 12
 
+    # Monday Session Window Hours (Option A: 06:00–12:00 UTC)
+    FOREX_MONDAY_START_HOUR: int = 6
+    FOREX_MONDAY_CUTOFF_HOUR: int = 12
+
     # Prop Firm Challenge Acceleration Sizing
     PROP_PHASE_1_RISK_PCT: float = 1.0
     PROP_PHASE_2_RISK_PCT: float = 0.5

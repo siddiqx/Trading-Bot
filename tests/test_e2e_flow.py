@@ -16,7 +16,7 @@ def test_full_pipeline_flow(client):
         "exchange": "FX",
         "timeframe": "60",
         "direction": "LONG",
-        "signal_time": "2026-03-09T14:00:00Z",
+        "signal_time": "2026-03-10T14:00:00Z",
         "price": 1.0850,
         "entry": 1.0850,
         "stop_loss": 1.0830,

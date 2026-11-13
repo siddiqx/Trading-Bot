@@ -78,6 +78,7 @@ from satellite.gold_validator import (
     calculate_gold_position_size,
     is_rollover_blackout_active,
     is_friday_weekend_cutoff,
+    is_monday_session_filtered,
     check_correlation_interlock,
     get_gold_usd_bias,
 )
@@ -617,6 +618,11 @@ def run_gold_scan_cycle() -> None:
     # 5. Filter: Friday Weekend Cutoff (>= 16:00 UTC) - No fresh entries before weekend
     if is_friday_weekend_cutoff(now_utc):
         logger.info("Friday weekend cutoff active (>= 16:00 UTC). No fresh Gold entries allowed.")
+        return
+
+    # 5b. Filter: Monday Session Window (06:00 - 12:00 UTC) - Fresh entries prohibited outside London window
+    if is_monday_session_filtered(now_utc):
+        logger.info("Monday session filter active. Fresh Gold entries permitted strictly between 06:00-12:00 UTC.")
         return
 
     # 6. Filter: Active Institutional Trading Hours (06:00 - 18:00 UTC)

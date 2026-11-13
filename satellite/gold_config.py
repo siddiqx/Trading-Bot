@@ -77,6 +77,10 @@ ROLLOVER_BLACKOUT_END_MINUTE: int = 30
 # Friday Cutoff (UTC): Flat exit before weekend
 FRIDAY_CUTOFF_HOUR_UTC: int = 16
 
+# Monday Session Window Hours (Option A: 06:00–12:00 UTC)
+MONDAY_ENTRY_START_HOUR_UTC: int = 6
+MONDAY_ENTRY_CUTOFF_HOUR_UTC: int = 12
+
 # Permitted Active Trading Volume Hours (UTC): 06:00 to 18:00
 ACTIVE_TRADING_HOURS: list[int] = list(range(6, 18))
 

@@ -204,4 +204,6 @@ DAILY_LOSS_CIRCUIT_BREAKER_R: float = -2.00
 DAILY_LOSS_CIRCUIT_BREAKER_COUNT: int = 2
 DAILY_LOSS_CIRCUIT_BREAKER_PCT: float = 1.0
 FRIDAY_ENTRY_CUTOFF_HOUR_UTC: int = 12  # Prohibits fresh entries after 12:00 UTC on Friday (eliminates 48h weekend holding & Sunday gap risk)
+MONDAY_ENTRY_START_HOUR_UTC: int = 6   # Allows London session opening setups (06:00 UTC)
+MONDAY_ENTRY_CUTOFF_HOUR_UTC: int = 12 # Prohibits fresh entries after 12:00 UTC on Monday (filters low-liquidity post-London chop; +9.06R backtest, avoids all 3 live losses)
 

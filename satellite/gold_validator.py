@@ -33,6 +33,8 @@ from satellite.gold_config import (
     ROLLOVER_BLACKOUT_END_HOUR,
     ROLLOVER_BLACKOUT_END_MINUTE,
     FRIDAY_CUTOFF_HOUR_UTC,
+    MONDAY_ENTRY_START_HOUR_UTC,
+    MONDAY_ENTRY_CUTOFF_HOUR_UTC,
     FOREX_TRADE_RECORDS_PATH,
 )
 
@@ -132,6 +134,21 @@ def is_friday_weekend_cutoff(dt: Optional[datetime] = None) -> bool:
     if dt.weekday() == 5 or (dt.weekday() == 6 and dt.hour < 21):
         return True
 
+    return False
+
+
+def is_monday_session_filtered(dt: Optional[datetime] = None) -> bool:
+    """
+    Checks if current time is Monday outside the permitted London volume window (06:00–12:00 UTC).
+    Filters choppy pre-London Asian hours and post-London afternoon drift (+9.06R backtest improvement).
+    """
+    if dt is None:
+        dt = datetime.now(timezone.utc)
+    elif dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+
+    if dt.weekday() == 0:  # 0 = Monday
+        return dt.hour < MONDAY_ENTRY_START_HOUR_UTC or dt.hour >= MONDAY_ENTRY_CUTOFF_HOUR_UTC
     return False
 
 

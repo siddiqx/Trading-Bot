@@ -23,6 +23,7 @@ from satellite.gold_validator import (
     calculate_gold_position_size,
     is_rollover_blackout_active,
     is_friday_weekend_cutoff,
+    is_monday_session_filtered,
     check_correlation_interlock,
     get_gold_usd_bias,
 )
@@ -123,6 +124,18 @@ class TestWeekendCutoff:
         assert is_friday_weekend_cutoff(sat) is True
         assert is_friday_weekend_cutoff(sun_early) is True
         assert is_friday_weekend_cutoff(sun_open) is False
+
+    def test_monday_session_filter(self):
+        # 2026-11-09 is Monday
+        mon_early = datetime(2026, 11, 9, 4, 0, tzinfo=timezone.utc)
+        mon_london = datetime(2026, 11, 9, 9, 0, tzinfo=timezone.utc)
+        mon_late = datetime(2026, 11, 9, 15, 0, tzinfo=timezone.utc)
+        tue_afternoon = datetime(2026, 11, 10, 15, 0, tzinfo=timezone.utc)
+
+        assert is_monday_session_filtered(mon_early) is True    # Asian session: blocked
+        assert is_monday_session_filtered(mon_london) is False  # London session: allowed
+        assert is_monday_session_filtered(mon_late) is True     # NY afternoon: blocked
+        assert is_monday_session_filtered(tue_afternoon) is False # Tuesday: not affected
 
 
 class TestCorrelationInterlock:
