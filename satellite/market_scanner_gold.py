@@ -382,6 +382,15 @@ def check_active_gold_trades(records: Dict[str, Any], cur_bar: pd.Series, record
             friction = oz * TRANSACTION_COSTS["total_points"]
             net_pnl = (raw_diff * oz) - friction
             r_val = net_pnl / tr["monetary_risk_usd"]
+            pos_id = tr.get("ctrader_position_id") or (tr.get("ctrader_receipt") or {}).get("position_id")
+            c_res = None
+            if pos_id:
+                try:
+                    from core.ctrader_executor import close_ctrader_position
+                    c_res = close_ctrader_position(position_id=int(pos_id), lots=float(lots), pair=tr.get("symbol", "XAUUSD"))
+                    logger.info(f"[cTrader Gold Weekend Flat] Position #{pos_id} close response: {c_res.get('status')}")
+                except Exception as ex:
+                    logger.error(f"[cTrader Gold Weekend Flat] Error closing #{pos_id}: {ex}")
             tr.update({
                 "exit_price": cur_close,
                 "exit_time": now_utc.isoformat(),
@@ -390,6 +399,7 @@ def check_active_gold_trades(records: Dict[str, Any], cur_bar: pd.Series, record
                 "net_pnl": net_pnl,
                 "r": r_val,
                 "reason": "WEEKEND_FLAT",
+                "ctrader_close_receipt": c_res,
             })
             completed.append(tr)
             closed_any = True
@@ -494,6 +504,16 @@ def check_active_gold_trades(records: Dict[str, Any], cur_bar: pd.Series, record
             if net_pnl < 0:
                 daily_losses[today_str] += 1
 
+            pos_id = tr.get("ctrader_position_id") or (tr.get("ctrader_receipt") or {}).get("position_id")
+            c_res = None
+            if pos_id:
+                try:
+                    from core.ctrader_executor import close_ctrader_position
+                    c_res = close_ctrader_position(position_id=int(pos_id), lots=float(lots), pair=tr.get("symbol", "XAUUSD"))
+                    logger.info(f"[cTrader Gold Close] Position #{pos_id} close response: {c_res.get('status')}")
+                except Exception as ex:
+                    logger.error(f"[cTrader Gold Close] Error closing #{pos_id}: {ex}")
+
             tr.update({
                 "exit_price": exit_price,
                 "exit_time": now_utc.isoformat(),
@@ -502,6 +522,7 @@ def check_active_gold_trades(records: Dict[str, Any], cur_bar: pd.Series, record
                 "net_pnl": net_pnl,
                 "r": r_val,
                 "reason": exit_reason,
+                "ctrader_close_receipt": c_res,
             })
             completed.append(tr)
             closed_any = True

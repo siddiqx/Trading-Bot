@@ -144,8 +144,8 @@ RISK_REWARD: float = FIXED_RISK_REWARD_RATIO      # 1:1.5 before costs
 from core.news_filter import is_news_window_active
 from core.ctrader_executor import execute_ctrader_order, modify_ctrader_position, close_ctrader_position
 
-DEFAULT_ACCOUNT_EQUITY: float = float(os.environ.get("ACCOUNT_EQUITY", "5000.0"))
-DEFAULT_RISK_PCT: float = float(os.environ.get("RISK_PCT", str(PROP_FIRM_RISK_PCT)))
+DEFAULT_ACCOUNT_EQUITY: float = float(os.environ.get("ACCOUNT_EQUITY", "25000.0"))
+DEFAULT_RISK_PCT: float = float(os.environ.get("RISK_PCT", "1.00"))
 
 # Monitored Pairs and Ticker Mapping - Standard Institutional Forex Only (Zero Gold)
 SYMBOLS = {
@@ -379,11 +379,19 @@ def load_trade_records() -> dict:
                         seen_ids.add(tid)
                         merged_completed.append(t)
 
-                # Remove any completed trade from active positions
+                # Remove any completed trade from active positions, UNLESS it has an unclosed cTrader position
                 for tid in seen_ids:
+                    c_rec = next((x for x in merged_completed if x.get("trade_id") == tid), None)
                     for k in list(merged_active.keys()):
                         if merged_active[k].get("trade_id") == tid:
-                            del merged_active[k]
+                            pos_id = merged_active[k].get("ctrader_position_id") or (merged_active[k].get("ctrader_receipt") or {}).get("position_id")
+                            close_ok = c_rec and (c_rec.get("ctrader_close_receipt") or {}).get("status") in ("CLOSED", "SIMULATED_CLOSE")
+                            if pos_id and not close_ok:
+                                logger.warning(f"[Broker Guard] Trade {tid} marked completed in cloud, but cTrader position #{pos_id} has not yet executed market close. Keeping in active trades for immediate broker execution.")
+                                merged_active[k]["pending_close"] = c_rec.get("outcome", "WIN") if c_rec else "WIN"
+                                merged_active[k]["pending_exit_price"] = c_rec.get("exit_price") if c_rec else None
+                            else:
+                                del merged_active[k]
 
                 records["active_trades"] = merged_active
                 records["completed_trades"] = merged_completed
@@ -794,6 +802,18 @@ def check_active_trades(records: dict):
             except Exception as e:
                 logger.error(f"Error checking pending timeout for {pair}: {e}")
 
+        # Check if trade was marked pending exit by edge gateway or external resolver
+        if trade.get("pending_close") == "WIN":
+            hit_tp = True
+            hit_sl = False
+            if trade.get("pending_exit_price"):
+                tp = float(trade["pending_exit_price"])
+        elif trade.get("pending_close") == "LOSS":
+            hit_sl = True
+            hit_tp = False
+            if trade.get("pending_exit_price"):
+                sl = float(trade["pending_exit_price"])
+
         if cancelled_before_fill:
             logger.info(f"==> SETUP CANCELLED (SL breached prior to entry fill): {pair} {trade.get('direction')}")
             completed_record = {
@@ -1046,6 +1066,75 @@ def check_active_trades(records: dict):
     if resolved_pairs or modified_pairs:
         save_trade_records(records)
         sync_worker(records)
+
+
+def reconcile_and_close_orphaned_ctrader_positions(records: dict) -> bool:
+    """
+    Fail-Safe Institutional Broker Reconciliation Engine.
+    Guarantees zero orphaned positions on cTrader by reconciling all trades with live position IDs.
+    Ensures every exit sends an alert and executes an atomic broker close order.
+    """
+    modified = False
+    completed = records.get("completed_trades", [])
+    alerted_exits = records.setdefault("alerted_exits", [])
+
+    for tr in completed:
+        # Only inspect recent trades (within last 48 hours) to prevent processing historic ledger
+        closed_at_str = tr.get("closed_at") or tr.get("opened_at")
+        is_recent = False
+        if closed_at_str:
+            try:
+                c_dt = datetime.fromisoformat(closed_at_str.replace("Z", "+00:00"))
+                if (datetime.now(timezone.utc) - c_dt).total_seconds() <= 48 * 3600:
+                    is_recent = True
+            except Exception:
+                pass
+        if not is_recent:
+            continue
+
+        pos_id = tr.get("ctrader_position_id") or (tr.get("ctrader_receipt") or {}).get("position_id")
+        close_receipt = tr.get("ctrader_close_receipt") or {}
+        if pos_id and close_receipt.get("status") not in ("CLOSED", "SIMULATED_CLOSE"):
+            logger.warning(f"[Broker Watchdog] Found completed trade {tr.get('trade_id')} with unclosed cTrader position #{pos_id}. Dispatching close order...")
+            try:
+                vol_units = tr.get("units") or (tr.get("ctrader_receipt") or {}).get("units")
+                lots_val = tr.get("lots") or (tr.get("ctrader_receipt") or {}).get("lots")
+                close_res = close_ctrader_position(
+                    position_id=int(pos_id),
+                    volume_units=int(vol_units) if vol_units else None,
+                    lots=float(lots_val) if lots_val else None,
+                    pair=tr.get("pair") or tr.get("symbol")
+                )
+                tr["ctrader_close_receipt"] = close_res
+                modified = True
+                logger.info(f"[Broker Watchdog] Position #{pos_id} close response: {close_res.get('status')}")
+            except Exception as ex:
+                logger.error(f"[Broker Watchdog] Error auto-closing orphaned position #{pos_id}: {ex}")
+
+        # Also guarantee missing Telegram exit alert is dispatched!
+        tid = tr.get("trade_id", "")
+        if tid and tid not in alerted_exits and tr.get("outcome") in ("WIN", "LOSS", "TIMEOUT", "BREAK_EVEN"):
+            logger.info(f"[Broker Watchdog] Dispatching missing exit alert for {tid}...")
+            try:
+                msg = format_exit_message(
+                    tr,
+                    tr.get("outcome", "WIN"),
+                    float(tr.get("exit_price") or tr.get("entry", 0.0)),
+                    float(tr.get("realized_pips") or tr.get("tp_pips", 0.0)),
+                    float(tr.get("realized_r") or tr.get("rr", 1.5)),
+                    tr.get("post_mortem")
+                )
+                sent = send_telegram_alert(msg)
+                if sent:
+                    alerted_exits.append(tid)
+                    modified = True
+            except Exception as alert_ex:
+                logger.error(f"[Broker Watchdog] Error sending missing exit alert for {tid}: {alert_ex}")
+
+    if modified:
+        save_trade_records(records)
+        sync_worker(records)
+    return modified
 
 
 def send_telegram_alert(text: str, max_retries: int = 3) -> bool:
@@ -3252,8 +3341,12 @@ def run_scan_cycle():
         except Exception as e:
             logger.warning(f"CCRS Matrix computation failed (fallback enabled): {e}")
 
+    # 0.5 Broker Watchdog: Reconcile orphaned cTrader positions & guarantee missing exit alerts
+    reconcile_and_close_orphaned_ctrader_positions(records)
+
     # 1. Monitor active floating positions for Take Profit / Stop Loss hits
     check_active_trades(records)
+    reconcile_and_close_orphaned_ctrader_positions(records)
     active_trades_map = records.get("active_trades", {})
     telemetry["active_trades_count"] = len(active_trades_map)
 

@@ -236,9 +236,18 @@ def execute_ctrader_order(sig: Dict[str, Any]) -> Dict[str, Any]:
     symbol_id = get_symbol_id(pair)
     is_gold = "XAU" in pair.upper() or "GOLD" in pair.upper()
 
-    # If lots is missing/zero, or if sig was generated on a mismatched reference equity (e.g. 5,000 vs 25,000):
-    # Dynamically recalculate lots to guarantee execution risk matches live account equity
-    if lots <= 0.0 or (sig_equity > 0 and abs(sig_equity - env_equity) > 1.0):
+    target_budget = env_equity * (env_risk_pct / 100.0)
+    sig_budget = float(sig.get("risk_budget_usd") or (sig_equity * (float(sig.get("risk_pct", 0.0)) / 100.0)) if sig_equity > 0 else 0.0)
+
+    # If lots is missing/zero, or if sig was generated on a mismatched reference equity (e.g. 5,000 vs 25,000),
+    # or if the signal was under-sized below target risk budget:
+    # Dynamically recalculate lots to guarantee execution risk matches live account equity & risk configuration
+    need_recalc = (
+        lots <= 0.0 or
+        (sig_equity > 0 and abs(sig_equity - env_equity) > 1.0) or
+        (sig_budget > 0 and sig_budget < (target_budget * 0.85))
+    )
+    if need_recalc:
         try:
             if is_gold:
                 from satellite.gold_validator import calculate_gold_position_size

@@ -59,8 +59,8 @@ POST_LOSS_COOLDOWN_MINUTES: float = 60.0
 # ==============================================================================
 # 3. ACCOUNT RISK BUDGET & SIZING CONSTRAINTS
 # ==============================================================================
-REFERENCE_ACCOUNT_EQUITY: float = float(os.environ.get("ACCOUNT_EQUITY", "5000.0"))
-PROP_FIRM_RISK_PCT: float = float(os.environ.get("RISK_PCT", "0.50"))  # 0.50% calibrated prop risk
+REFERENCE_ACCOUNT_EQUITY: float = float(os.environ.get("ACCOUNT_EQUITY", "25000.0"))
+PROP_FIRM_RISK_PCT: float = float(os.environ.get("RISK_PCT", "1.00"))  # 1.00% calibrated prop risk
 REFERENCE_RISK_BUDGET_USD: float = REFERENCE_ACCOUNT_EQUITY * (PROP_FIRM_RISK_PCT / 100.0)
 
 # ==============================================================================

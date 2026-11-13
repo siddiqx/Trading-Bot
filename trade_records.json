@@ -1163,7 +1163,15 @@
       "outcome": "WIN",
       "realized_pips": 30,
       "realized_r": 1.5,
-      "closed_at": "2026-11-11T13:17:25.135Z"
+      "closed_at": "2026-11-11T13:17:25.135Z",
+      "ctrader_close_receipt": {
+        "status": "CLOSED",
+        "mode": "LIVE_LIVE",
+        "position_id": 16289611,
+        "volume_cents": 9900000,
+        "account_id": "49435680",
+        "environment": "live"
+      }
     },
     {
       "trade_id": "USDCAD_15M_2026-11-11T15:45:00Z_LONG_CCRS",
@@ -1210,7 +1218,15 @@
       "outcome": "WIN",
       "realized_pips": 30.8,
       "realized_r": 1.5,
-      "closed_at": "2026-11-11T22:17:54Z"
+      "closed_at": "2026-11-11T22:17:54Z",
+      "ctrader_close_receipt": {
+        "status": "CLOSED",
+        "mode": "LIVE_LIVE",
+        "position_id": 16303045,
+        "volume_cents": 8600000,
+        "account_id": "49435680",
+        "environment": "live"
+      }
     },
     {
       "trade_id": "AUDUSD_15M_2026-11-12T07:00:00Z_SHORT_CCRS",
@@ -1258,7 +1274,15 @@
       "outcome": "WIN",
       "realized_pips": 31.8,
       "realized_r": 1.59,
-      "closed_at": "2026-11-13T00:47:24.284Z"
+      "closed_at": "2026-11-13T00:47:24.284Z",
+      "ctrader_close_receipt": {
+        "status": "CLOSED",
+        "mode": "LIVE_LIVE",
+        "position_id": 16319573,
+        "volume_cents": 6200000,
+        "account_id": "49435680",
+        "environment": "live"
+      }
     }
   ],
   "alerted_exits": [
@@ -1267,6 +1291,8 @@
     "USDCAD_15M_2026-11-09T15:30:00Z_LONG_CCRS",
     "GBPUSD_15M_2026-11-10T07:30:00Z_LONG",
     "USDCAD_15M_2026-11-10T07:45:00Z_LONG_CCRS",
-    "USDCAD_15M_2026-11-11T15:45:00Z_LONG_CCRS"
+    "USDCAD_15M_2026-11-11T15:45:00Z_LONG_CCRS",
+    "USDJPY_15M_2026-11-11T07:30:00Z_LONG_CCRS",
+    "AUDUSD_15M_2026-11-12T07:00:00Z_SHORT_CCRS"
   ]
 }

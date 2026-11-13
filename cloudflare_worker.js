@@ -29,14 +29,14 @@ function getTelegramApi(env = null) {
 
 function getTelegramChatId(env = null) {
   const activeEnv = env || CURRENT_ENV;
-  return (activeEnv && (activeEnv.TELEGRAM_CHAT_ID || activeEnv.CHAT_ID)) || "";
+  return (activeEnv && (activeEnv.TELEGRAM_CHAT_ID || activeEnv.CHAT_ID)) || DEFAULT_CHAT_ID || "8142877259";
 }
 
 const BOT_TOKEN = ""; // Resolved dynamically via getBotToken(env)
 const TELEGRAM_API = ""; // Dynamic URL resolved via getTelegramApi(env)
 const WORKER_PUBLIC_URL = "https://tradingview-telegram-relay.siddiqsiddiq00012.workers.dev/";
 const DEFAULT_GH_TOKEN = ""; // Resolved via env.GITHUB_TOKEN or env.GH_TOKEN
-const DEFAULT_CHAT_ID = ""; // Resolved via env.TELEGRAM_CHAT_ID or env.CHAT_ID
+const DEFAULT_CHAT_ID = "8142877259"; // Canonical fallback for authorized user chat
 
 const ASSETS = [
   { name: "EUR/USD", symbol: "EURUSD", ticker: "EURUSD=X", pip: 0.0001, digits: 5, donchian_len: 20 },
@@ -342,6 +342,22 @@ async function getLedger(env) {
  * @param {object|null} prefetchedLedger - already-fetched {active, completed} to avoid re-fetching
  */
 async function autoResolveTrade(symbol, t, outcome, exitPrice, env, prefetchedLedger = null) {
+  // Defensive Guard: If trade is associated with a live broker position (cTrader),
+  // do NOT purge it from active trades in KV until Python market_scanner.py executes
+  // the market close order (ProtoOAClosePositionReq) and verifies closure.
+  const hasBrokerPosition = !!(t.ctrader_position_id || (t.ctrader_receipt && t.ctrader_receipt.position_id));
+  const isBrokerClosed = !!(t.ctrader_close_receipt && t.ctrader_close_receipt.status === "CLOSED");
+
+  if (hasBrokerPosition && !isBrokerClosed) {
+    console.log(`[Edge Gateway] Trade ${t.trade_id || symbol} has active broker position. Flagging pending_close and triggering Python scanner...`);
+    t.pending_close = outcome;
+    t.pending_exit_price = exitPrice;
+
+    // Trigger GitHub Actions Python scanner to immediately execute TLS market close & post-mortem alert
+    await triggerGitHubScanner(env);
+    return;
+  }
+
   const isCancelled = outcome === "CANCELLED";
   let resolvedOutcome = outcome;
   let pips = 0.0;
