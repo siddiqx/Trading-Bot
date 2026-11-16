@@ -223,5 +223,50 @@
       "summary": "Take-profit hit within 1 bar(s). High momentum impulse confirmed structural breakout conviction.",
       "actionable_insight": "Validates the 20-period Donchian channel breakout trigger."
     }
+  },
+  {
+    "tracking": {
+      "global_trade_no": 12,
+      "volume_no": 1,
+      "volume_trade_no": 12,
+      "volume_id": "VOL_01",
+      "volume_label": "Volume 1 (Trades 1\u2013100)"
+    },
+    "trade_id": "AUDUSD_15M_2026-11-16T08:00:00Z_SHORT",
+    "pair": "AUDUSD",
+    "symbol": "AUDUSD",
+    "timeframe": "15M",
+    "direction": "SHORT",
+    "entry_price": 0.676,
+    "exit_price": 0.6743088364601135,
+    "stop_loss": 0.6782,
+    "take_profit": 0.6725,
+    "opened_at": "2026-11-16T08:00:00Z",
+    "closed_at": "2026-11-16T20:17:50Z",
+    "duration_hours": 12.3,
+    "duration_bars": 49,
+    "outcome": "WIN",
+    "realized_pips": 16.9,
+    "realized_r": 0.77,
+    "excursion_metrics": {
+      "mfe_pips": 25.5,
+      "mfe_r": 1.16,
+      "mae_pips": -5.0,
+      "mae_r": -0.23,
+      "tp_distance_pct_reached": 73.0
+    },
+    "market_regime": {
+      "trading_session": "London Session",
+      "rsi_at_entry": 50.0,
+      "atr_14": 0.0015,
+      "volatility_regime": "NORMAL",
+      "ema_alignment": "BEARISH_EXPANDING",
+      "breakout_candle_wick_ratio": 0.28
+    },
+    "diagnostic": {
+      "primary_factor": "CLEAN_MOMENTUM_EXPANSION",
+      "summary": "Flawless directional expansion with negligible adverse drawdown (0.23R). Institutional order flow propelled price directly to target.",
+      "actionable_insight": "Prime candidate setup for runner scaling or full 1.75R capture."
+    }
   }
 ]

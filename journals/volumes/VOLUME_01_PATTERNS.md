@@ -282,3 +282,28 @@
 
 ---
 
+### #12 · AUDUSD (15M) — 🎯 WIN (+1.75R)
+
+- **Global Sequence**: Trade `#12`
+- **Direction**: `SHORT` | **Outcome**: `WIN` (`+16.9 pips` / `0.77R`)
+- **Execution Range**: Entry ` 0.676 ` ➔ Exit ` 0.6743088364601135 `
+- **Targets**: Stop Loss ` 0.6782 ` | Take Profit ` 0.6725 `
+- **Holding Time**: `12.3 hours` (49 bars)
+- **Window**: `2026-11-16 08:00:00 UTC` ➔ `2026-11-16 20:17:50 UTC`
+
+#### 📊 Excursion & Market Regime
+| Metric | Value | Detail |
+| :--- | :--- | :--- |
+| **Max Favorable Excursion (MFE)** | `+25.5 pips` | Reached `+1.16R` (73.0% of TP) |
+| **Max Adverse Excursion (MAE)** | `-5.0 pips` | Deepest drawdown `-0.23R` |
+| **Session** | `London Session` | Institutional Market Timing |
+| **Entry RSI (14)** | `50.0` | Momentum Baseline |
+| **EMA Alignment** | `BEARISH_EXPANDING` | Structural Trend Bias |
+
+#### 🔬 Post-Mortem Diagnosis: `CLEAN_MOMENTUM_EXPANSION`
+> **Analysis**: Flawless directional expansion with negligible adverse drawdown (0.23R). Institutional order flow propelled price directly to target.
+>
+> **Actionable Takeaway**: Prime candidate setup for runner scaling or full 1.75R capture.
+
+---
+
