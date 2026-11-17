@@ -307,3 +307,28 @@
 
 ---
 
+### #13 · USDJPY (15M) — 🛑 LOSS (-1.00R)
+
+- **Global Sequence**: Trade `#13`
+- **Direction**: `SHORT` | **Outcome**: `LOSS` (`-22.0 pips` / `-1.0R`)
+- **Execution Range**: Entry ` 159.091 ` ➔ Exit ` 159.311 `
+- **Targets**: Stop Loss ` 159.311 ` | Take Profit ` 158.741 `
+- **Holding Time**: `4.05 hours` (16 bars)
+- **Window**: `2026-11-17 08:45:00 UTC` ➔ `2026-11-17 12:47:53 UTC`
+
+#### 📊 Excursion & Market Regime
+| Metric | Value | Detail |
+| :--- | :--- | :--- |
+| **Max Favorable Excursion (MFE)** | `+23.1 pips` | Reached `+1.05R` (66.0% of TP) |
+| **Max Adverse Excursion (MAE)** | `-23.1 pips` | Deepest drawdown `-1.05R` |
+| **Session** | `London Session` | Institutional Market Timing |
+| **Entry RSI (14)** | `50.0` | Momentum Baseline |
+| **EMA Alignment** | `BEARISH_EXPANDING` | Structural Trend Bias |
+
+#### 🔬 Post-Mortem Diagnosis: `PREMATURE_REVERSAL`
+> **Analysis**: Position reached +23.1 pips (+1.05R / 66.0% of TP) before aggressive counter-trend reversal hit stop-loss.
+>
+> **Actionable Takeaway**: Incorporate a Breakeven Protection rule once position reaches +0.8R or 50% TP distance.
+
+---
+
