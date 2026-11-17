@@ -16,7 +16,7 @@ The strategy operates exclusively on standard institutional Forex pairs. **Gold 
 | **EURUSD** | `EURUSD=X` | `0.0001` | 5 | 22.0p | 33.0p | 1:1.50 | `06:00 – 17:00 UTC` | EUR / USD |
 | **USDCAD** | `USDCAD=X` | `0.0001` | 5 | 22.0p | 33.0p | 1:1.50 | `06:00 – 17:00 UTC` | USD / CAD |
 | **GBPUSD** | `GBPUSD=X` | `0.0001` | 5 | 22.0p | 33.0p | 1:1.50 | `06:00 – 17:00 UTC` | GBP / USD |
-| **USDJPY** | `USDJPY=X` | `0.01` | 3 | 22.0p | 33.0p | 1:1.50 | `06:00 – 17:00 UTC` | USD / JPY |
+| **USDJPY** | `USDJPY=X` | `0.01` | 3 | 22.0p | 33.0p | 1:1.50 | `DE-WHITELISTED` | USD / JPY (Paused: 2026 BoJ intervention chop, PF 0.38) |
 | **USDCHF** | `USDCHF=X` | `0.0001` | 5 | 22.0p | 33.0p | 1:1.50 | `06:00 – 17:00 UTC` | USD / CHF |
 | **AUDUSD** | `AUDUSD=X` | `0.0001` | 5 | 22.0p | 33.0p | 1:1.50 | `06:00 – 17:00 UTC` | AUD / USD |
 

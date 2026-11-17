@@ -94,6 +94,8 @@ from core.instrument_validator import (
 )
 from core.config import (
     CANONICAL_SYMBOLS,
+    DEWHITELISTED_PAIRS,
+    ACTIVE_FOREX_SYMBOLS,
     CANONICAL_TAKE_PROFIT_PIPS,
     CANONICAL_STOP_LOSS_PIPS,
     CANONICAL_RISK_REWARD_RATIO,
@@ -2174,6 +2176,11 @@ def scan_pair_timeframe(pair_name: str, config: dict, tf: str, state: dict, ccrs
     """Scans a single pair and timeframe for confirmed Two-Phase Pullback & Rejection setups."""
     now_utc = datetime.now(timezone.utc)
 
+    # De-whitelisted Pair Guard: USDJPY is de-whitelisted from active trading due to negative statistical expectancy (BoJ intervention chop)
+    if pair_name in DEWHITELISTED_PAIRS and not os.environ.get("FORCE_ENABLE_DEWHITELISTED"):
+        logger.info(f"Skipping {pair_name} ({tf}): Pair is de-whitelisted from active trading due to negative statistical expectancy.")
+        return []
+
     # Forex Market Hours Guard: Skip weekends (markets closed Friday 17:00 NY to Sunday 17:00 NY)
     if not os.environ.get("PYTEST_CURRENT_TEST") and not is_forex_market_open(now_utc):
         logger.info(f"Skipping {pair_name} ({tf}): Forex market is closed for the weekend.")
@@ -3384,6 +3391,11 @@ def run_scan_cycle():
     logger.info(f"Starting scan cycle. Active floating trades: {list(active_trades_map.keys())}")
     
     for pair_name, cfg in SYMBOLS.items():
+        if pair_name in DEWHITELISTED_PAIRS and not os.environ.get("FORCE_ENABLE_DEWHITELISTED"):
+            logger.info(f"Skipping {pair_name}: Pair is de-whitelisted from active trading (negative statistical expectancy / BoJ chop).")
+            telemetry["slots_scanned"].append({"pair": pair_name, "tf": "ALL", "status": "SKIPPED_DEWHITELISTED", "detail": "De-whitelisted pair"})
+            continue
+
         for tf in TIMEFRAMES:
             slot_key = f"{pair_name}_{tf.upper()}"
             active_slot_trade = active_trades_map.get(slot_key) or active_trades_map.get(pair_name)

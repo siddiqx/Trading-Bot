@@ -61,6 +61,20 @@ def test_canonical_config_constants():
     assert "GOLD" not in CANONICAL_SYMBOLS
 
 
+def test_dewhitelisted_pairs_enforcement():
+    """Verify USDJPY is officially de-whitelisted from active trading to protect portfolio expectancy."""
+    from core.config import DEWHITELISTED_PAIRS, ACTIVE_FOREX_SYMBOLS
+    from core.instrument_validator import is_active_trading_symbol
+
+    assert "USDJPY" in DEWHITELISTED_PAIRS
+    assert "USDJPY" not in ACTIVE_FOREX_SYMBOLS
+    assert is_active_trading_symbol("USDJPY") is False
+
+    # Active pairs must be the 5 institutional pairs
+    expected_active = {"EURUSD", "USDCAD", "GBPUSD", "USDCHF", "AUDUSD"}
+    assert set(ACTIVE_FOREX_SYMBOLS) == expected_active
+
+
 def test_module_configuration_alignment():
     """Verify all modules inherit identical canonical exit geometry."""
     # core.instrument_validator

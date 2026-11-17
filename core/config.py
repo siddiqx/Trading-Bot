@@ -31,6 +31,14 @@ CANONICAL_SYMBOLS: List[str] = [
     "AUDUSD",
 ]
 
+# De-whitelisted / Paused pairs due to empirical negative statistical expectancy (BoJ 2026 intervention chop)
+DEWHITELISTED_PAIRS: set[str] = {"USDJPY"}
+
+# Active trading universe (Eligible for fresh signal generation and execution)
+ACTIVE_FOREX_SYMBOLS: List[str] = [
+    sym for sym in CANONICAL_SYMBOLS if sym not in DEWHITELISTED_PAIRS
+]
+
 # Strict set for O(1) membership checks
 ELIGIBLE_FOREX_SYMBOLS = set(CANONICAL_SYMBOLS)
 

@@ -15,6 +15,8 @@ from typing import Tuple, Dict, Any, Optional
 
 from core.config import (
     CANONICAL_SYMBOLS,
+    DEWHITELISTED_PAIRS,
+    ACTIVE_FOREX_SYMBOLS,
     ELIGIBLE_FOREX_SYMBOLS,
     EXCLUDED_GOLD_SYMBOLS,
     EXCLUDED_SYMBOLS,
@@ -80,6 +82,12 @@ def is_forex_symbol(symbol: str) -> bool:
     """Check if symbol is an eligible standard forex currency pair."""
     norm = normalize_symbol_string(symbol)
     return norm in ELIGIBLE_FOREX_SYMBOLS
+
+
+def is_active_trading_symbol(symbol: str) -> bool:
+    """Check if symbol is currently approved for active execution (excludes paused/de-whitelisted pairs)."""
+    norm = normalize_symbol_string(symbol)
+    return norm in ACTIVE_FOREX_SYMBOLS and norm not in DEWHITELISTED_PAIRS
 
 
 def validate_instrument_eligibility(symbol: str) -> Tuple[bool, str]:
