@@ -268,5 +268,50 @@
       "summary": "Flawless directional expansion with negligible adverse drawdown (0.23R). Institutional order flow propelled price directly to target.",
       "actionable_insight": "Prime candidate setup for runner scaling or full 1.75R capture."
     }
+  },
+  {
+    "tracking": {
+      "global_trade_no": 14,
+      "volume_no": 1,
+      "volume_trade_no": 14,
+      "volume_id": "VOL_01",
+      "volume_label": "Volume 1 (Trades 1\u2013100)"
+    },
+    "trade_id": "EURUSD_15M_2026-11-17T07:15:00Z_SHORT_CCRS",
+    "pair": "EURUSD",
+    "symbol": "EURUSD",
+    "timeframe": "15M",
+    "direction": "SHORT",
+    "entry_price": 1.10072,
+    "exit_price": 1.09754,
+    "stop_loss": 1.10272,
+    "take_profit": 1.09754,
+    "opened_at": "2026-11-17T07:15:00Z",
+    "closed_at": "2026-11-17T13:47:52Z",
+    "duration_hours": 6.55,
+    "duration_bars": 26,
+    "outcome": "WIN",
+    "realized_pips": 31.8,
+    "realized_r": 1.59,
+    "excursion_metrics": {
+      "mfe_pips": 35.1,
+      "mfe_r": 1.75,
+      "mae_pips": -4.8,
+      "mae_r": -0.24,
+      "tp_distance_pct_reached": 100.0
+    },
+    "market_regime": {
+      "trading_session": "London Session",
+      "rsi_at_entry": 50.0,
+      "atr_14": 0.0015,
+      "volatility_regime": "NORMAL",
+      "ema_alignment": "BEARISH_EXPANDING",
+      "breakout_candle_wick_ratio": 0.28
+    },
+    "diagnostic": {
+      "primary_factor": "CLEAN_MOMENTUM_EXPANSION",
+      "summary": "Flawless directional expansion with negligible adverse drawdown (0.24R). Institutional order flow propelled price directly to target.",
+      "actionable_insight": "Prime candidate setup for runner scaling or full 1.75R capture."
+    }
   }
 ]
