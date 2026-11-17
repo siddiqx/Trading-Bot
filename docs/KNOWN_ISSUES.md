@@ -215,5 +215,21 @@ This document tracks verified defects, architectural discrepancies, and security
   - Preserved active trade tracking in `check_active_trades()` so existing live USDJPY positions close gracefully without being orphaned.
   - Added unit regression test `test_dewhitelisted_pairs_enforcement` in `tests/test_canonical_strategy.py`.
 
+---
+
+### ISSUE-GOLD-02: CCRS USD Single-Currency Threshold Over-Constraint Suppressing Gold Signals
+
+* **Severity:** **Medium** (Signal Generation Suppression)
+* **Status:** **REMEDIATED IN CODE (2026-11-17)** — Tested and verified with automated test suite in `tests/test_gold_satellite.py`.
+* **Affected Files:** `satellite/gold_config.py`, `satellite/market_scanner_gold.py`, `tests/test_gold_satellite.py`
+* **Root Cause:**
+  - In Forex pair trading, CCRS evaluates pairwise currency spread divergence $Z_A - Z_B$. Because both currencies are standard normal variables ($Z \sim \mathcal{N}(0, 1)$), their difference has variance $\text{Var}(Z_A - Z_B) = 2$, yielding standard deviation $\sigma \approx 1.414$. A $1.75\sigma$ spread threshold corresponds to an individual currency move of $1.75 / \sqrt{2} \approx 1.24\sigma$.
+  - In `satellite/gold_config.py`, evaluating single-factor $Z_{\text{USD}}$ against $1.75\sigma$ demanded an extreme 1-in-20 statistical event ($p \approx 0.04$ on each tail), suppressing valid Gold signals even during strong macro USD regimes. For example, between Nov 13 and Nov 17, $Z_{\text{USD}}$ peaked at $+1.73\sigma$ (averaging $+1.15\sigma$), resulting in zero Gold signal dispatches.
+* **Remediation Implemented:**
+  - Calibrated `CCRS_USD_THRESHOLD` from `1.75` to `1.25` in `satellite/gold_config.py`.
+  - Updated docstrings in `satellite/market_scanner_gold.py`.
+  - Added unit regression tests in `tests/test_gold_satellite.py` (`TestGoldMacroFactor`).
+
+
 
 

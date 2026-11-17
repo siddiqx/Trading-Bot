@@ -36,7 +36,7 @@ MACRO_TIMEFRAME: str = "4h"
 # CCRS Macro USD Factor
 CCRS_LOOKBACK_HOURS: int = 120
 CCRS_Z_WINDOW_HOURS: int = 200
-CCRS_USD_THRESHOLD: float = 1.75  # |Z_USD| >= 1.75σ establishes macro directional flow
+CCRS_USD_THRESHOLD: float = 1.25  # |Z_USD| >= 1.25σ establishes macro directional flow (parity with 1.75σ pairwise spread)
 
 # Volatility-Anchored Dynamic Stops
 ATR_PERIOD: int = 14

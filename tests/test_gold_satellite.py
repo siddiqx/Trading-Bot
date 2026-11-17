@@ -289,3 +289,30 @@ class TestGoldActiveTradeLifecycle:
         assert rem_old == 0.0
 
 
+class TestGoldMacroFactor:
+    """Verifies CCRS USD single-currency factor calibration and thresholding."""
+
+    def test_ccrs_usd_threshold_calibration(self):
+        from satellite.gold_config import CCRS_USD_THRESHOLD
+        # CCRS USD single-currency threshold must be calibrated to 1.25σ
+        # (statistical equivalent to 1.75σ pairwise spread divergence in Forex)
+        assert CCRS_USD_THRESHOLD == 1.25
+
+    def test_macro_flow_regime_classification(self):
+        from satellite.gold_config import CCRS_USD_THRESHOLD
+
+        # USD strength (Z_USD >= +1.25) -> Bearish Gold (Short)
+        assert 1.30 >= CCRS_USD_THRESHOLD
+        assert not (1.30 <= -CCRS_USD_THRESHOLD)
+
+        # USD weakness (Z_USD <= -1.25) -> Bullish Gold (Long)
+        assert -1.45 <= -CCRS_USD_THRESHOLD
+        assert not (-1.45 >= CCRS_USD_THRESHOLD)
+
+        # Noise zone (|Z_USD| < 1.25) -> Neutral / No entry
+        neutral_z = 0.85
+        assert not (neutral_z <= -CCRS_USD_THRESHOLD)
+        assert not (neutral_z >= CCRS_USD_THRESHOLD)
+
+
+

@@ -5,7 +5,7 @@ Dedicated Isolated Satellite Engine.
 
 Operates strictly decoupled from the primary Forex market scanner:
 1. Uses institutional commodity contract geometry (100 oz / lot, $100/point).
-2. Computes the Dual-Timeframe CCRS USD Macro Factor (|Z_USD| >= 1.75σ) on completed 1H bars.
+2. Computes the Dual-Timeframe CCRS USD Macro Factor (|Z_USD| >= 1.25σ) on completed 1H bars.
 3. Evaluates 1H EMA20 retests and 10-bar Donchian liquidity sweeps on completed bars.
 4. Dynamically sizes positions based on 2.0x ATR stops ($20.00 - $35.00/oz).
 5. Enforces Volatility Cushion Trailing (+1.20R halving, +1.50R locking, +2.00R runner).
