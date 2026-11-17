@@ -1,6 +1,50 @@
 {
   "tracking_started": "2026-10-15",
-  "active_trades": {},
+  "active_trades": {
+    "EURUSD_15M": {
+      "trade_id": "EURUSD_15M_2026-11-17T07:15:00Z_SHORT_CCRS",
+      "ctrader_position_id": 16439034,
+      "ctrader_receipt": {
+        "status": "EXECUTED",
+        "mode": "LIVE_LIVE",
+        "pair": "EURUSD",
+        "direction": "SHORT",
+        "lots": 0.62,
+        "units": 62000,
+        "entry": 1.10072,
+        "stop_loss": 1.10272,
+        "take_profit": 1.09754,
+        "order_id": 18091168,
+        "position_id": 16439034,
+        "account_id": "49435680",
+        "environment": "live"
+      },
+      "lots": 0.62,
+      "units": 62000,
+      "pair": "EURUSD",
+      "symbol": "EURUSD",
+      "ticker": "EURUSD=X",
+      "direction": "SHORT",
+      "timeframe": "15M",
+      "strategy": "Institutional Dual-Timeframe CCRS Engine",
+      "strategy_type": "CCRS_DUAL_TF",
+      "max_hold_hours": 36.0,
+      "entry": 1.10072,
+      "stop_loss": 1.10272,
+      "take_profit": 1.09754,
+      "sl_pips": 20.0,
+      "tp_pips": 31.8,
+      "rr": 1.59,
+      "bank_pct": 0.0,
+      "partial_taken": false,
+      "be_active": false,
+      "pip": 0.0001,
+      "digits": 5,
+      "opened_at": "2026-11-17T07:15:00Z",
+      "status": "OPEN",
+      "filled_at": "2026-11-17T07:15:00Z"
+    }
+  },
   "completed_trades": [
     {
       "trade_id": "USDCAD_15M_2026-10-15T15:45:00Z_SHORT",
