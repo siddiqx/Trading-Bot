@@ -35,6 +35,7 @@ To prevent context bloat and contradictory instructions across sessions, maintai
    - Defect & Security Log: [`docs/KNOWN_ISSUES.md`](docs/KNOWN_ISSUES.md)
    - Development Roadmap: [`docs/DEVELOPMENT_ROADMAP.md`](docs/DEVELOPMENT_ROADMAP.md)
    - Position Sizing Guide: [`docs/LOT_SIZE_GUIDE.md`](docs/LOT_SIZE_GUIDE.md)
+   - Prop Firm Anti-Ban Guide: [`docs/PROP_FIRM_ANTI_BAN_GUIDE.md`](docs/PROP_FIRM_ANTI_BAN_GUIDE.md)
 
 ---
 

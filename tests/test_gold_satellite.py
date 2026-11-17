@@ -314,5 +314,31 @@ class TestGoldMacroFactor:
         assert not (neutral_z <= -CCRS_USD_THRESHOLD)
         assert not (neutral_z >= CCRS_USD_THRESHOLD)
 
+    def test_gold_news_filter_blocks_during_usd_events(self):
+        """Verify that high-impact USD economic events block fresh Gold entries for prop firm safety."""
+        from core.news_filter import is_news_window_active
+        from datetime import datetime, timezone
+
+        mock_events = [
+            {
+                "title": "Non-Farm Employment Change",
+                "country": "USD",
+                "date": "2026-11-06T13:30:00+00:00",
+                "impact": "High"
+            }
+        ]
+
+        # 10 minutes before NFP -> Blocked
+        t_before = datetime(2026, 11, 6, 13, 20, tzinfo=timezone.utc)
+        blocked, reason = is_news_window_active("XAUUSD", now_utc=t_before, buffer_minutes=30, events=mock_events)
+        assert blocked is True
+        assert "Non-Farm Employment Change" in reason
+
+        # 45 minutes after NFP -> Allowed
+        t_after = datetime(2026, 11, 6, 14, 15, tzinfo=timezone.utc)
+        blocked, reason = is_news_window_active("XAUUSD", now_utc=t_after, buffer_minutes=30, events=mock_events)
+        assert blocked is False
+
+
 
 

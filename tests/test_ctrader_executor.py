@@ -167,3 +167,35 @@ def test_dynamic_25k_account_lot_sizing(monkeypatch):
     assert res_gold["units"] == 10 # 10 oz
 
 
+def test_stealth_comment_and_label_configuration(monkeypatch):
+    """Verify stealth comment and label configuration for prop firm anti-ban safety."""
+    monkeypatch.setenv("ENABLE_CTRADER_EXECUTION", "true")
+    monkeypatch.setenv("CTRADER_CLIENT_ID", "mock_client_id")
+    monkeypatch.setenv("CTRADER_CLIENT_SECRET", "mock_client_secret")
+    monkeypatch.setenv("CTRADER_ACCESS_TOKEN", "mock_access_token")
+    monkeypatch.setenv("CTRADER_ACCOUNT_ID", "12345678")
+    monkeypatch.setenv("CTRADER_ENV", "demo")
+    monkeypatch.setenv("CTRADER_ORDER_COMMENT", "swing_manual")
+    monkeypatch.setenv("CTRADER_ORDER_LABEL", "tier1")
+
+    import core.ctrader_executor as ce
+    monkeypatch.setattr(ce, "ENABLE_CTRADER_EXECUTION", True)
+    monkeypatch.setattr(ce, "CTRADER_CLIENT_ID", "mock_client_id")
+    monkeypatch.setattr(ce, "CTRADER_CLIENT_SECRET", "mock_client_secret")
+    monkeypatch.setattr(ce, "CTRADER_ACCESS_TOKEN", "mock_access_token")
+    monkeypatch.setattr(ce, "CTRADER_ACCOUNT_ID", "12345678")
+
+    sig = {
+        "pair": "EURUSD",
+        "direction": "LONG",
+        "entry": 1.08500,
+        "stop_loss": 1.08280,
+        "take_profit": 1.08830,
+        "suggested_lots": 0.10
+    }
+
+    res = ce.execute_ctrader_order(sig)
+    assert res["status"] == "EXECUTED"
+
+
+

@@ -83,6 +83,7 @@ from satellite.gold_validator import (
     get_gold_usd_bias,
 )
 from market_scanner import is_forex_market_open
+from core.news_filter import is_news_window_active
 
 logging.basicConfig(
     level=logging.INFO,
@@ -623,6 +624,12 @@ def run_gold_scan_cycle() -> None:
     # 5b. Filter: Monday Session Window (06:00 - 12:00 UTC) - Fresh entries prohibited outside London window
     if is_monday_session_filtered(now_utc):
         logger.info("Monday session filter active. Fresh Gold entries permitted strictly between 06:00-12:00 UTC.")
+        return
+
+    # 5c. Filter: High-Impact Macro Economic News Filter (Prop Firm News Ban Defense)
+    news_active, news_reason = is_news_window_active(GOLD_SYMBOL, now_utc)
+    if news_active:
+        logger.warning(f"High-Impact News Blackout Active for Gold ({news_reason}). Fresh entries suppressed.")
         return
 
     # 6. Filter: Active Institutional Trading Hours (06:00 - 18:00 UTC)

@@ -325,6 +325,14 @@ def execute_ctrader_order(sig: Dict[str, Any]) -> Dict[str, Any]:
         if take_profit > 0:
             req.takeProfit = take_profit
 
+        # Stealth Anti-Ban: Configurable comment & label (defaults to empty to mirror manual human orders)
+        order_comment = (os.environ.get("CTRADER_ORDER_COMMENT") or "").strip()
+        order_label = (os.environ.get("CTRADER_ORDER_LABEL") or "").strip()
+        if order_comment:
+            req.comment = order_comment
+        if order_label:
+            req.label = order_label
+
         # Attempt TLS Transmission to cTrader Open API endpoint
         order_id = 9990001
         position_id = 9990001

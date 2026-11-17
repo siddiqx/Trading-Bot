@@ -105,6 +105,8 @@ The system was engineered from the ground up to comply with institutional prop f
 | **Monday London Window** | 06:00 – 12:00 UTC strictly | Prohibits entries during erratic Asian opens and low-volume NY afternoon drift. |
 | **Post-Loss Cooldown** | 60 Minutes | Enforces mandatory 1-hour timeout following a stop-out to prevent revenge trading. |
 
+> 🛡️ **Prop Firm Anti-Ban Guide:** For full breakdown of copy-trading stealth settings, news trading shields, and challenge pass rules, see [docs/PROP_FIRM_ANTI_BAN_GUIDE.md](docs/PROP_FIRM_ANTI_BAN_GUIDE.md).
+
 ---
 
 ## 4. Interactive Telegram Terminal
@@ -147,6 +149,7 @@ trading-bot/
 │   ├── LOT_SIZE_GUIDE.md            # Account sizing table ($100 to $100,000 accounts)
 │   ├── PROJECT_AUDIT.md             # System audit & codebase verification
 │   ├── PROJECT_CONTEXT.md           # Authoritative agent context & architecture map
+│   ├── PROP_FIRM_ANTI_BAN_GUIDE.md  # Comprehensive prop firm anti-ban & safety manual
 │   └── TRADING_STRATEGY_SPEC.md     # Mathematical & algorithmic strategy rulebook
 ├── satellite/                       # Dedicated Isolated Gold Satellite Engine
 │   ├── gold_config.py               # Authoritative Gold contract & exit configuration
