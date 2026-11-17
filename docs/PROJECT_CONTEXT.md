@@ -122,6 +122,8 @@ Until explicitly authorized by the user:
 - **ISS-BACKTEST-01 (Look-Ahead Elimination & Realistic Backtest):** Implemented `scripts/run_canonical_backtest.py` strictly evaluating historical decisions at closed bar $t \le \text{current\_idx}$, modeling spread, commission, and slippage, enforcing portfolio risk rules, and reporting In-Sample (70%) vs Out-of-Sample (30%) performance. Refactored `scripts/simulate_prop_firm_5k.py`.
 - **ISS-OPS-01 (Signal Delivery Restoration & Quantitative Analysis):** Diagnosed missing Telegram signal root cause (stripped fallback tokens required GitHub Repository Secrets). Added workflow pre-flight secrets check and step summaries. Reconstructed dataset: 24 live forward trades and 303 archival trades. Investigated Friday behavior (refuted Friday exclusion; shown to degrade OOS performance). Evaluated exit variants A through D across 3,794 setups, proving Variant D (Structure + ATR Buffer) reduces drawdown by 91% compared to rigid 10p stops.
 
-### Next Recommended Tasks
-1. **GitHub Secret Injection:** User sets `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` in repository secrets, and enables Read/Write workflow permissions.
-2. **Strategy Evolution (Variant D):** Transition canonical stop model from rigid 10-pip stop to structure-anchored stop with ATR buffer (Variant D) to eliminate high friction and noise stop-outs.
+### Current Production Status
+- **System Status:** **COMPLETED & IN PRODUCTION (v3.3.0)**.
+- **24/7 Cloud Surveillance:** Actively executing every 15 minutes during market hours via GitHub Actions (`.github/workflows/scanner.yml`).
+- **Interactive Mobile Terminal:** Telegram slash commands routed through Cloudflare Global Edge V8 Worker.
+- **Execution & Safety Gate:** Signal generation and paper tracking fully active; automated broker execution (`core/ctrader_executor.py`) verified in test suite and stage-gated behind `ENABLE_CTRADER_EXECUTION=false` until explicit user authorization.

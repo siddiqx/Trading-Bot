@@ -1,29 +1,36 @@
 # SYSTEMATIC TRADING STRATEGY SPECIFICATION
 
-**Strategy Name:** Institutional Dual-Timeframe CCRS Engine (v3.2.0)  
-**Implementation Files:** `market_scanner.py`, `core/config.py`, `core/instrument_validator.py`, `cloudflare_worker.js`  
+**Strategy Name:** Institutional Dual-Timeframe CCRS Engine (v3.3.0 Production)  
+**Implementation Files:** `market_scanner.py`, `core/config.py`, `satellite/market_scanner_gold.py`, `satellite/gold_config.py`, `satellite/gold_validator.py`, `core/instrument_validator.py`, `cloudflare_worker.js`  
 **Status:** Active Institutional Production Engine (Empirically Validated 2022–2026)  
 **Document Purpose:** Mathematical, algorithmic, and programmatic specification of all active trading rules.
 
 ---
 
-## 1. Asset Universe & Instrument Configurations
+## 1. Asset Universe & Architecture Overview
 
-The strategy operates exclusively on standard institutional Forex pairs. **Gold (`XAUUSD`) and all commodity/crypto derivatives are permanently disabled and strictly rejected by the validator.**
+The production engine operates two decoupled, specialized execution modules running concurrently every 15 minutes during global market hours:
+1. **Core Institutional Forex Engine (`market_scanner.py`):** 5 Active Major Forex Pairs (15M precision execution, 1H 7-currency CCRS macro bias).
+2. **Dedicated Gold Satellite Engine (`satellite/market_scanner_gold.py`):** Spot Gold commodity alpha engine (1H precision execution, 1H single-factor CCRS USD bias, cross-engine USD correlation interlock).
 
-| Symbol | Market Ticker | Pip Size | Digits | Canonical SL | Canonical TP | R:R | Active Volume Hours (UTC) | Base / Quote Currency |
-|---|---|---|---|---|---|---|---|---|
-| **EURUSD** | `EURUSD=X` | `0.0001` | 5 | 22.0p | 33.0p | 1:1.50 | `06:00 – 17:00 UTC` | EUR / USD |
-| **USDCAD** | `USDCAD=X` | `0.0001` | 5 | 22.0p | 33.0p | 1:1.50 | `06:00 – 17:00 UTC` | USD / CAD |
-| **GBPUSD** | `GBPUSD=X` | `0.0001` | 5 | 22.0p | 33.0p | 1:1.50 | `06:00 – 17:00 UTC` | GBP / USD |
-| **USDJPY** | `USDJPY=X` | `0.01` | 3 | 22.0p | 33.0p | 1:1.50 | `DE-WHITELISTED` | USD / JPY (Paused: 2026 BoJ intervention chop, PF 0.38) |
-| **USDCHF** | `USDCHF=X` | `0.0001` | 5 | 22.0p | 33.0p | 1:1.50 | `06:00 – 17:00 UTC` | USD / CHF |
-| **AUDUSD** | `AUDUSD=X` | `0.0001` | 5 | 22.0p | 33.0p | 1:1.50 | `06:00 – 17:00 UTC` | AUD / USD |
+### Active Forex Instrument Specifications
 
-### Monitored Timeframes (Dual-Timeframe Architecture)
-- **Macro Order Flow Regime Timeframe:** 1-Hour (`1h`) CCRS Factor Matrix (|D| ≥ 1.75σ)
-- **Precision Execution Timeframe:** 15-Minute (`15m`) 20-EMA Pullbacks & 10-bar Fractal Liquidity Sweeps
-- **Frequency Profile:** ~80–90 trades/month across 6 pairs (~3–4 trades/day during London/NY sessions)
+| Symbol | Market Ticker | Pip Size | Digits | Canonical SL | Canonical TP | R:R | Active Volume Hours (UTC) | Base / Quote Currency | Status |
+|---|---|---|---|---|---|---|---|---|---|
+| **EURUSD** | `EURUSD=X` | `0.0001` | 5 | 22.0p | 33.0–35.0p | 1:1.50–1.59 | `07:00 – 17:00 UTC` | EUR / USD | **ACTIVE** |
+| **USDCAD** | `USDCAD=X` | `0.0001` | 5 | 22.0p | 33.0–35.0p | 1:1.50–1.59 | `07:00 – 17:00 UTC` | USD / CAD | **ACTIVE** |
+| **GBPUSD** | `GBPUSD=X` | `0.0001` | 5 | 22.0p | 33.0–35.0p | 1:1.50–1.59 | `07:00 – 17:00 UTC` | GBP / USD | **ACTIVE** |
+| **USDCHF** | `USDCHF=X` | `0.0001` | 5 | 22.0p | 33.0–35.0p | 1:1.50–1.59 | `07:00 – 17:00 UTC` | USD / CHF | **ACTIVE** |
+| **AUDUSD** | `AUDUSD=X` | `0.0001` | 5 | 22.0p | 33.0–35.0p | 1:1.50–1.59 | `07:00 – 17:00 UTC` | AUD / USD | **ACTIVE** |
+| **USDJPY** | `USDJPY=X` | `0.01` | 3 | 22.0p | 33.0p | 1:1.50 | `DE-WHITELISTED` | USD / JPY | **PAUSED (MoF/BoJ Intervention Chop)** |
+
+*Note on USDJPY:* De-whitelisted from active trading to protect portfolio expectancy (20% live win rate, PF 0.38 in 2026). Retained in data feeds strictly for 7-currency synthetic basket calculations.
+
+### Dedicated Gold Satellite Specifications
+
+| Symbol | Market Ticker | Point Size | Lot Value | Canonical SL Floor/Cap | Base TP | R:R | Active Volume Hours (UTC) |
+|---|---|---|---|---|---|---|---|
+| **XAUUSD** | `GC=F` | `$1.00/oz` | 100 oz / lot ($100/point) | `$20.00 – $35.00/oz` | `$30.00 – $52.50/oz` | 1:1.50 | `06:00 – 18:00 UTC` |
 
 ---
 
@@ -53,32 +60,37 @@ $$R_{\text{USD}}[t] = -\frac{1}{6} \sum_{c \in \{\text{EUR}, \text{GBP}, \text{A
 To isolate structural capital flows from volatility regimes, each currency's return is standardized into a rolling Z-score:
 $$Z_c[t] = \frac{R_c[t] - \mu_{c, 200}[t]}{\sigma_{c, 200}[t] + \epsilon}$$
 
-#### Step 4: Pairwise Order Flow Divergence
-The cross-sectional divergence $D$ between Base currency $A$ and Quote currency $B$ is:
-$$D(A/B)[t] = Z_A[t] - Z_B[t]$$
+#### Step 4: Pairwise Order Flow Divergence (Forex) & Single-Factor Factor (Gold)
+- **Forex Pairwise Divergence:** The cross-sectional divergence $D$ between Base currency $A$ and Quote currency $B$ is:
+  $$D(A/B)[t] = Z_A[t] - Z_B[t]$$
+  A regime is active when $|D(A/B)| \ge 1.75\sigma$.
+- **Gold Single-Factor Flow:** Spot Gold is inversely correlated with global USD liquidity:
+  $$\text{Macro Flow Established} \iff |Z_{\text{USD}}[t]| \ge 1.25\sigma$$
+  *(Note: $1.25\sigma$ on a single variable matches the statistical probability of $1.75\sigma$ spread divergence since $\sigma_{\text{spread}} = \sqrt{1 + 1} \approx 1.414$, and $1.25 \times 1.414 \approx 1.76\sigma$).*
 
 ---
 
-## 3. Signal Generation & Entry Rules
+## 3. Signal Generation & Precision Execution Rules
 
-### Signal Trigger Conditions
-Surveillance evaluates completed 1H candle bars during institutional volume hours (07:00–17:00 UTC):
+### Forex Signal Trigger Conditions (15M Closed Candle)
+Surveillance evaluates completed 15M candle bars during institutional volume hours (07:00–17:00 UTC):
+1. **Macro Flow Direction ($|D| \ge 1.75\sigma$):**
+   - Long Bias: $D(A/B) \ge +1.75\sigma$ (Base accumulation / Quote distribution).
+   - Short Bias: $D(A/B) \le -1.75\sigma$ (Base distribution / Quote accumulation).
+2. **Technical Trigger:**
+   - **20-EMA Pullback Retest:** Price touches 20-EMA and rejects with a closing candle in trend direction.
+   - **10-Bar Donchian Liquidity Sweep:** Intra-bar wick sweeps the 10-bar Donchian extreme and closes back inside the channel (liquidity grab).
+3. **Forex Factory News Filter:** Trade is suppressed if high-impact (Red Folder) economic news occurs within $\pm 30$ minutes.
+4. **Monday Session Filter:** Monday entries restricted strictly to London volume window (06:00–12:00 UTC).
 
-- **Institutional Long Entry Trigger ($D \ge +2.0\sigma$):**
-  $$D(A/B)[t] \ge 2.0 \quad \text{and} \quad D(A/B)[t-1] < 2.0$$
-  *Base currency is experiencing strong institutional accumulation relative to quote currency.*
-
-- **Institutional Short Entry Trigger ($D \le -2.0\sigma$):**
-  $$D(A/B)[t] \le -2.0 \quad \text{and} \quad D(A/B)[t-1] > -2.0$$
-  *Quote currency is experiencing strong institutional accumulation relative to base currency.*
-
-### Real-Time Execution & Drift Protection
-Once a valid signal is detected on 1H bar close:
-1. **Live Price Execution:** Signals execute at the live market price (`get_live_price()`).
-2. **Maximum Chase Cutoff (3.0 pips):**
-   - For Longs: If $\text{LivePrice} > \text{BarClose} + 3.0\text{ pips}$, skip late entry (avoids chasing extended moves).
-   - If $\text{LivePrice} < \text{BarClose} - 3.0\text{ pips}$, skip entry (momentum stalled).
-   - For Shorts: Symmetric $3.0\text{ pip}$ boundaries.
+### Gold Signal Trigger Conditions (1H Closed Candle)
+Surveillance evaluates completed 1H candle bars during institutional active hours (06:00–18:00 UTC):
+1. **Macro USD Factor Flow ($|Z_{\text{USD}}| \ge 1.25\sigma$):**
+   - Long Gold (BUY): $Z_{\text{USD}} \le -1.25\sigma$ (Intense USD capital flight).
+   - Short Gold (SELL): $Z_{\text{USD}} \ge +1.25\sigma$ (Intense USD accumulation).
+2. **Technical Trigger:** Confirmed 1H 20-EMA retest rejection or 10-bar Donchian sweep on closed 1H bar.
+3. **Rollover Blackout:** 20:30 – 22:30 UTC spread widening blackout (fresh entries prohibited).
+4. **Friday Cutoff:** No fresh entries after 16:00 UTC; active trades flattened before the weekend.
 
 ---
 
@@ -86,47 +98,39 @@ Once a valid signal is detected on 1H bar close:
 
 ### Dynamic Volatility-Anchored Stop Loss (SL)
 Stop loss distance is dynamically anchored to 14-period Average True Range ($2.0\times \text{ATR}$):
-$$\text{SL\_Pips} = \text{clamp}\Big(20.0, \, 25.0, \, \frac{2.0 \times \text{ATR}_{14}}{\text{Pip}}\Big)$$
-- **Floor:** Minimum $20.0\text{ pips}$ suppresses broker spread noise and normal 1H pullback wicks.
-- **Cap:** Maximum $25.0\text{ pips}$ preserves conservative lot size precision and aligns with intraday Average Daily Range (ADR).
-- **Canonical Default:** $22.0\text{ pips}$.
+$$\text{SL} = \text{clamp}\Big(\text{SL}_{\text{Floor}}, \, \text{SL}_{\text{Cap}}, \, 2.0 \times \text{ATR}_{14}\Big)$$
+- **Forex SL:** Bounded strictly between $20.0$ and $25.0$ pips (canonical default: $22.0$ pips).
+- **Gold SL:** Bounded strictly between $\$20.00$ and $\$35.00$/oz ($2.0\times$ 1H ATR).
 
-### Calibrated Swing 1:1.50 Take Profit (TP)
-Take Profit is set strictly to $1.50\times$ the Stop Loss distance:
-$$\text{TP\_Pips} = \text{round}(\text{SL\_Pips} \times 1.50, \, 1)$$
-- **Target Range:** $30.0\text{ pips}$ to $37.5\text{ pips}$ (Canonical baseline: $33.0\text{ pips}$).
-- **ADR Alignment:** A 30–36 pip target represents $45\% - 55\%$ of daily Forex volatility, allowing targets to be completed within 10–15 hours without multi-day drawdowns.
-- **Zero Breakeven Choking:** The strategy operates as a **Pure 1:1.50 Binary Runner (100% to TP or SL, zero partial scaling)**.
-
-### Intra-Candle Exit Priority & Retail Spread Clearance
-1. **Pessimistic Stop Loss Priority:** If a volatile candle touches both Stop Loss and Take Profit thresholds, Stop Loss takes absolute precedence (**LOSS**).
-2. **Retail Spread Clearance Buffer:** Take Profit requires clearing a 1.0-pip buffer past the exact target level:
-   - Long TP Hit condition: $\text{BarHigh} \ge \text{TP} + 1.0 \times \text{Pip}$
-   - Short TP Hit condition: $\text{BarLow} \le \text{TP} - 1.0 \times \text{Pip}$
-3. **Macro Time Exit:** Positions held $\ge 48\text{ hours}$ without reaching target are evaluated at market close to free capital.
+### Calibrated Take Profit & Volatility Cushion Trailing
+- **Base Take Profit:** $1:1.50$ Risk-to-Reward ratio ($33.0 - 35.0$ pips Forex, $\$30.00 - \$52.50$/oz Gold).
+- **Volatility Cushion Trailing:**
+  - **Tier 1 (+1.20R):** SL advanced to $-0.50$R (halves risk while retaining a wide breathing buffer).
+  - **Tier 2 (+1.50R):** SL advanced to $+0.50$R (guarantees profit) and runner TP extended to $+2.00$R.
+- **Pessimistic Stop Loss Priority:** If an intra-candle spike touches both Stop Loss and Take Profit, Stop Loss takes absolute precedence (**LOSS**).
+- **Macro 48-Hour Timeout:** Positions held $\ge 48$ hours without hitting TP or SL are closed at market to free capital.
 
 ---
 
 ## 5. Portfolio Risk Controls & Prop Firm Safeguards
 
-1. **Reference Equity Account:** $\$5,000.00\text{ USD}$ reference equity.
-2. **Nominal Risk Allocation:** $1.0\%$ per trade ($\le \$50.00\text{ max nominal risk}$).
+1. **Reference Equity Account:** $\$5,000.00\text{ USD}$ reference equity (scalable to $\$25k, \$50k, \$100k$).
+2. **Nominal Risk Allocation:** $0.50\% - 1.00\%$ per trade ($\le \$50.00$ max risk on $\$5,000$ account).
 3. **Position Sizing Formula:**
-   $$\text{Lots} = \text{floor}\left(\frac{\text{AccountEquity} \times 0.01}{\text{SL\_Pips} \times \text{PipValueUSD}}, \, \text{Step}=0.01\right)$$
-   - Conservative lot flooring guarantees monetary risk $\le \$50.00$ on every trade.
-   - If minimum permitted lot ($0.01$) would breach risk budget, the trade is safely skipped (`0.0` lots).
-4. **Daily Loss Circuit Breaker:** Execution halts until next UTC session if today's net realized loss $\le -2.50\text{R}$ or if $\ge 3$ stop-outs occur in a single day.
-5. **Simultaneous Floating Risk Cap:** Maximum of 3 unprotected positions across the entire portfolio.
-6. **USD Directional Exposure Limit:** Maximum of 2 concurrent positions sharing the same net USD directional bias:
-   - Long USD (+1): `EURUSD` Short, `GBPUSD` Short, `AUDUSD` Short, `USDCAD` Long, `USDJPY` Long, `USDCHF` Long.
+   $$\text{Lots} = \text{floor}\left(\frac{\text{AccountEquity} \times \text{RiskPct}}{\text{SL\_Distance} \times \text{UnitCostPerLot}}, \, \text{Step}=0.01\right)$$
+   - Conservative lot flooring guarantees monetary risk $\le \text{Budget}$ on every single trade.
+   - If minimum permitted lot ($0.01$) breaches risk budget, the trade is safely skipped (`0.0` lots).
+4. **Daily Loss Circuit Breaker:** Execution halts until next UTC session if today's net realized loss $\le -2.00\text{R}$ or if $\ge 2$ stop-outs occur in a single day.
+5. **USD Correlation Interlock:** Maximum of 2 concurrent positions sharing the same net USD directional bias across **both** Forex and Gold ledgers:
+   - Long USD (+1): `EURUSD` Short, `GBPUSD` Short, `AUDUSD` Short, `USDCAD` Long, `USDCHF` Long, `XAUUSD` Short.
    - Short USD (-1): Inverse of above.
-7. **Post-Loss Lockout:** 60-minute mandatory lockout for an instrument after a stop-loss.
+6. **Post-Loss Lockout:** 60-minute mandatory lockout for an instrument after a stop-out.
 
 ---
 
 ## 6. Empirical Verification & Multi-Year Audit Metrics
 
-Tested with full transaction friction ($1.2 - 1.5\text{ pips}$ round-trip cost) across 4.8 years of gapless 1H tick data (2022–2026):
+Tested with full transaction friction ($1.2 - 1.5\text{ pips}$ Forex round-trip cost, $\$0.36$/oz Gold friction) across 4.8 years of gapless tick data (2022–2026):
 
 | Period / Regime | Trades | Net Win Rate | Net Profit | Net Profit Factor | Max Drawdown |
 |---|---|---|---|---|---|
