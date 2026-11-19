@@ -1295,7 +1295,7 @@ async function sendActiveMessage(chatId, env) {
       `━━━━━━━━━━━━━━━━━━\n` +
       `<i>No active positions currently running.</i>\n\n` +
       `Institutional Universe under active surveillance:\n` +
-      `<code>EURUSD · USDCAD · GBPUSD · USDCHF · AUDUSD</code> (USDJPY de-whitelisted)\n\n` +
+      `<code>EURUSD · USDCAD · USDCHF · AUDUSD</code> (USDJPY & GBPUSD de-whitelisted)\n\n` +
       `Signals trigger strictly on confirmed candle closes.\n` +
       `━━━━━━━━━━━━━━━━━━\n` +
       `🕒 <code>${utcNow}</code>`;
@@ -1968,7 +1968,7 @@ async function sendStrategyMessage(chatId) {
 ` +
     `• <b>Economic News Filter:</b> 30-min blackout around Red Folder releases
 ` +
-    `• <b>Monitored Universe:</b> 5 Active Forex Pairs (<code>EURUSD · USDCAD · GBPUSD · USDCHF · AUDUSD</code>) [<code>USDJPY</code> de-whitelisted: BoJ intervention chop]
+    `• <b>Monitored Universe:</b> 4 Active Forex Pairs (<code>EURUSD · USDCAD · USDCHF · AUDUSD</code>) [<code>USDJPY, GBPUSD</code> de-whitelisted: BoJ intervention chop & Cable whipsaw traps]
 ` +
     `• <b>Strict Invariant:</b> Zero Gold (XAUUSD permanently disabled)
 ` +

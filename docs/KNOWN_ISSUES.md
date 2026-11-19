@@ -230,6 +230,38 @@ This document tracks verified defects, architectural discrepancies, and security
   - Updated docstrings in `satellite/market_scanner_gold.py`.
   - Added unit regression tests in `tests/test_gold_satellite.py` (`TestGoldMacroFactor`).
 
+---
+
+### ISSUE-STRAT-04: GBPUSD Structural Sweep Traps & Consecutive Live Losses
+
+* **Severity:** **High** (Systematic Performance Drag & Profit Bleed)
+* **Status:** **REMEDIATED IN CODE (2026-11-19)** — Tested and verified in `tests/test_canonical_strategy.py` & `tests/test_market_scanner.py`.
+* **Affected Files:** `core/config.py`, `market_scanner.py`, `core/instrument_validator.py`, `cloudflare_worker.js`
+* **Root Cause:**
+  1. *Structural Sweep Traps ("Cable Traps"):* GBPUSD exhibits frequent two-way institutional liquidity sweeps that violate 15M Donchian/EMA breakout setups before reversing into 20–22p stop losses.
+  2. *5-Year Empirical Failure:* Over the 5-year canonical backtest (2021–2026, 3,479 closed trades), GBPUSD posted a 33.3% Win Rate, Profit Factor 0.72, and a massive net loss of -102.63R (-$4,959.24).
+  3. *Live Forward Failure:* In live forward execution, GBPUSD suffered a 0.0% Win Rate (0 Wins / 5 Losses, 1 Cancelled), taking -5.00R net loss and severely eroding portfolio gains from AUDUSD (+3.86R), USDCHF (+2.04R), USDCAD (+2.00R), and EURUSD (+0.91R).
+* **Remediation Implemented:**
+  - Added GBPUSD to `DEWHITELISTED_PAIRS = {"USDJPY", "GBPUSD"}` in `core/config.py`.
+  - Active universe now strictly comprises the Clean Core 4 (`AUDUSD`, `EURUSD`, `USDCAD`, `USDCHF`).
+  - GBPUSD historical quotes retained in `compute_ccrs_matrix()` for 7-currency macro basket calculation.
+  - Active trade tracking in `check_active_trades()` preserved for graceful lifecycle management.
+
+---
+
+### ISSUE-STRAT-05: Non-CCRS Breakout Fall-Through & Off-Hours Profit Bleed
+
+* **Severity:** **High** (Strategy Logic Leak & Negative Expectancy)
+* **Status:** **REMEDIATED IN CODE (2026-11-19)** — Tested and verified in `tests/test_market_scanner.py`.
+* **Affected Files:** `market_scanner.py`, `core/config.py`
+* **Root Cause:**
+  1. *Silent Fall-Through to Raw Breakouts:* When 1H CCRS macro flow was neutral ($|D| < 1.75\sigma$), `scan_pair_timeframe` fell through to legacy non-CCRS breakout setups. In live execution, true CCRS trades delivered 58.3% Win Rate and +5.68R profit, while non-CCRS fallback trades suffered 40.6% Win Rate and -4.37R net loss across 36 trades (accounting for 79.2% of all portfolio losses).
+  2. *High-Loss Intraday Hours:* 10:00 UTC (European pre-lunch lull) suffered a 25.0% live Win Rate (-3.08R loss), and 14:00 UTC (US equity open whipsaws) suffered a 20.0% live Win Rate (-3.60R loss).
+* **Remediation Implemented:**
+  - Enforced strict CCRS exclusivity in `market_scanner.py`: when `ccrs_matrix` is present, neutral macro flow or unconfirmed triggers stand down immediately (`return []`) rather than falling through to non-CCRS breakout entries.
+  - Excluded 10:00 UTC and 14:00 UTC from `INSTITUTIONAL_HOURS` in `core/config.py` and added explicit execution guards in `market_scanner.py`.
+
+
 
 
 

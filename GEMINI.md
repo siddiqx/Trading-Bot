@@ -12,8 +12,8 @@ This repository contains an institutional-grade, systematic algorithmic trading 
   1. *Forex Scanner (`market_scanner.py`):* 15M precision execution anchored to 1H 7-currency CCRS macro flow.
   2. *Gold Satellite (`satellite/market_scanner_gold.py`):* 1H commodity execution anchored to CCRS USD factor.
 * **Edge Gateway & Telegram Cockpit:** Cloudflare Global Edge V8 Worker (`cloudflare_worker.js`) synchronizing active/completed trade ledgers in KV and serving Telegram slash commands (`/radar`, `/prices`, `/history`, `/performance`, `/strategy`, `/status`, `/active`).
-* **Active Universe:** 5 Active Institutional Forex Pairs (`EURUSD`, `USDCAD`, `GBPUSD`, `USDCHF`, `AUDUSD`) + Isolated Gold Commodity Satellite (`XAUUSD`).
-  - *Note:* `USDJPY` is de-whitelisted from active trading due to negative statistical expectancy in the 2026 BoJ/MoF currency intervention regime (20% live win rate, PF 0.38). USDJPY quotes are retained strictly for 7-currency synthetic basket calculations.
+* **Active Universe:** 4 Active Institutional Forex Pairs (`EURUSD`, `USDCAD`, `USDCHF`, `AUDUSD`) + Isolated Gold Commodity Satellite (`XAUUSD`).
+  - *Note:* `USDJPY` (BoJ intervention chop; 20% live WR, PF 0.38) and `GBPUSD` (structural liquidity sweep traps; 0% live WR, 33.3% 5-year backtest WR, PF 0.72) are de-whitelisted from active trading to protect portfolio expectancy. Their quotes are retained strictly for 7-currency synthetic basket calculations.
 * **Strategy Engine:** Institutional Dual-Timeframe CCRS Engine (v3.3.0). Evaluates 1H rolling 200-hour volatility-normalized Z-scores over 120-hour lookbacks ($|D| \ge 1.75\sigma$ for Forex pairwise spread, $|Z_{\text{USD}}| \ge 1.25\sigma$ for Gold single factor). Precision entries triggered on confirmed 20-EMA pullback retests and 10-bar Donchian liquidity sweeps.
 * **Exits & Trailing:** Volatility-anchored stops ($2.0\times$ 14-period ATR; 20.0–25.0 pips for Forex, $20–$35/oz for Gold) and $1:1.50$ Take Profit target with Volatility Cushion trailing (+1.20R halving, +1.50R profit lock, +2.00R runner).
 * **Automated Broker Execution:** cTrader Open API Protobuf TLS client (`core/ctrader_executor.py`) with dynamic multi-tier position sizing, automatic SL/TP trailing synchronization, and orphaned position reconciliation.
@@ -65,7 +65,7 @@ For every coding task:
 1. **Context Initialization:** Read [`docs/PROJECT_CONTEXT.md`](docs/PROJECT_CONTEXT.md) and examine the affected source files.
 2. **Minimum Safe Change:** Formulate the smallest, cleanest, self-contained change that resolves the issue without introducing regressions.
 3. **Pre-Change Alignment:** Explain the proposed modification, its architectural consequences, affected files, and validation plan.
-4. **Validation:** Execute relevant automated unit tests (`pytest`). All 159 tests must pass with zero regressions.
+4. **Validation:** Execute relevant automated unit tests (`pytest`). All 162 tests must pass with zero regressions.
 5. **Documentation Synchronization:** If code changes alter the strategy, configuration, architecture, or issue status, immediately update the corresponding document in `docs/`.
 
 ---

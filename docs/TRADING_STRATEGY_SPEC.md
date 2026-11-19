@@ -17,14 +17,14 @@ The production engine operates two decoupled, specialized execution modules runn
 
 | Symbol | Market Ticker | Pip Size | Digits | Canonical SL | Canonical TP | R:R | Active Volume Hours (UTC) | Base / Quote Currency | Status |
 |---|---|---|---|---|---|---|---|---|---|
-| **EURUSD** | `EURUSD=X` | `0.0001` | 5 | 22.0p | 33.0–35.0p | 1:1.50–1.59 | `07:00 – 17:00 UTC` | EUR / USD | **ACTIVE** |
-| **USDCAD** | `USDCAD=X` | `0.0001` | 5 | 22.0p | 33.0–35.0p | 1:1.50–1.59 | `07:00 – 17:00 UTC` | USD / CAD | **ACTIVE** |
-| **GBPUSD** | `GBPUSD=X` | `0.0001` | 5 | 22.0p | 33.0–35.0p | 1:1.50–1.59 | `07:00 – 17:00 UTC` | GBP / USD | **ACTIVE** |
-| **USDCHF** | `USDCHF=X` | `0.0001` | 5 | 22.0p | 33.0–35.0p | 1:1.50–1.59 | `07:00 – 17:00 UTC` | USD / CHF | **ACTIVE** |
-| **AUDUSD** | `AUDUSD=X` | `0.0001` | 5 | 22.0p | 33.0–35.0p | 1:1.50–1.59 | `07:00 – 17:00 UTC` | AUD / USD | **ACTIVE** |
+| **EURUSD** | `EURUSD=X` | `0.0001` | 5 | 22.0p | 33.0–35.0p | 1:1.50–1.59 | `07:00 – 17:00 UTC` (excl 10 & 14) | EUR / USD | **ACTIVE** |
+| **USDCAD** | `USDCAD=X` | `0.0001` | 5 | 22.0p | 33.0–35.0p | 1:1.50–1.59 | `07:00 – 17:00 UTC` (excl 10 & 14) | USD / CAD | **ACTIVE** |
+| **USDCHF** | `USDCHF=X` | `0.0001` | 5 | 22.0p | 33.0–35.0p | 1:1.50–1.59 | `07:00 – 17:00 UTC` (excl 10 & 14) | USD / CHF | **ACTIVE** |
+| **AUDUSD** | `AUDUSD=X` | `0.0001` | 5 | 22.0p | 33.0–35.0p | 1:1.50–1.59 | `07:00 – 17:00 UTC` (excl 10 & 14) | AUD / USD | **ACTIVE** |
+| **GBPUSD** | `GBPUSD=X` | `0.0001` | 5 | 22.0p | 33.0–35.0p | 1:1.50–1.59 | `DE-WHITELISTED` | GBP / USD | **PAUSED (Structural Sweep Traps)** |
 | **USDJPY** | `USDJPY=X` | `0.01` | 3 | 22.0p | 33.0p | 1:1.50 | `DE-WHITELISTED` | USD / JPY | **PAUSED (MoF/BoJ Intervention Chop)** |
 
-*Note on USDJPY:* De-whitelisted from active trading to protect portfolio expectancy (20% live win rate, PF 0.38 in 2026). Retained in data feeds strictly for 7-currency synthetic basket calculations.
+*Note on De-whitelisted Pairs:* GBPUSD (0% live WR, 33.3% backtest WR, PF 0.72) and USDJPY (20% live WR, PF 0.38) are de-whitelisted from active trading execution to preserve portfolio expectancy. Their market quotes are retained strictly for 7-currency synthetic basket calculations.
 
 ### Dedicated Gold Satellite Specifications
 

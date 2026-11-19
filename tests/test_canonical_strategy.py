@@ -62,16 +62,19 @@ def test_canonical_config_constants():
 
 
 def test_dewhitelisted_pairs_enforcement():
-    """Verify USDJPY is officially de-whitelisted from active trading to protect portfolio expectancy."""
+    """Verify USDJPY and GBPUSD are officially de-whitelisted from active trading to protect portfolio expectancy."""
     from core.config import DEWHITELISTED_PAIRS, ACTIVE_FOREX_SYMBOLS
     from core.instrument_validator import is_active_trading_symbol
 
     assert "USDJPY" in DEWHITELISTED_PAIRS
+    assert "GBPUSD" in DEWHITELISTED_PAIRS
     assert "USDJPY" not in ACTIVE_FOREX_SYMBOLS
+    assert "GBPUSD" not in ACTIVE_FOREX_SYMBOLS
     assert is_active_trading_symbol("USDJPY") is False
+    assert is_active_trading_symbol("GBPUSD") is False
 
-    # Active pairs must be the 5 institutional pairs
-    expected_active = {"EURUSD", "USDCAD", "GBPUSD", "USDCHF", "AUDUSD"}
+    # Active pairs must be the 4 clean core institutional pairs
+    expected_active = {"EURUSD", "USDCAD", "USDCHF", "AUDUSD"}
     assert set(ACTIVE_FOREX_SYMBOLS) == expected_active
 
 

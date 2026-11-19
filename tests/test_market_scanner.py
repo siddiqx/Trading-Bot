@@ -1283,21 +1283,21 @@ def test_in_cycle_max_unprotected_cap(monkeypatch):
     monkeypatch.setattr("market_scanner.sync_worker", lambda *args, **kwargs: None)
     monkeypatch.setattr("market_scanner.send_telegram_alert", lambda *args, **kwargs: None)
 
-    # Mock returning a signal for GBPUSD 15M
+    # Mock returning a signal for AUDUSD 15M (AUDUSD LONG = Short USD, no correlation conflict)
     def mock_scan(pair_name, cfg, tf, state, **kwargs):
-        if pair_name == "GBPUSD" and tf in ["15m", "1h"]:
+        if pair_name == "AUDUSD" and tf in ["15m", "1h"]:
             return [{
-                "id": f"GBPUSD_{tf.upper()}_CAP_TEST",
-                "pair": "GBPUSD",
+                "id": f"AUDUSD_{tf.upper()}_CAP_TEST",
+                "pair": "AUDUSD",
                 "timeframe": tf.upper(),
                 "direction": "LONG",
                 "time": "2026-10-15T12:00:00Z",
-                "entry": 1.3200,
-                "stop_loss": 1.3165,
-                "take_profit": 1.32525,
+                "entry": 0.6550,
+                "stop_loss": 0.6528,
+                "take_profit": 0.6585,
                 "sl_pips": 22.0,
-                "tp_pips": 33.0,
-                "rr": 1.5,
+                "tp_pips": 35.0,
+                "rr": 1.59,
                 "rsi": 55.0,
                 "atr": 18.0,
                 "score": 95,
@@ -1310,21 +1310,21 @@ def test_in_cycle_max_unprotected_cap(monkeypatch):
     dispatched = run_scan_cycle()
     # Must dispatch 0 signals because 3 unprotected positions are already floating
     assert dispatched == 0
-    assert "GBPUSD_15M" not in records_state["active_trades"]
+    assert "AUDUSD_15M" not in records_state["active_trades"]
 
     # Now simulate EURUSD de-risked to Breakeven (+1.0R partial banked)
     records_state["active_trades"]["EURUSD_15M"]["be_active"] = True
     dispatched_after_be = run_scan_cycle()
-    # Now that floating unprotected count is 2 (< 3), GBPUSD should be accepted!
+    # Now that floating unprotected count is 2 (< 3), AUDUSD should be accepted!
     assert dispatched_after_be == 1
-    assert any(k.startswith("GBPUSD") for k in records_state["active_trades"])
+    assert any(k.startswith("AUDUSD") for k in records_state["active_trades"])
 
 
 def test_signal_strictly_uses_live_price_not_stale_5m(monkeypatch):
     """Ensure signals quote the actual live price, never overriding with a stale 5M candle close."""
     from market_scanner import scan_pair_timeframe
 
-    cfg = {"ticker": "GBPUSD=X", "pip": 0.0001, "digits": 5, "donchian_len": 20}
+    cfg = {"ticker": "EURUSD=X", "pip": 0.0001, "digits": 5, "donchian_len": 20}
     state = {"alerted_signals": []}
 
     # Create mock 15M candles where the last candle is a valid ICT liquidity sweep reclaim
@@ -1333,14 +1333,14 @@ def test_signal_strictly_uses_live_price_not_stale_5m(monkeypatch):
     times = [t0 + timedelta(minutes=15 * i) for i in range(50)]
     
     # Prices: downward trend, then a bullish sweep reclaim on the last bar
-    closes = [1.3250 - (i * 0.0002) for i in range(49)] + [1.3160]
+    closes = [1.0950 - (i * 0.0002) for i in range(49)] + [1.0860]
     highs = [c + 0.0005 for c in closes]
     lows = [c - 0.0005 for c in closes]
     # Make last bar a strong rejection sweep reclaim
-    lows[-1] = 1.3140  # Deep sweep
-    highs[-1] = 1.3165
+    lows[-1] = 1.0840  # Deep sweep
+    highs[-1] = 1.0865
     opens = [c - 0.0001 for c in closes]
-    opens[-1] = 1.3145
+    opens[-1] = 1.0845
 
     df = pd.DataFrame({
         "timestamp": [int(t.timestamp()) for t in times],
@@ -1352,14 +1352,14 @@ def test_signal_strictly_uses_live_price_not_stale_5m(monkeypatch):
         "volume": [1000] * 50
     })
 
-    live_executable_price = 1.31610  # Live tick right now (within 1 pip of 1.3160 bar close)
-    stale_5m_price = 1.31520         # Old 5M candle close from minutes ago
+    live_executable_price = 1.08610  # Live tick right now (within 1 pip of 1.0860 bar close)
+    stale_5m_price = 1.08520         # Old 5M candle close from minutes ago
 
     monkeypatch.setenv("PYTEST_CURRENT_TEST", "1")
     monkeypatch.setattr("market_scanner.is_forex_market_open", lambda *a, **kw: True)
     monkeypatch.setattr("market_scanner.fetch_candles", lambda *a, **kw: df)
     monkeypatch.setattr("market_scanner.check_htf_alignment", lambda *a, **kw: (True, "HTF Aligned"))
-    monkeypatch.setattr("market_scanner.detect_ict_liquidity_sweep", lambda *a, **kw: (True, "2026-10-15T08:30:00Z", 1.3150, 10.0, "Asian Low Pool"))
+    monkeypatch.setattr("market_scanner.detect_ict_liquidity_sweep", lambda *a, **kw: (True, "2026-10-15T08:30:00Z", 1.0850, 10.0, "Asian Low Pool"))
     monkeypatch.setattr("market_scanner.get_live_price", lambda *a, **kw: live_executable_price)
     # Mock 5M trigger returning a stale 5M precision_entry
     monkeypatch.setattr("market_scanner.fetch_5m_entry_trigger", lambda *a, **kw: {
@@ -1370,7 +1370,7 @@ def test_signal_strictly_uses_live_price_not_stale_5m(monkeypatch):
         "bar_close_time": "08:25 UTC"
     })
 
-    signals = scan_pair_timeframe("GBPUSD", cfg, "15m", state)
+    signals = scan_pair_timeframe("EURUSD", cfg, "15m", state)
     assert len(signals) == 1
     sig = signals[0]
     # The entry MUST strictly be the live executable price, NOT the stale 5M price!
@@ -1385,13 +1385,13 @@ def test_chase_guard_rejects_extended_moves(monkeypatch):
     """Ensure signals are rejected if live price has already drifted > 1.5 pips from bar close."""
     from market_scanner import scan_pair_timeframe
 
-    cfg = {"ticker": "GBPUSD=X", "pip": 0.0001, "digits": 5, "donchian_len": 20}
+    cfg = {"ticker": "EURUSD=X", "pip": 0.0001, "digits": 5, "donchian_len": 20}
     state = {"alerted_signals": []}
 
     now_utc = datetime(2026, 10, 15, 8, 30, tzinfo=timezone.utc)
     t0 = now_utc - timedelta(minutes=15 * 50)
     times = [t0 + timedelta(minutes=15 * i) for i in range(50)]
-    closes = [1.3160] * 50
+    closes = [1.0860] * 50
 
     df = pd.DataFrame({
         "timestamp": [int(t.timestamp()) for t in times],
@@ -1407,23 +1407,23 @@ def test_chase_guard_rejects_extended_moves(monkeypatch):
     monkeypatch.setattr("market_scanner.is_forex_market_open", lambda *a, **kw: True)
     monkeypatch.setattr("market_scanner.fetch_candles", lambda *a, **kw: df)
     monkeypatch.setattr("market_scanner.check_htf_alignment", lambda *a, **kw: (True, "HTF Aligned"))
-    monkeypatch.setattr("market_scanner.detect_ict_liquidity_sweep", lambda *a, **kw: (True, "2026-10-15T08:30:00Z", 1.3150, 10.0, "Asian Low Pool"))
+    monkeypatch.setattr("market_scanner.detect_ict_liquidity_sweep", lambda *a, **kw: (True, "2026-10-15T08:30:00Z", 1.0850, 10.0, "Asian Low Pool"))
     
-    # Case 1: Live price is 1.31620 (2.0 pips above bar close 1.3160) -> exceeds 1.5 pip max chase!
-    monkeypatch.setattr("market_scanner.get_live_price", lambda *a, **kw: 1.31620)
-    signals = scan_pair_timeframe("GBPUSD", cfg, "15m", state)
+    # Case 1: Live price is 1.08620 (2.0 pips above bar close 1.0860) -> exceeds 1.5 pip max chase!
+    monkeypatch.setattr("market_scanner.get_live_price", lambda *a, **kw: 1.08620)
+    signals = scan_pair_timeframe("EURUSD", cfg, "15m", state)
     assert len(signals) == 0
 
-    # Case 2: Live price is 1.31580 (2.0 pips below bar close 1.3160) -> adverse drift > 1.5 pips!
-    monkeypatch.setattr("market_scanner.get_live_price", lambda *a, **kw: 1.31580)
-    signals_adverse = scan_pair_timeframe("GBPUSD", cfg, "15m", state)
+    # Case 2: Live price is 1.08580 (2.0 pips below bar close 1.0860) -> adverse drift > 1.5 pips!
+    monkeypatch.setattr("market_scanner.get_live_price", lambda *a, **kw: 1.08580)
+    signals_adverse = scan_pair_timeframe("EURUSD", cfg, "15m", state)
     assert len(signals_adverse) == 0
 
-    # Case 3: Live price is 1.31610 (1.0 pip above bar close) -> valid baseline entry!
-    monkeypatch.setattr("market_scanner.get_live_price", lambda *a, **kw: 1.31610)
-    signals_valid = scan_pair_timeframe("GBPUSD", cfg, "15m", state)
+    # Case 3: Live price is 1.08610 (1.0 pip above bar close) -> valid baseline entry!
+    monkeypatch.setattr("market_scanner.get_live_price", lambda *a, **kw: 1.08610)
+    signals_valid = scan_pair_timeframe("EURUSD", cfg, "15m", state)
     assert len(signals_valid) == 1
-    assert signals_valid[0]["entry"] == 1.31610
+    assert signals_valid[0]["entry"] == 1.08610
 
 
 def test_calculate_liquidity_bounds_tp_sl():
@@ -1884,6 +1884,51 @@ def test_scan_pair_timeframe_dual_timeframe_neutral_skip(monkeypatch):
 
     signals = scan_pair_timeframe("GBPUSD", cfg, "15m", state, ccrs_matrix=mock_ccrs)
     assert len(signals) == 0
+
+
+def test_dual_timeframe_blocks_non_ccrs_fallback(monkeypatch):
+    """Verify that when ccrs_matrix is present, neutral macro flow strictly blocks non-CCRS fallback entries."""
+    from market_scanner import scan_pair_timeframe
+
+    cfg = {"ticker": "EURUSD=X", "pip": 0.0001, "digits": 5, "donchian_len": 20}
+    state = {"alerted_signals": []}
+
+    now_utc = datetime(2026, 10, 15, 8, 30, tzinfo=timezone.utc)
+    t0 = now_utc - timedelta(minutes=15 * 50)
+    times = [t0 + timedelta(minutes=15 * i) for i in range(50)]
+    closes = [1.0850] * 50
+
+    df = pd.DataFrame({
+        "timestamp": [int(t.timestamp()) for t in times],
+        "time": times,
+        "open": closes,
+        "high": [c + 0.0005 for c in closes],
+        "low": [c - 0.0005 for c in closes],
+        "close": closes,
+        "volume": [1000] * 50
+    })
+
+    # Neutral macro flow (+0.80σ, below the 1.75σ threshold)
+    mock_ccrs_neutral = {
+        "latest_div": {"EURUSD": 0.80},
+        "prev_div": {"EURUSD": 0.70},
+        "latest_z": {"EUR": 0.40, "USD": -0.40},
+    }
+
+    monkeypatch.setenv("PYTEST_CURRENT_TEST", "1")
+    monkeypatch.setattr("market_scanner.is_forex_market_open", lambda *a, **kw: True)
+    monkeypatch.setattr("market_scanner.fetch_candles", lambda *a, **kw: df)
+    monkeypatch.setattr("market_scanner.get_live_price", lambda *a, **kw: 1.08500)
+    monkeypatch.setattr("market_scanner.check_htf_alignment", lambda *a, **kw: (True, "HTF Aligned"))
+    monkeypatch.setattr("market_scanner.detect_ict_liquidity_sweep", lambda *a, **kw: (True, "2026-10-15T08:30:00Z", 1.0840, 10.0, "Asian Low Pool"))
+
+    # Because ccrs_matrix is active and divergence is neutral, it MUST block entry and return 0 signals
+    signals = scan_pair_timeframe("EURUSD", cfg, "15m", state, ccrs_matrix=mock_ccrs_neutral)
+    assert len(signals) == 0
+
+    # Without ccrs_matrix (legacy/mock unit test mode), fallback behavior still fires if desired
+    signals_fallback = scan_pair_timeframe("EURUSD", cfg, "15m", state, ccrs_matrix=None)
+    assert len(signals_fallback) == 1
 
 
 def test_dual_timeframe_alert_message_formatting():

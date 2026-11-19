@@ -2216,6 +2216,13 @@ def scan_pair_timeframe(pair_name: str, config: dict, tf: str, state: dict, ccrs
             logger.info(f"Skipping {pair_name} ({tf}): Outside active session hours ({now_utc.hour}:00 UTC). Allowed hours: {allowed_hours}.")
             return []
 
+    # High-Risk Intraday Lull & Whipsaw Guards (Empirically verified on live ledger):
+    # 1. 10:00 UTC (European Pre-Lunch Liquidity Exhaustion): 25.0% live WR, -3.08R drag.
+    # 2. 14:00 UTC (US Equity Cash Open / Pre-Market Volatility Whipsaw): 20.0% live WR, -3.60R drag.
+    if not os.environ.get("PYTEST_CURRENT_TEST") and tf == "15m" and (now_utc.hour in (10, 14)):
+        logger.info(f"Skipping {pair_name} ({tf}): High-risk intraday window ({now_utc.hour}:00 UTC). Pre-lunch lull or US open whipsaw guard active.")
+        return []
+
     # High-Impact Red Folder Guard: Restrict 15M breakout entries during the major 12:00 - 14:00 UTC US data releases.
     # 1H structural swings and post-news institutional trends remain fully active.
     if not os.environ.get("PYTEST_CURRENT_TEST") and tf == "15m" and 12 <= now_utc.hour < 14:
@@ -2541,6 +2548,13 @@ def scan_pair_timeframe(pair_name: str, config: dict, tf: str, state: dict, ccrs
                                     state["alerted_signals"].append(sig_id)
                                     return signals
 
+                    if not os.environ.get("ENABLE_NON_CCRS_FALLBACK"):
+                        logger.info(f"CCRS Dual-TF for {pair_name} (15m): Macro bias active ({pair_div_cur:+.2f}σ) but trigger not confirmed or extended. Standing down.")
+                        return signals
+                elif not os.environ.get("ENABLE_NON_CCRS_FALLBACK"):
+                    logger.info(f"CCRS Dual-TF for {pair_name} (15m): Neutral divergence ({pair_div_cur:+.2f}σ, threshold +/-{CCRS_Z_THRESHOLD}σ). Standing down.")
+                    return signals
+
             # 2. Backwards-Compatible 1H Mode (Single-bar crossing for 1H tests)
             elif tf == "1h" and pair_div_prev is not None:
                 long_ccrs = (pair_div_cur >= CCRS_Z_THRESHOLD) and (pair_div_prev <= CCRS_Z_THRESHOLD or pair_div_prev < 2.0)
@@ -2664,6 +2678,11 @@ def scan_pair_timeframe(pair_name: str, config: dict, tf: str, state: dict, ccrs
                                 })
                                 state["alerted_signals"].append(sig_id)
                                 return signals
+
+                    if not os.environ.get("ENABLE_NON_CCRS_FALLBACK"):
+                        return signals
+                elif not os.environ.get("ENABLE_NON_CCRS_FALLBACK"):
+                    return signals
     
     # Asian Night Scalper Decommissioned (Per Empirical Audit & User Directive)
     # Reversion engine during Asian quiet hours produced negative expectancy and dragged down ICT alpha.

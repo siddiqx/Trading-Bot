@@ -70,8 +70,8 @@ The engine operates serverless in the cloud with **zero hardware dependency** (r
 The system deploys a decoupled, multi-asset quantitative strategy that separates **Macro Order Flow Regime Identification (1H)** from **Precision Execution Timing (15M & 1H)**.
 
 ### A. Core Institutional Forex Engine (`market_scanner.py`)
-* **Monitored Universe (5 Active Pairs):** `EURUSD`, `USDCAD`, `GBPUSD`, `USDCHF`, `AUDUSD`.
-* **USDJPY De-whitelisted:** Paused due to empirical 2026 negative expectancy (20% live win rate, PF 0.38) caused by Ministry of Finance / Bank of Japan intervention whipsaws. USDJPY quotes are retained solely for synthetic currency basket mathematics.
+* **Monitored Universe (4 Active Pairs):** `EURUSD`, `USDCAD`, `USDCHF`, `AUDUSD`.
+* **USDJPY & GBPUSD De-whitelisted:** Paused due to empirical negative statistical expectancy: USDJPY (20% live win rate, PF 0.38) caused by BoJ intervention whipsaws; GBPUSD (0% live win rate, 33.3% 5-year backtest WR, PF 0.72) caused by structural Cable liquidity sweep traps. Quotes are retained solely for synthetic currency basket mathematics.
 * **Macro Factor Model (1H CCRS):** Decomposes 6 major Forex pairs into 7 pure currency strength indices (`EUR`, `GBP`, `AUD`, `JPY`, `CAD`, `CHF`, `USD`). Normalizes 120-hour returns across a 200-hour rolling volatility window into Z-scores. Trades active macro momentum regimes where pairwise spread divergence $|D| \ge 1.75\sigma$.
 * **Precision Execution (15M):** Evaluates completed 15M candle bars for 20-EMA pullback rejections and 10-bar Donchian / fractal liquidity sweeps aligned with the 1H macro bias.
 * **Dynamic Exits:** Stop Loss dynamically anchored to 14-period ATR ($20.0 - 25.0$ pips, canonical $22.0$ pips). Take Profit fixed at $1:1.50$ Risk-to-Reward ratio ($30.0 - 37.5$ pips, canonical $33.0 - 35.0$ pips).

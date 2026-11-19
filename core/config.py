@@ -31,8 +31,10 @@ CANONICAL_SYMBOLS: List[str] = [
     "AUDUSD",
 ]
 
-# De-whitelisted / Paused pairs due to empirical negative statistical expectancy (BoJ 2026 intervention chop)
-DEWHITELISTED_PAIRS: set[str] = {"USDJPY"}
+# De-whitelisted / Paused pairs due to empirical negative statistical expectancy:
+# 1. USDJPY: 2026 BoJ currency intervention regime (20% live win rate, PF 0.38)
+# 2. GBPUSD: Structural sweep traps / negative expectancy (0.0% live win rate, 33.3% 5-year backtest WR, PF 0.72)
+DEWHITELISTED_PAIRS: set[str] = {"USDJPY", "GBPUSD"}
 
 # Active trading universe (Eligible for fresh signal generation and execution)
 ACTIVE_FOREX_SYMBOLS: List[str] = [
@@ -119,7 +121,8 @@ DEFAULT_MAX_LOT: float = 100.0            # Institutional max lot ceiling
 # ==============================================================================
 # 4. PAIR SPECIFICATIONS AND INSTITUTIONAL KILLZONE HOURS (UTC)
 # ==============================================================================
-INSTITUTIONAL_HOURS: List[int] = [7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17]
+# Institutional Volume Hours (UTC): excludes 10:00 (European pre-lunch lull) and 14:00 (US equity open whipsaw)
+INSTITUTIONAL_HOURS: List[int] = [7, 8, 9, 11, 12, 13, 15, 16, 17]
 
 PAIR_CONFIGS: Dict[str, Dict[str, Any]] = {
     "EURUSD": {
