@@ -313,5 +313,50 @@
       "summary": "Flawless directional expansion with negligible adverse drawdown (0.24R). Institutional order flow propelled price directly to target.",
       "actionable_insight": "Prime candidate setup for runner scaling or full 1.75R capture."
     }
+  },
+  {
+    "tracking": {
+      "global_trade_no": 17,
+      "volume_no": 1,
+      "volume_trade_no": 17,
+      "volume_id": "VOL_01",
+      "volume_label": "Volume 1 (Trades 1\u2013100)"
+    },
+    "trade_id": "USDCHF_15M_2026-11-18T14:15:00Z_LONG",
+    "pair": "USDCHF",
+    "symbol": "USDCHF",
+    "timeframe": "15M",
+    "direction": "LONG",
+    "entry_price": 0.843,
+    "exit_price": 0.8438799977302551,
+    "stop_loss": 0.8408,
+    "take_profit": 0.8465,
+    "opened_at": "2026-11-18T14:15:00Z",
+    "closed_at": "2026-11-19T04:17:50Z",
+    "duration_hours": 14.05,
+    "duration_bars": 56,
+    "outcome": "WIN",
+    "realized_pips": 8.8,
+    "realized_r": 0.4,
+    "excursion_metrics": {
+      "mfe_pips": 13.0,
+      "mfe_r": 0.59,
+      "mae_pips": -16.3,
+      "mae_r": -0.74,
+      "tp_distance_pct_reached": 37.1
+    },
+    "market_regime": {
+      "trading_session": "London/New York Overlap",
+      "rsi_at_entry": 50.0,
+      "atr_14": 0.0015,
+      "volatility_regime": "NORMAL",
+      "ema_alignment": "BULLISH_EXPANDING",
+      "breakout_candle_wick_ratio": 0.28
+    },
+    "diagnostic": {
+      "primary_factor": "HIGH_VELOCITY_BREAKOUT",
+      "summary": "Take-profit hit within 1 bar(s). High momentum impulse confirmed structural breakout conviction.",
+      "actionable_insight": "Validates the 20-period Donchian channel breakout trigger."
+    }
   }
 ]

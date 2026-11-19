@@ -1,50 +1,6 @@
 {
   "tracking_started": "2026-10-15",
-  "active_trades": {
-    "USDCHF_15M": {
-      "trade_id": "USDCHF_15M_2026-11-18T14:15:00Z_LONG",
-      "ctrader_position_id": 16485074,
-      "ctrader_receipt": {
-        "status": "EXECUTED",
-        "mode": "LIVE_LIVE",
-        "pair": "USDCHF",
-        "direction": "LONG",
-        "lots": 0.47,
-        "units": 47000,
-        "entry": 0.843,
-        "stop_loss": 0.8408,
-        "take_profit": 0.8465,
-        "order_id": 18188948,
-        "position_id": 16485074,
-        "account_id": "49435680",
-        "environment": "live"
-      },
-      "lots": 0.47,
-      "units": 47000,
-      "pair": "USDCHF",
-      "symbol": "USDCHF",
-      "ticker": "USDCHF=X",
-      "direction": "LONG",
-      "timeframe": "15M",
-      "strategy": "Two-Phase Pullback Engine",
-      "strategy_type": "CANONICAL",
-      "max_hold_hours": 12,
-      "entry": 0.843,
-      "stop_loss": 0.8408,
-      "take_profit": 0.8465,
-      "sl_pips": 22,
-      "tp_pips": 35,
-      "rr": 1.59,
-      "bank_pct": 0,
-      "partial_taken": false,
-      "be_active": false,
-      "pip": 0.0001,
-      "digits": 5,
-      "opened_at": "2026-11-18T14:15:00Z",
-      "status": "OPEN",
-      "filled_at": "2026-11-18T14:15:00Z"
-    }
-  },
+  "active_trades": {},
   "completed_trades": [
     {
       "trade_id": "USDCAD_15M_2026-10-15T15:45:00Z_SHORT",
@@ -1776,6 +1732,63 @@
         "account_id": "49435680",
         "environment": "live"
       }
+    },
+    {
+      "trade_id": "USDCHF_15M_2026-11-18T14:15:00Z_LONG",
+      "ctrader_position_id": 16485074,
+      "ctrader_receipt": {
+        "status": "EXECUTED",
+        "mode": "LIVE_LIVE",
+        "pair": "USDCHF",
+        "direction": "LONG",
+        "lots": 0.47,
+        "units": 47000,
+        "entry": 0.843,
+        "stop_loss": 0.8408,
+        "take_profit": 0.8465,
+        "order_id": 18188948,
+        "position_id": 16485074,
+        "account_id": "49435680",
+        "environment": "live"
+      },
+      "lots": 0.47,
+      "units": 47000,
+      "pair": "USDCHF",
+      "symbol": "USDCHF",
+      "ticker": "USDCHF=X",
+      "direction": "LONG",
+      "timeframe": "15M",
+      "strategy": "Two-Phase Pullback Engine",
+      "strategy_type": "CANONICAL",
+      "max_hold_hours": 12,
+      "entry": 0.843,
+      "stop_loss": 0.8408,
+      "take_profit": 0.8465,
+      "sl_pips": 22,
+      "tp_pips": 35,
+      "rr": 1.59,
+      "bank_pct": 0,
+      "partial_taken": false,
+      "be_active": false,
+      "pip": 0.0001,
+      "digits": 5,
+      "opened_at": "2026-11-18T14:15:00Z",
+      "status": "CLOSED",
+      "filled_at": "2026-11-18T14:15:00Z",
+      "exit_price": 0.8438799977302551,
+      "outcome": "WIN",
+      "realized_pips": 8.8,
+      "realized_r": 0.4,
+      "closed_at": "2026-11-19T04:17:50Z",
+      "exit_reason": "EMA20_INVALIDATION",
+      "ctrader_close_receipt": {
+        "status": "CLOSED",
+        "mode": "LIVE_LIVE",
+        "position_id": 16485074,
+        "volume_cents": 4700000,
+        "account_id": "49435680",
+        "environment": "live"
+      }
     }
   ],
   "alerted_exits": [
@@ -1792,6 +1805,7 @@
     "USDJPY_15M_2026-11-17T08:45:00Z_SHORT",
     "EURUSD_15M_2026-11-17T07:15:00Z_SHORT_CCRS",
     "GBPUSD_15M_2026-11-17T14:45:00Z_SHORT_CCRS",
-    "USDCAD_15M_2026-11-18T07:15:00Z_LONG"
+    "USDCAD_15M_2026-11-18T07:15:00Z_LONG",
+    "USDCHF_15M_2026-11-18T14:15:00Z_LONG"
   ]
 }
