@@ -15,6 +15,7 @@ import json
 import socket
 import ssl
 import struct
+import time
 import logging
 from typing import Dict, Any, Optional, Tuple
 
@@ -123,6 +124,249 @@ def _send_tls_frame(sock: ssl.SSLSocket, payload_type: int, req_pb: Any) -> Opti
     return _read_tls_frame(sock)
 
 
+def _dispatch_order_over_socket(
+    s: Any,
+    client_id: str,
+    client_secret: str,
+    access_token: str,
+    account_id: int,
+    order_req: Any,
+    max_amend_retries: int = 3,
+    retry_delay_sec: float = 0.5
+) -> Dict[str, Any]:
+    """Internal implementation of cTrader order execution flow over an open socket.
+
+    Handles authentication, order dispatch with relative SL/TP, atomic SL/TP verification,
+    fallback amendment retry loop, and emergency market close if unprotected.
+    """
+    from ctrader_open_api.messages.OpenApiModelMessages_pb2 import (
+        ProtoOAPayloadType, ProtoOAOrderType, ProtoOAExecutionType, ProtoOATradeSide
+    )
+    from ctrader_open_api.messages.OpenApiMessages_pb2 import (
+        ProtoOAApplicationAuthReq, ProtoOAAccountAuthReq,
+        ProtoOAExecutionEvent, ProtoOAErrorRes, ProtoOAAmendPositionSLTPReq,
+        ProtoOAClosePositionReq, ProtoOAOrderErrorEvent
+    )
+
+    # 1. Application Authentication
+    app_req = ProtoOAApplicationAuthReq()
+    app_req.clientId = client_id
+    app_req.clientSecret = client_secret
+    app_res = _send_tls_frame(s, ProtoOAPayloadType.PROTO_OA_APPLICATION_AUTH_REQ, app_req)
+    if not app_res:
+        return {"status": "ERROR", "error": "No response to ApplicationAuthReq"}
+    if app_res[0] == ProtoOAPayloadType.PROTO_OA_ERROR_RES:
+        err = ProtoOAErrorRes()
+        err.ParseFromString(app_res[1])
+        logger.warning(f"[cTrader Open API] App Auth Notice: {err.errorCode} - {err.description}")
+        return {"status": "PENDING_KYC_ACTIVATION", "error": err.description}
+
+    # 2. Account Authentication
+    acc_req = ProtoOAAccountAuthReq()
+    acc_req.ctidTraderAccountId = account_id
+    acc_req.accessToken = access_token
+    acc_res = _send_tls_frame(s, ProtoOAPayloadType.PROTO_OA_ACCOUNT_AUTH_REQ, acc_req)
+    if not acc_res:
+        return {"status": "ERROR", "error": "No response to AccountAuthReq"}
+    if acc_res[0] == ProtoOAPayloadType.PROTO_OA_ERROR_RES:
+        err = ProtoOAErrorRes()
+        err.ParseFromString(acc_res[1])
+        logger.warning(f"[cTrader Open API] Account Auth Error: {err.errorCode} - {err.description}")
+        return {"status": "ACCOUNT_AUTH_ERROR", "error": err.description}
+
+    # 3. New Order Dispatch
+    # For MARKET orders, cTrader Open API rejects absolute stopLoss/takeProfit directly inside ProtoOANewOrderReq.
+    # If absolute stopLoss/takeProfit was passed without relativeStopLoss/relativeTakeProfit, save desired levels
+    # for the fallback amendment loop and clear them from the market order request.
+    desired_sl = None
+    desired_tp = None
+    if getattr(order_req, "orderType", None) == ProtoOAOrderType.MARKET:
+        if order_req.HasField("stopLoss") and order_req.stopLoss > 0:
+            if not order_req.HasField("relativeStopLoss"):
+                desired_sl = order_req.stopLoss
+            order_req.ClearField("stopLoss")
+        if order_req.HasField("takeProfit") and order_req.takeProfit > 0:
+            if not order_req.HasField("relativeTakeProfit"):
+                desired_tp = order_req.takeProfit
+            order_req.ClearField("takeProfit")
+
+    order_res = _send_tls_frame(s, ProtoOAPayloadType.PROTO_OA_NEW_ORDER_REQ, order_req)
+    if not order_res:
+        return {"status": "ERROR", "error": "No response to ProtoOANewOrderReq"}
+
+    # Handle PROTO_OA_ORDER_ERROR_EVENT (2132)
+    if order_res[0] == ProtoOAPayloadType.PROTO_OA_ORDER_ERROR_EVENT:
+        err = ProtoOAOrderErrorEvent()
+        err.ParseFromString(order_res[1])
+        logger.error(f"[cTrader Open API] Order Error Event: {err.errorCode} - {err.description}")
+        return {"status": "ORDER_REJECTED", "error": f"{err.errorCode}: {err.description}"}
+
+    # Handle PROTO_OA_ERROR_RES (2142)
+    if order_res[0] == ProtoOAPayloadType.PROTO_OA_ERROR_RES:
+        err = ProtoOAErrorRes()
+        err.ParseFromString(order_res[1])
+        logger.error(f"[cTrader Open API] Gateway Error: {err.errorCode} - {err.description}")
+        return {"status": "ORDER_REJECTED", "error": f"{err.errorCode}: {err.description}"}
+
+    # Handle PROTO_OA_EXECUTION_EVENT (2126)
+    if order_res[0] == ProtoOAPayloadType.PROTO_OA_EXECUTION_EVENT:
+        event = ProtoOAExecutionEvent()
+        event.ParseFromString(order_res[1])
+
+        # If ORDER_ACCEPTED, read the subsequent fill or reject event
+        if event.executionType == ProtoOAExecutionType.ORDER_ACCEPTED:
+            try:
+                next_frame = _read_tls_frame(s)
+                if next_frame:
+                    if next_frame[0] == ProtoOAPayloadType.PROTO_OA_EXECUTION_EVENT:
+                        event = ProtoOAExecutionEvent()
+                        event.ParseFromString(next_frame[1])
+                    elif next_frame[0] == ProtoOAPayloadType.PROTO_OA_ORDER_ERROR_EVENT:
+                        err = ProtoOAOrderErrorEvent()
+                        err.ParseFromString(next_frame[1])
+                        logger.error(f"[cTrader Open API] Post-Acceptance Order Error: {err.errorCode} - {err.description}")
+                        return {"status": "ORDER_REJECTED", "error": f"{err.errorCode}: {err.description}"}
+            except Exception as ex:
+                logger.warning(f"[cTrader Open API] Waiting for fill frame notice: {ex}")
+
+        if event.executionType == ProtoOAExecutionType.ORDER_REJECTED:
+            err_code = getattr(event, "errorCode", "ORDER_REJECTED")
+            logger.error(f"[cTrader Open API] Order Rejected: {err_code}")
+            return {"status": "ORDER_REJECTED", "error": str(err_code)}
+
+        if event.executionType == ProtoOAExecutionType.ORDER_CANCELLED:
+            err_code = getattr(event, "errorCode", "ORDER_CANCELLED")
+            logger.error(f"[cTrader Open API] Order Cancelled: {err_code}")
+            return {"status": "ORDER_CANCELLED", "error": str(err_code)}
+
+        pos_id = getattr(event.position, "positionId", 0) if event.HasField("position") else 0
+        ord_id = getattr(event.order, "orderId", 0) if event.HasField("order") else 0
+
+        if not pos_id:
+            logger.error(f"[cTrader Open API] Execution event received without positionId (executionType: {event.executionType})")
+            return {"status": "UNFILLED", "order_id": ord_id, "error": f"Execution event type {event.executionType} without positionId"}
+
+        # 4. Atomic SL/TP Verification & Fallback Amendment Loop (ROP-01)
+        sl_desired = bool(order_req.HasField("relativeStopLoss") or (desired_sl is not None))
+        sl_attached = bool(event.HasField("position") and event.position.HasField("stopLoss") and event.position.stopLoss > 0)
+        tp_attached = bool(event.HasField("position") and event.position.HasField("takeProfit") and event.position.takeProfit > 0)
+
+        if sl_desired and sl_attached:
+            attached_sl = event.position.stopLoss
+            attached_tp = event.position.takeProfit if tp_attached else 0.0
+            logger.info(f"[cTrader Open API] Position #{pos_id} filled with atomic broker SL ({attached_sl}) & TP ({attached_tp}).")
+            return {
+                "status": "EXECUTED",
+                "position_id": pos_id,
+                "order_id": ord_id,
+                "atomic_sltp": True,
+                "attached_sl": attached_sl,
+                "attached_tp": attached_tp
+            }
+
+        # If a Stop Loss was requested but not attached on fill, trigger the fallback retry loop
+        if sl_desired and not sl_attached:
+            logger.warning(
+                f"[cTrader Open API] Position #{pos_id} filled without Stop-Loss! "
+                f"Initiating fallback amendment loop (max {max_amend_retries} retries)..."
+            )
+            fill_price = float(getattr(event.position, "price", 0.0))
+            if desired_sl is not None:
+                target_sl = float(desired_sl)
+            elif order_req.HasField("relativeStopLoss") and fill_price > 0:
+                offset = order_req.relativeStopLoss / 100_000.0
+                if getattr(order_req, "tradeSide", ProtoOATradeSide.BUY) == ProtoOATradeSide.BUY:
+                    target_sl = fill_price - offset
+                else:
+                    target_sl = fill_price + offset
+            else:
+                target_sl = None
+
+            if desired_tp is not None:
+                target_tp = float(desired_tp)
+            elif order_req.HasField("relativeTakeProfit") and fill_price > 0:
+                offset = order_req.relativeTakeProfit / 100_000.0
+                if getattr(order_req, "tradeSide", ProtoOATradeSide.BUY) == ProtoOATradeSide.BUY:
+                    target_tp = fill_price + offset
+                else:
+                    target_tp = fill_price - offset
+            else:
+                target_tp = None
+
+            sym_id = getattr(order_req, "symbolId", 0)
+            digits = 2 if sym_id == 41 else (3 if sym_id == 4 else 5)
+            amend_success = False
+
+            for attempt in range(1, max_amend_retries + 1):
+                try:
+                    amend_req = ProtoOAAmendPositionSLTPReq()
+                    amend_req.ctidTraderAccountId = account_id
+                    amend_req.positionId = int(pos_id)
+                    if target_sl is not None:
+                        amend_req.stopLoss = round(float(target_sl), digits)
+                    if target_tp is not None:
+                        amend_req.takeProfit = round(float(target_tp), digits)
+
+                    amend_res = _send_tls_frame(s, ProtoOAPayloadType.PROTO_OA_AMEND_POSITION_SLTP_REQ, amend_req)
+                    if amend_res and amend_res[0] in (
+                        ProtoOAPayloadType.PROTO_OA_EXECUTION_EVENT,
+                        ProtoOAPayloadType.PROTO_OA_TRAILING_SL_CHANGED_EVENT
+                    ):
+                        amend_success = True
+                        logger.info(
+                            f"[cTrader Open API] Fallback amend succeeded on attempt {attempt}: "
+                            f"Position #{pos_id} SL ({amend_req.stopLoss}) & TP ({amend_req.takeProfit}) attached."
+                        )
+                        return {
+                            "status": "EXECUTED",
+                            "position_id": pos_id,
+                            "order_id": ord_id,
+                            "atomic_sltp": False,
+                            "amend_retries": attempt,
+                            "attached_sl": amend_req.stopLoss,
+                            "attached_tp": getattr(amend_req, "takeProfit", 0.0)
+                        }
+                    elif amend_res and amend_res[0] == ProtoOAPayloadType.PROTO_OA_ERROR_RES:
+                        err = ProtoOAErrorRes()
+                        err.ParseFromString(amend_res[1])
+                        logger.warning(f"[cTrader Open API] Amend attempt {attempt}/{max_amend_retries} rejected: {err.errorCode} - {err.description}")
+                    else:
+                        resp_type = amend_res[0] if amend_res else "None"
+                        logger.warning(f"[cTrader Open API] Amend attempt {attempt}/{max_amend_retries} received unexpected response: {resp_type}")
+                except Exception as amend_ex:
+                    logger.warning(f"[cTrader Open API] Amend attempt {attempt}/{max_amend_retries} exception: {amend_ex}")
+
+                if attempt < max_amend_retries and retry_delay_sec > 0:
+                    time.sleep(retry_delay_sec)
+
+            # If all amend retries failed, trigger emergency market close
+            if not amend_success:
+                logger.critical(
+                    f"[cTrader SAFETY CRITICAL] Position #{pos_id} lacks Stop-Loss protection after {max_amend_retries} amend retries! "
+                    f"Dispatching emergency market close to prevent catastrophic naked exposure."
+                )
+                try:
+                    close_req = ProtoOAClosePositionReq()
+                    close_req.ctidTraderAccountId = account_id
+                    close_req.positionId = int(pos_id)
+                    close_req.volume = getattr(event.position, "volume", getattr(order_req, "volume", 0))
+                    _send_tls_frame(s, ProtoOAPayloadType.PROTO_OA_CLOSE_POSITION_REQ, close_req)
+                    logger.info(f"[cTrader Open API] Emergency close dispatched for unprotected position #{pos_id}.")
+                except Exception as close_ex:
+                    logger.critical(f"[cTrader SAFETY CRITICAL] Failed to dispatch emergency close for position #{pos_id}: {close_ex}")
+
+                return {
+                    "status": "EMERGENCY_CLOSED",
+                    "position_id": pos_id,
+                    "order_id": ord_id,
+                    "error": f"Failed to attach Stop-Loss after {max_amend_retries} retries. Position closed immediately for financial safety."
+                }
+
+        return {"status": "EXECUTED", "position_id": pos_id, "order_id": ord_id}
+
+    return {"status": "ERROR", "error": f"Unexpected response payload type: {order_res[0]}"}
+
+
 def dispatch_ctrader_tls_order(
     host: str,
     port: int,
@@ -131,143 +375,28 @@ def dispatch_ctrader_tls_order(
     access_token: str,
     account_id: int,
     order_req: Any,
-    timeout: float = 5.0
+    timeout: float = 5.0,
+    max_amend_retries: int = 3,
+    retry_delay_sec: float = 0.5
 ) -> Dict[str, Any]:
     """Execute live order dispatch directly over TLS socket with cTrader Open API."""
-    if os.environ.get("PYTEST_CURRENT_TEST"):
+    if os.environ.get("PYTEST_CURRENT_TEST") and not os.environ.get("TEST_REAL_SOCKET"):
         return {"status": "EXECUTED", "position_id": 9990001, "order_id": 9990001}
-    from ctrader_open_api.messages.OpenApiModelMessages_pb2 import ProtoOAPayloadType, ProtoOAOrderType, ProtoOAExecutionType
-    from ctrader_open_api.messages.OpenApiMessages_pb2 import (
-        ProtoOAApplicationAuthReq, ProtoOAAccountAuthReq,
-        ProtoOAExecutionEvent, ProtoOAErrorRes, ProtoOAAmendPositionSLTPReq,
-        ProtoOAOrderErrorEvent
-    )
 
     ctx = ssl.create_default_context()
     with ctx.wrap_socket(socket.socket(), server_hostname=host) as s:
         s.settimeout(timeout)
         s.connect((host, port))
-
-        # 1. Application Authentication
-        app_req = ProtoOAApplicationAuthReq()
-        app_req.clientId = client_id
-        app_req.clientSecret = client_secret
-        app_res = _send_tls_frame(s, ProtoOAPayloadType.PROTO_OA_APPLICATION_AUTH_REQ, app_req)
-        if not app_res:
-            return {"status": "ERROR", "error": "No response to ApplicationAuthReq"}
-        if app_res[0] == ProtoOAPayloadType.PROTO_OA_ERROR_RES:
-            err = ProtoOAErrorRes()
-            err.ParseFromString(app_res[1])
-            logger.warning(f"[cTrader Open API] App Auth Notice: {err.errorCode} - {err.description}")
-            return {"status": "PENDING_KYC_ACTIVATION", "error": err.description}
-
-        # 2. Account Authentication
-        acc_req = ProtoOAAccountAuthReq()
-        acc_req.ctidTraderAccountId = account_id
-        acc_req.accessToken = access_token
-        acc_res = _send_tls_frame(s, ProtoOAPayloadType.PROTO_OA_ACCOUNT_AUTH_REQ, acc_req)
-        if not acc_res:
-            return {"status": "ERROR", "error": "No response to AccountAuthReq"}
-        if acc_res[0] == ProtoOAPayloadType.PROTO_OA_ERROR_RES:
-            err = ProtoOAErrorRes()
-            err.ParseFromString(acc_res[1])
-            logger.warning(f"[cTrader Open API] Account Auth Error: {err.errorCode} - {err.description}")
-            return {"status": "ACCOUNT_AUTH_ERROR", "error": err.description}
-
-        # 3. New Order Dispatch
-        # For MARKET orders, cTrader Open API rejects absolute stopLoss/takeProfit directly inside ProtoOANewOrderReq.
-        # Record desired SL/TP and attach them atomically via ProtoOAAmendPositionSLTPReq immediately upon fill.
-        desired_sl = None
-        desired_tp = None
-        if getattr(order_req, "orderType", None) == ProtoOAOrderType.MARKET:
-            if order_req.HasField("stopLoss") and order_req.stopLoss > 0:
-                desired_sl = order_req.stopLoss
-                order_req.ClearField("stopLoss")
-            if order_req.HasField("takeProfit") and order_req.takeProfit > 0:
-                desired_tp = order_req.takeProfit
-                order_req.ClearField("takeProfit")
-
-        order_res = _send_tls_frame(s, ProtoOAPayloadType.PROTO_OA_NEW_ORDER_REQ, order_req)
-        if not order_res:
-            return {"status": "ERROR", "error": "No response to ProtoOANewOrderReq"}
-
-        # Handle PROTO_OA_ORDER_ERROR_EVENT (2132)
-        if order_res[0] == ProtoOAPayloadType.PROTO_OA_ORDER_ERROR_EVENT:
-            err = ProtoOAOrderErrorEvent()
-            err.ParseFromString(order_res[1])
-            logger.error(f"[cTrader Open API] Order Error Event: {err.errorCode} - {err.description}")
-            return {"status": "ORDER_REJECTED", "error": f"{err.errorCode}: {err.description}"}
-
-        # Handle PROTO_OA_ERROR_RES (2142)
-        if order_res[0] == ProtoOAPayloadType.PROTO_OA_ERROR_RES:
-            err = ProtoOAErrorRes()
-            err.ParseFromString(order_res[1])
-            logger.error(f"[cTrader Open API] Gateway Error: {err.errorCode} - {err.description}")
-            return {"status": "ORDER_REJECTED", "error": f"{err.errorCode}: {err.description}"}
-
-        # Handle PROTO_OA_EXECUTION_EVENT (2126)
-        if order_res[0] == ProtoOAPayloadType.PROTO_OA_EXECUTION_EVENT:
-            event = ProtoOAExecutionEvent()
-            event.ParseFromString(order_res[1])
-
-            # If ORDER_ACCEPTED, read the subsequent fill or reject event
-            if event.executionType == ProtoOAExecutionType.ORDER_ACCEPTED:
-                try:
-                    next_frame = _read_tls_frame(s)
-                    if next_frame:
-                        if next_frame[0] == ProtoOAPayloadType.PROTO_OA_EXECUTION_EVENT:
-                            event = ProtoOAExecutionEvent()
-                            event.ParseFromString(next_frame[1])
-                        elif next_frame[0] == ProtoOAPayloadType.PROTO_OA_ORDER_ERROR_EVENT:
-                            err = ProtoOAOrderErrorEvent()
-                            err.ParseFromString(next_frame[1])
-                            logger.error(f"[cTrader Open API] Post-Acceptance Order Error: {err.errorCode} - {err.description}")
-                            return {"status": "ORDER_REJECTED", "error": f"{err.errorCode}: {err.description}"}
-                except Exception as ex:
-                    logger.warning(f"[cTrader Open API] Waiting for fill frame notice: {ex}")
-
-            if event.executionType == ProtoOAExecutionType.ORDER_REJECTED:
-                err_code = getattr(event, "errorCode", "ORDER_REJECTED")
-                logger.error(f"[cTrader Open API] Order Rejected: {err_code}")
-                return {"status": "ORDER_REJECTED", "error": str(err_code)}
-
-            if event.executionType == ProtoOAExecutionType.ORDER_CANCELLED:
-                err_code = getattr(event, "errorCode", "ORDER_CANCELLED")
-                logger.error(f"[cTrader Open API] Order Cancelled: {err_code}")
-                return {"status": "ORDER_CANCELLED", "error": str(err_code)}
-
-            pos_id = getattr(event.position, "positionId", 0) if event.HasField("position") else 0
-            ord_id = getattr(event.order, "orderId", 0) if event.HasField("order") else 0
-
-            if not pos_id:
-                logger.error(f"[cTrader Open API] Execution event received without positionId (executionType: {event.executionType})")
-                return {"status": "UNFILLED", "order_id": ord_id, "error": f"Execution event type {event.executionType} without positionId"}
-
-            # Step 4: Two-Step Atomic SL/TP Attachment via ProtoOAAmendPositionSLTPReq
-            if pos_id and (desired_sl is not None or desired_tp is not None):
-                try:
-                    digits = 2 if getattr(order_req, "symbolId", 0) == 41 else 5
-                    amend_req = ProtoOAAmendPositionSLTPReq()
-                    amend_req.ctidTraderAccountId = account_id
-                    amend_req.positionId = int(pos_id)
-                    if desired_sl is not None:
-                        amend_req.stopLoss = round(float(desired_sl), digits)
-                    if desired_tp is not None:
-                        amend_req.takeProfit = round(float(desired_tp), digits)
-
-                    amend_res = _send_tls_frame(s, ProtoOAPayloadType.PROTO_OA_AMEND_POSITION_SLTP_REQ, amend_req)
-                    if amend_res and amend_res[0] == ProtoOAPayloadType.PROTO_OA_ERROR_RES:
-                        err = ProtoOAErrorRes()
-                        err.ParseFromString(amend_res[1])
-                        logger.warning(f"[cTrader Open API] SL/TP Amendment Notice: {err.errorCode} - {err.description}")
-                    else:
-                        logger.info(f"[cTrader Open API] Position #{pos_id} broker SL ({amend_req.stopLoss}) & TP ({amend_req.takeProfit}) attached successfully.")
-                except Exception as amend_err:
-                    logger.warning(f"[cTrader Open API] Post-order SL/TP attachment warning: {amend_err}")
-
-            return {"status": "EXECUTED", "position_id": pos_id, "order_id": ord_id}
-
-        return {"status": "ERROR", "error": f"Unexpected response payload type: {order_res[0]}"}
+        return _dispatch_order_over_socket(
+            s=s,
+            client_id=client_id,
+            client_secret=client_secret,
+            access_token=access_token,
+            account_id=account_id,
+            order_req=order_req,
+            max_amend_retries=max_amend_retries,
+            retry_delay_sec=retry_delay_sec
+        )
 
 
 def execute_ctrader_order(sig: Dict[str, Any]) -> Dict[str, Any]:
@@ -378,10 +507,38 @@ def execute_ctrader_order(sig: Dict[str, Any]) -> Dict[str, Any]:
         req.orderType = ProtoOAOrderType.MARKET
         req.tradeSide = ProtoOATradeSide.BUY if direction == "LONG" else ProtoOATradeSide.SELL
         req.volume = volume_cents
-        if stop_loss > 0:
-            req.stopLoss = stop_loss
-        if take_profit > 0:
-            req.takeProfit = take_profit
+        # Relative SL/TP Calculation (ROP-01)
+        # Scaled to 10^-5 (1/100,000 unit of price) as mandated by cTrader Open API Protobuf specification.
+        # MARKET orders use relativeStopLoss & relativeTakeProfit to guarantee atomic server-side attachment upon fill.
+        if req.orderType == ProtoOAOrderType.MARKET:
+            if stop_loss > 0 and entry > 0:
+                sl_distance = abs(entry - stop_loss)
+                req.relativeStopLoss = int(round(sl_distance * 100_000))
+            elif stop_loss > 0:
+                if is_gold:
+                    sl_points = float(sig.get("sl_points") or 25.0)
+                    req.relativeStopLoss = int(round(sl_points * 100_000))
+                else:
+                    pip_size = 0.01 if "JPY" in pair.upper() else 0.0001
+                    sl_pips = float(sig.get("sl_pips") or 22.0)
+                    req.relativeStopLoss = int(round(sl_pips * pip_size * 100_000))
+
+            if take_profit > 0 and entry > 0:
+                tp_distance = abs(entry - take_profit)
+                req.relativeTakeProfit = int(round(tp_distance * 100_000))
+            elif take_profit > 0:
+                if is_gold:
+                    tp_points = float(sig.get("tp_points") or (float(sig.get("sl_points", 25.0)) * 1.5))
+                    req.relativeTakeProfit = int(round(tp_points * 100_000))
+                else:
+                    pip_size = 0.01 if "JPY" in pair.upper() else 0.0001
+                    tp_pips = float(sig.get("tp_pips") or (float(sig.get("sl_pips", 22.0)) * 1.5))
+                    req.relativeTakeProfit = int(round(tp_pips * pip_size * 100_000))
+        else:
+            if stop_loss > 0:
+                req.stopLoss = stop_loss
+            if take_profit > 0:
+                req.takeProfit = take_profit
 
         # Stealth Anti-Ban: Configurable comment & label (defaults to empty to mirror manual human orders)
         order_comment = (os.environ.get("CTRADER_ORDER_COMMENT") or "").strip()

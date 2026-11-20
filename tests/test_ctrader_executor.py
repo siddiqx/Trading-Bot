@@ -230,5 +230,225 @@ def test_live_order_rejection_safety(monkeypatch):
     assert "TRADING_BAD_VOLUME" in res["error"]
 
 
+def test_rop01_relative_sltp_market_framing(monkeypatch):
+    """Verify execute_ctrader_order populates relativeStopLoss/relativeTakeProfit and omits absolute SL/TP."""
+    import core.ctrader_executor as ce
+    monkeypatch.setattr(ce, "ENABLE_CTRADER_EXECUTION", True)
+    monkeypatch.setattr(ce, "CTRADER_CLIENT_ID", "real_client_id")
+    monkeypatch.setattr(ce, "CTRADER_CLIENT_SECRET", "real_client_secret")
+    monkeypatch.setattr(ce, "CTRADER_ACCESS_TOKEN", "real_token")
+    monkeypatch.setattr(ce, "CTRADER_ACCOUNT_ID", "12345678")
+    monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)
+
+    captured_req = {}
+    def mock_dispatch(**kwargs):
+        captured_req["req"] = kwargs.get("order_req")
+        return {"status": "EXECUTED", "position_id": 12345, "order_id": 67890}
+
+    monkeypatch.setattr(ce, "dispatch_ctrader_tls_order", mock_dispatch)
+
+    # 1. EURUSD: 22 pips SL (0.00220), 33 pips TP (0.00330)
+    sig_forex = {
+        "pair": "EURUSD",
+        "direction": "LONG",
+        "entry": 1.08500,
+        "stop_loss": 1.08280,
+        "take_profit": 1.08830,
+        "suggested_lots": 0.10
+    }
+    ce.execute_ctrader_order(sig_forex)
+    req = captured_req["req"]
+    assert req.relativeStopLoss == 220
+    assert req.relativeTakeProfit == 330
+    assert not req.HasField("stopLoss")
+    assert not req.HasField("takeProfit")
+
+    # 2. XAUUSD: 25.0 points SL, 37.5 points TP
+    sig_gold = {
+        "pair": "XAUUSD",
+        "direction": "SHORT",
+        "entry": 2750.00,
+        "stop_loss": 2775.00,
+        "take_profit": 2712.50,
+        "suggested_lots": 0.05
+    }
+    ce.execute_ctrader_order(sig_gold)
+    req_gold = captured_req["req"]
+    assert req_gold.relativeStopLoss == 2_500_000
+    assert req_gold.relativeTakeProfit == 3_750_000
+    assert not req_gold.HasField("stopLoss")
+    assert not req_gold.HasField("takeProfit")
+
+    # 3. USDJPY: 22 pips SL (0.22), 33 pips TP (0.33)
+    sig_jpy = {
+        "pair": "USDJPY",
+        "direction": "LONG",
+        "entry": 154.500,
+        "stop_loss": 154.280,
+        "take_profit": 154.830,
+        "suggested_lots": 0.10
+    }
+    ce.execute_ctrader_order(sig_jpy)
+    req_jpy = captured_req["req"]
+    assert req_jpy.relativeStopLoss == 22_000
+    assert req_jpy.relativeTakeProfit == 33_000
+    assert not req_jpy.HasField("stopLoss")
+    assert not req_jpy.HasField("takeProfit")
+
+
+class _FakeSocket:
+    """Mock socket for testing TLS framing without connecting to cTrader broker."""
+    def __init__(self, responses):
+        import struct
+        from ctrader_open_api.messages.OpenApiCommonMessages_pb2 import ProtoMessage
+        self.sent_frames = []
+        self._read_buffer = bytearray()
+        for p_type, msg in responses:
+            proto_msg = ProtoMessage()
+            proto_msg.payloadType = p_type
+            proto_msg.payload = msg.SerializeToString()
+            data = proto_msg.SerializeToString()
+            self._read_buffer.extend(struct.pack('>I', len(data)) + data)
+
+    def sendall(self, data):
+        self.sent_frames.append(data)
+
+    def recv(self, num_bytes):
+        chunk = self._read_buffer[:num_bytes]
+        self._read_buffer = self._read_buffer[num_bytes:]
+        return bytes(chunk)
+
+
+def _build_test_order_req():
+    from ctrader_open_api.messages.OpenApiModelMessages_pb2 import ProtoOAOrderType, ProtoOATradeSide
+    from ctrader_open_api.messages.OpenApiMessages_pb2 import ProtoOANewOrderReq
+    req = ProtoOANewOrderReq()
+    req.ctidTraderAccountId = 111
+    req.symbolId = 1
+    req.tradeSide = ProtoOATradeSide.BUY
+    req.volume = 100000
+    req.orderType = ProtoOAOrderType.MARKET
+    req.relativeStopLoss = 220
+    req.relativeTakeProfit = 330
+    return req
+
+
+def _build_test_auth_responses():
+    from ctrader_open_api.messages.OpenApiModelMessages_pb2 import ProtoOAPayloadType
+    from ctrader_open_api.messages.OpenApiMessages_pb2 import ProtoOAApplicationAuthRes, ProtoOAAccountAuthRes
+    app_res = ProtoOAApplicationAuthRes()
+    acc_res = ProtoOAAccountAuthRes()
+    acc_res.ctidTraderAccountId = 111
+    return [
+        (ProtoOAPayloadType.PROTO_OA_APPLICATION_AUTH_RES, app_res),
+        (ProtoOAPayloadType.PROTO_OA_ACCOUNT_AUTH_RES, acc_res)
+    ]
+
+
+def _build_test_execution_event(position_id=12345, order_id=67890, sl=None, tp=None, execution_type=None):
+    from ctrader_open_api.messages.OpenApiModelMessages_pb2 import (
+        ProtoOAExecutionType, ProtoOAOrderType, ProtoOATradeSide,
+        ProtoOAPositionStatus, ProtoOAOrderStatus
+    )
+    from ctrader_open_api.messages.OpenApiMessages_pb2 import ProtoOAExecutionEvent
+    ev = ProtoOAExecutionEvent()
+    ev.ctidTraderAccountId = 111
+    ev.executionType = execution_type or ProtoOAExecutionType.ORDER_FILLED
+    ev.order.orderId = order_id
+    ev.order.orderType = ProtoOAOrderType.MARKET
+    ev.order.orderStatus = ProtoOAOrderStatus.ORDER_STATUS_ACCEPTED
+    ev.order.tradeData.symbolId = 1
+    ev.order.tradeData.volume = 100000
+    ev.order.tradeData.tradeSide = ProtoOATradeSide.BUY
+    ev.position.positionId = position_id
+    ev.position.positionStatus = ProtoOAPositionStatus.POSITION_STATUS_OPEN
+    ev.position.swap = 0
+    ev.position.price = 1.08500
+    ev.position.tradeData.symbolId = 1
+    ev.position.tradeData.volume = 100000
+    ev.position.tradeData.tradeSide = ProtoOATradeSide.BUY
+    if sl is not None:
+        ev.position.stopLoss = float(sl)
+    if tp is not None:
+        ev.position.takeProfit = float(tp)
+    return ev
+
+
+def test_rop01_fake_socket_atomic_sltp_success():
+    """Verify _dispatch_order_over_socket detects atomic server-side SL/TP on fill."""
+    from ctrader_open_api.messages.OpenApiModelMessages_pb2 import ProtoOAPayloadType
+    from core.ctrader_executor import _dispatch_order_over_socket
+
+    responses = _build_test_auth_responses()
+    ev = _build_test_execution_event(sl=1.08280, tp=1.08830)
+    responses.append((ProtoOAPayloadType.PROTO_OA_EXECUTION_EVENT, ev))
+
+    sock = _FakeSocket(responses)
+    req = _build_test_order_req()
+
+    res = _dispatch_order_over_socket(sock, "client_id", "secret", "token", 111, req)
+    assert res["status"] == "EXECUTED"
+    assert res["atomic_sltp"] is True
+    assert res["position_id"] == 12345
+    assert res["attached_sl"] == 1.08280
+    assert res["attached_tp"] == 1.08830
+
+
+def test_rop01_fake_socket_fallback_amend_success():
+    """Verify fallback amendment loop triggers when SL is missing on fill and succeeds on retry."""
+    from ctrader_open_api.messages.OpenApiModelMessages_pb2 import ProtoOAPayloadType
+    from core.ctrader_executor import _dispatch_order_over_socket
+
+    responses = _build_test_auth_responses()
+    # 1. Fill event WITHOUT stop loss (naked position)
+    ev_naked = _build_test_execution_event(sl=None, tp=None)
+    responses.append((ProtoOAPayloadType.PROTO_OA_EXECUTION_EVENT, ev_naked))
+
+    # 2. Amend response acknowledging SL/TP attachment
+    ev_amended = _build_test_execution_event(sl=1.08280, tp=1.08830)
+    responses.append((ProtoOAPayloadType.PROTO_OA_EXECUTION_EVENT, ev_amended))
+
+    sock = _FakeSocket(responses)
+    req = _build_test_order_req()
+
+    res = _dispatch_order_over_socket(sock, "client_id", "secret", "token", 111, req, max_amend_retries=3, retry_delay_sec=0.0)
+    assert res["status"] == "EXECUTED"
+    assert res["atomic_sltp"] is False
+    assert res["amend_retries"] == 1
+    assert res["position_id"] == 12345
+
+
+def test_rop01_fake_socket_emergency_market_close_on_amend_failure():
+    """Verify emergency market close is dispatched when all 3 amend retries fail."""
+    from ctrader_open_api.messages.OpenApiModelMessages_pb2 import ProtoOAPayloadType
+    from ctrader_open_api.messages.OpenApiMessages_pb2 import ProtoOAErrorRes
+    from core.ctrader_executor import _dispatch_order_over_socket
+
+    responses = _build_test_auth_responses()
+    # 1. Fill event without SL
+    ev_naked = _build_test_execution_event(sl=None, tp=None)
+    responses.append((ProtoOAPayloadType.PROTO_OA_EXECUTION_EVENT, ev_naked))
+
+    # 2. 3 Amend rejections
+    for i in range(3):
+        err = ProtoOAErrorRes()
+        err.ctidTraderAccountId = 111
+        err.errorCode = f"REJECTED_{i+1}"
+        err.description = f"Amend failure {i+1}"
+        responses.append((ProtoOAPayloadType.PROTO_OA_ERROR_RES, err))
+
+    # 3. Close event response
+    ev_closed = _build_test_execution_event(sl=None, tp=None)
+    responses.append((ProtoOAPayloadType.PROTO_OA_EXECUTION_EVENT, ev_closed))
+
+    sock = _FakeSocket(responses)
+    req = _build_test_order_req()
+
+    res = _dispatch_order_over_socket(sock, "client_id", "secret", "token", 111, req, max_amend_retries=3, retry_delay_sec=0.0)
+    assert res["status"] == "EMERGENCY_CLOSED"
+    assert res["position_id"] == 12345
+    assert "Failed to attach Stop-Loss after 3 retries" in res["error"]
+
+
 
 
