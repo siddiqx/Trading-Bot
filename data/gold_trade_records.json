@@ -42,7 +42,9 @@
     }
   },
   "completed_trades": [],
-  "daily_losses": {},
+  "daily_losses": {
+    "2026-11-20": 0
+  },
   "alerted_bars": [
     "2026-11-20T07:00:00+00:00"
   ]
