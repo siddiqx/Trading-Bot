@@ -23,6 +23,7 @@ from satellite.gold_validator import (
     calculate_gold_position_size,
     is_rollover_blackout_active,
     is_friday_weekend_cutoff,
+    is_friday_trading_blocked,
     is_monday_session_filtered,
     check_correlation_interlock,
     get_gold_usd_bias,
@@ -116,6 +117,14 @@ class TestWeekendCutoff:
     def test_friday_before_cutoff(self):
         fri_early = datetime(2026, 11, 6, 14, 0, tzinfo=timezone.utc)
         assert is_friday_weekend_cutoff(fri_early) is False
+
+    def test_friday_trading_blocked_policy(self):
+        fri_morning = datetime(2026, 11, 6, 8, 30, tzinfo=timezone.utc)
+        thu_morning = datetime(2026, 11, 5, 8, 30, tzinfo=timezone.utc)
+        # Friday is blocked for fresh entries
+        assert is_friday_trading_blocked(fri_morning) is True
+        # Thursday is not blocked
+        assert is_friday_trading_blocked(thu_morning) is False
 
     def test_saturday_and_sunday(self):
         sat = datetime(2026, 11, 7, 12, 0, tzinfo=timezone.utc)

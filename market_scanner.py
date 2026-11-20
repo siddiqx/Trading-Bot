@@ -406,7 +406,19 @@ def load_trade_records() -> dict:
                 merged_active = dict(records.get("active_trades", {}))
                 for k, t in cloud_active.items():
                     if isinstance(t, dict) and t.get("status") in ["OPEN", "PENDING"]:
+                        pair = t.get("symbol") or t.get("pair") or k.split("_")[0]
+                        ticker = t.get("ticker", "")
+                        if is_gold_symbol(pair) or is_gold_symbol(ticker):
+                            continue  # Gold trades are isolated and managed exclusively by Gold Satellite scanner
                         merged_active[k] = t
+
+                # Strip any legacy Gold trades mistakenly in Forex records active_trades
+                for k in list(merged_active.keys()):
+                    t = merged_active[k]
+                    pair = t.get("symbol") or t.get("pair") or k.split("_")[0]
+                    ticker = t.get("ticker", "")
+                    if is_gold_symbol(pair) or is_gold_symbol(ticker):
+                        del merged_active[k]
 
                 # Merge completed trades by unique trade_id
                 seen_ids = set()
@@ -429,7 +441,8 @@ def load_trade_records() -> dict:
                         if merged_active[k].get("trade_id") == tid:
                             pos_id = merged_active[k].get("ctrader_position_id") or (merged_active[k].get("ctrader_receipt") or {}).get("position_id")
                             close_ok = c_rec and (c_rec.get("ctrader_close_receipt") or {}).get("status") in ("CLOSED", "SIMULATED_CLOSE")
-                            if pos_id and not close_ok:
+                            # Mock demo IDs (9990001) or rejected orders must never hold a completed trade in active
+                            if pos_id and str(pos_id) != "9990001" and not close_ok:
                                 logger.warning(f"[Broker Guard] Trade {tid} marked completed in cloud, but cTrader position #{pos_id} has not yet executed market close. Keeping in active trades for immediate broker execution.")
                                 merged_active[k]["pending_close"] = c_rec.get("outcome", "WIN") if c_rec else "WIN"
                                 merged_active[k]["pending_exit_price"] = c_rec.get("exit_price") if c_rec else None
@@ -562,7 +575,10 @@ def check_active_trades(records: dict):
         ticker = trade.get("ticker", "")
         pair = trade.get("symbol") or trade.get("pair") or trade_key.split("_")[0]
         if is_gold_symbol(pair) or is_gold_symbol(ticker):
-            logger.warning(f"Skipping active trade check for rejected gold asset: {pair}")
+            logger.warning(f"Purging misplaced Gold trade {trade_key} from Forex active_trades (managed by Gold Satellite scanner)")
+            del active[trade_key]
+            records["active_trades"] = active
+            save_trade_records(records)
             continue
         if not ticker:
             continue

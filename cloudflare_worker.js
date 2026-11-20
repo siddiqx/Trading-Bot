@@ -410,11 +410,16 @@ async function getLedger(env) {
       if (Object.keys(ghActive).length > 0 || ghCompleted.length > 0) {
         // Backfill KV so future lookups are fast
         if (kv) {
-          kv.put("active_trades", JSON.stringify(ghActive)).catch(() => {});
+          const ghForexActive = {};
           const ghGoldActive = {};
           for (const [k, t] of Object.entries(ghActive)) {
-            if (getBaseSymbol(k, t) === "XAUUSD") ghGoldActive[k] = t;
+            if (getBaseSymbol(k, t) === "XAUUSD") {
+              ghGoldActive[k] = t;
+            } else {
+              ghForexActive[k] = t;
+            }
           }
+          kv.put("active_trades", JSON.stringify(ghForexActive)).catch(() => {});
           if (Object.keys(ghGoldActive).length > 0) {
             kv.put("gold_active_trades", JSON.stringify(ghGoldActive)).catch(() => {});
           }
@@ -460,11 +465,16 @@ async function getLedger(env) {
 
     if (Object.keys(rawActive).length > 0 || rawCompleted.length > 0) {
       if (kv) {
-        kv.put("active_trades", JSON.stringify(rawActive)).catch(() => {});
+        const rawForexActive = {};
         const rawGoldActive = {};
         for (const [k, t] of Object.entries(rawActive)) {
-          if (getBaseSymbol(k, t) === "XAUUSD") rawGoldActive[k] = t;
+          if (getBaseSymbol(k, t) === "XAUUSD") {
+            rawGoldActive[k] = t;
+          } else {
+            rawForexActive[k] = t;
+          }
         }
+        kv.put("active_trades", JSON.stringify(rawForexActive)).catch(() => {});
         if (Object.keys(rawGoldActive).length > 0) {
           kv.put("gold_active_trades", JSON.stringify(rawGoldActive)).catch(() => {});
         }
@@ -905,9 +915,9 @@ export default {
           }
         }
 
-        // Purge any active trade whose trade_id is already marked completed or closed
+        // Purge any active trade whose trade_id is already marked completed or closed, or Gold assets (managed by sync_gold_trades)
         for (const [k, at] of Object.entries(mergedActive)) {
-          if (!at || (at.trade_id && seenIds.has(at.trade_id)) || at.status === "COMPLETED" || at.status === "CLOSED") {
+          if (!at || (at.trade_id && seenIds.has(at.trade_id)) || at.status === "COMPLETED" || at.status === "CLOSED" || getBaseSymbol(k, at) === "XAUUSD") {
             delete mergedActive[k];
           }
         }

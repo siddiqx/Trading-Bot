@@ -77,7 +77,7 @@ For every coding task:
 ## 6. Key Commands Quick Reference
 
 ```bash
-# Run complete test suite (182 unit tests)
+# Run complete test suite (183 unit tests)
 pytest
 
 # Execute manual Forex market scan cycle

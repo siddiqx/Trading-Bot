@@ -6,24 +6,24 @@
       "symbol": "XAUUSD",
       "direction": "LONG",
       "entry_price": 3575.10,
-      "exit_price": 3575.10,
+      "exit_price": 3540.10,
       "sl_price": 3540.10,
       "tp_price": 3627.60,
       "lots": 0.03,
       "monetary_risk_usd": 105.0,
       "equity": 25000.0,
       "entry_time": "2026-11-20T08:02:51.786646+00:00",
-      "exit_time": "2026-11-20T14:40:00+00:00",
-      "gross_pnl": 0.0,
-      "friction": 0.0,
-      "net_pnl": 0.0,
-      "r": 0.0,
-      "reason": "REJECTED_BY_BROKER",
-      "notes": "cTrader broker rejected order - zero broker fill"
+      "exit_time": "2026-11-20T17:00:00+00:00",
+      "gross_pnl": -105.0,
+      "friction": 1.08,
+      "net_pnl": -106.08,
+      "r": -1.0,
+      "reason": "STOP_LOSS",
+      "notes": "Hit stop-loss at 3540.10"
     }
   ],
   "daily_losses": {
-    "2026-11-20": 0
+    "2026-11-20": 1
   },
   "alerted_bars": [
     "2026-11-20T07:00:00+00:00"

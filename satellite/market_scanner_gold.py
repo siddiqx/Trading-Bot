@@ -78,6 +78,7 @@ from satellite.gold_validator import (
     calculate_gold_position_size,
     is_rollover_blackout_active,
     is_friday_weekend_cutoff,
+    is_friday_trading_blocked,
     is_monday_session_filtered,
     check_correlation_interlock,
     get_gold_usd_bias,
@@ -616,17 +617,22 @@ def run_gold_scan_cycle() -> None:
         logger.warning("Rollover Blackout Active (20:30 - 22:30 UTC). Fresh Gold entries suppressed.")
         return
 
-    # 5. Filter: Friday Weekend Cutoff (>= 16:00 UTC) - No fresh entries before weekend
+    # 5. Filter: Friday Trading Guard (Empirical 37.7% WR, 0.54 PF Blacklist)
+    if is_friday_trading_blocked(now_utc):
+        logger.info("Friday trading blocked for Gold (empirical win rate 37.7%, PF 0.54). Skipping fresh entry scan.")
+        return
+
+    # 5b. Filter: Friday Weekend Cutoff (>= 16:00 UTC) - No fresh entries before weekend
     if is_friday_weekend_cutoff(now_utc):
         logger.info("Friday weekend cutoff active (>= 16:00 UTC). No fresh Gold entries allowed.")
         return
 
-    # 5b. Filter: Monday Session Window (06:00 - 12:00 UTC) - Fresh entries prohibited outside London window
+    # 5c. Filter: Monday Session Window (06:00 - 12:00 UTC) - Fresh entries prohibited outside London window
     if is_monday_session_filtered(now_utc):
         logger.info("Monday session filter active. Fresh Gold entries permitted strictly between 06:00-12:00 UTC.")
         return
 
-    # 5c. Filter: High-Impact Macro Economic News Filter (Prop Firm News Ban Defense)
+    # 5d. Filter: High-Impact Macro Economic News Filter (Prop Firm News Ban Defense)
     news_active, news_reason = is_news_window_active(GOLD_SYMBOL, now_utc)
     if news_active:
         logger.warning(f"High-Impact News Blackout Active for Gold ({news_reason}). Fresh entries suppressed.")

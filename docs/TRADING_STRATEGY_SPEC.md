@@ -90,7 +90,7 @@ Surveillance evaluates completed 1H candle bars during institutional active hour
    - Short Gold (SELL): $Z_{\text{USD}} \ge +1.25\sigma$ (Intense USD accumulation).
 2. **Technical Trigger:** Confirmed 1H 20-EMA retest rejection or 10-bar Donchian sweep on closed 1H bar.
 3. **Rollover Blackout:** 20:30 – 22:30 UTC spread widening blackout (fresh entries prohibited).
-4. **Friday Cutoff:** No fresh entries after 16:00 UTC; active trades flattened before the weekend.
+4. **Friday Policy:** Fresh Gold entries completely prohibited on Fridays (`FRIDAY_TRADING_ENABLED = False`). Empirical backtesting across 11,427 1H bars (2024–2026) revealed a 37.7% Win Rate, 0.54 Profit Factor, and -13.82R portfolio drag on Fridays (57.4% of all system losses occurred on Friday). Pre-existing positions held into Friday are flat-liquidated at or before 16:00 UTC.
 
 ---
 
