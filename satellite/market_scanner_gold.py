@@ -771,6 +771,7 @@ def run_gold_scan_cycle() -> None:
     }
 
     # 15. cTrader Execution (Stage 2 Demo / Live)
+    c_receipt = None
     try:
         from core.ctrader_executor import execute_ctrader_order
         c_receipt = execute_ctrader_order({
@@ -783,10 +784,28 @@ def run_gold_scan_cycle() -> None:
             "suggested_lots": lots,
         })
         sig_payload["ctrader_receipt"] = c_receipt
-        if c_receipt.get("position_id"):
-            sig_payload["ctrader_position_id"] = c_receipt["position_id"]
+        pos_id = c_receipt.get("position_id")
+        if pos_id and pos_id != 9990001:
+            sig_payload["ctrader_position_id"] = pos_id
     except Exception as e:
         logger.warning(f"cTrader execution hook error on Gold: {e}")
+        c_receipt = {"status": "ERROR", "error": str(e)}
+        sig_payload["ctrader_receipt"] = c_receipt
+
+    # Live Execution Safeguard:
+    # If cTrader execution was attempted and rejected/failed, do NOT record a phantom active trade.
+    if c_receipt and c_receipt.get("status") not in ("EXECUTED", "SIMULATED_DEMO_FILL"):
+        err_msg = c_receipt.get("error", "cTrader order rejected by broker")
+        logger.error(f"[Gold Scanner] Aborting trade recording: cTrader execution failed ({err_msg}).")
+        send_telegram_alert(
+            f"⚠️ <b>[GOLD SATELLITE ENGINE] ORDER REJECTED BY BROKER</b>\n\n"
+            f"• <b>Instrument:</b> {GOLD_SYMBOL}\n"
+            f"• <b>Direction:</b> {direction}\n"
+            f"• <b>Status:</b> {c_receipt.get('status')}\n"
+            f"• <b>Broker Reason:</b> <code>{err_msg}</code>\n"
+            f"• <i>No active position recorded in trade journal.</i>"
+        )
+        return
 
     records["active_trades"][trade_id] = sig_payload
     alerted_bars.append(last_bar_time)

@@ -85,6 +85,32 @@ def get_symbol_id(pair: str) -> Optional[int]:
     return SYMBOL_MAP.get(clean)
 
 
+def _read_exact(sock: ssl.SSLSocket, num_bytes: int) -> Optional[bytes]:
+    """Read exact number of bytes from SSL socket, looping until complete or closed."""
+    buf = bytearray()
+    while len(buf) < num_bytes:
+        chunk = sock.recv(num_bytes - len(buf))
+        if not chunk:
+            return None
+        buf.extend(chunk)
+    return bytes(buf)
+
+
+def _read_tls_frame(sock: ssl.SSLSocket) -> Optional[Tuple[int, bytes]]:
+    """Read a single length-prefixed Protobuf message frame from cTrader Open API over TLS."""
+    from ctrader_open_api.messages.OpenApiCommonMessages_pb2 import ProtoMessage
+    len_bytes = _read_exact(sock, 4)
+    if not len_bytes or len(len_bytes) < 4:
+        return None
+    resp_len = struct.unpack('>I', len_bytes)[0]
+    resp_data = _read_exact(sock, resp_len)
+    if not resp_data or len(resp_data) < resp_len:
+        return None
+    res_msg = ProtoMessage()
+    res_msg.ParseFromString(resp_data)
+    return res_msg.payloadType, res_msg.payload
+
+
 def _send_tls_frame(sock: ssl.SSLSocket, payload_type: int, req_pb: Any) -> Optional[Tuple[int, bytes]]:
     """Helper to frame, serialize, send, and read response from cTrader Open API over TLS."""
     from ctrader_open_api.messages.OpenApiCommonMessages_pb2 import ProtoMessage
@@ -94,20 +120,7 @@ def _send_tls_frame(sock: ssl.SSLSocket, payload_type: int, req_pb: Any) -> Opti
     data = msg.SerializeToString()
     frame = struct.pack('>I', len(data)) + data
     sock.sendall(frame)
-
-    len_bytes = sock.recv(4)
-    if len(len_bytes) < 4:
-        return None
-    resp_len = struct.unpack('>I', len_bytes)[0]
-    resp_data = b''
-    while len(resp_data) < resp_len:
-        chunk = sock.recv(min(resp_len - len(resp_data), 4096))
-        if not chunk:
-            break
-        resp_data += chunk
-    res_msg = ProtoMessage()
-    res_msg.ParseFromString(resp_data)
-    return res_msg.payloadType, res_msg.payload
+    return _read_tls_frame(sock)
 
 
 def dispatch_ctrader_tls_order(
@@ -123,10 +136,11 @@ def dispatch_ctrader_tls_order(
     """Execute live order dispatch directly over TLS socket with cTrader Open API."""
     if os.environ.get("PYTEST_CURRENT_TEST"):
         return {"status": "EXECUTED", "position_id": 9990001, "order_id": 9990001}
-    from ctrader_open_api.messages.OpenApiModelMessages_pb2 import ProtoOAPayloadType, ProtoOAOrderType
+    from ctrader_open_api.messages.OpenApiModelMessages_pb2 import ProtoOAPayloadType, ProtoOAOrderType, ProtoOAExecutionType
     from ctrader_open_api.messages.OpenApiMessages_pb2 import (
         ProtoOAApplicationAuthReq, ProtoOAAccountAuthReq,
-        ProtoOAExecutionEvent, ProtoOAErrorRes, ProtoOAAmendPositionSLTPReq
+        ProtoOAExecutionEvent, ProtoOAErrorRes, ProtoOAAmendPositionSLTPReq,
+        ProtoOAOrderErrorEvent
     )
 
     ctx = ssl.create_default_context()
@@ -176,22 +190,70 @@ def dispatch_ctrader_tls_order(
         order_res = _send_tls_frame(s, ProtoOAPayloadType.PROTO_OA_NEW_ORDER_REQ, order_req)
         if not order_res:
             return {"status": "ERROR", "error": "No response to ProtoOANewOrderReq"}
+
+        # Handle PROTO_OA_ORDER_ERROR_EVENT (2132)
+        if order_res[0] == ProtoOAPayloadType.PROTO_OA_ORDER_ERROR_EVENT:
+            err = ProtoOAOrderErrorEvent()
+            err.ParseFromString(order_res[1])
+            logger.error(f"[cTrader Open API] Order Error Event: {err.errorCode} - {err.description}")
+            return {"status": "ORDER_REJECTED", "error": f"{err.errorCode}: {err.description}"}
+
+        # Handle PROTO_OA_ERROR_RES (2142)
+        if order_res[0] == ProtoOAPayloadType.PROTO_OA_ERROR_RES:
+            err = ProtoOAErrorRes()
+            err.ParseFromString(order_res[1])
+            logger.error(f"[cTrader Open API] Gateway Error: {err.errorCode} - {err.description}")
+            return {"status": "ORDER_REJECTED", "error": f"{err.errorCode}: {err.description}"}
+
+        # Handle PROTO_OA_EXECUTION_EVENT (2126)
         if order_res[0] == ProtoOAPayloadType.PROTO_OA_EXECUTION_EVENT:
             event = ProtoOAExecutionEvent()
             event.ParseFromString(order_res[1])
+
+            # If ORDER_ACCEPTED, read the subsequent fill or reject event
+            if event.executionType == ProtoOAExecutionType.ORDER_ACCEPTED:
+                try:
+                    next_frame = _read_tls_frame(s)
+                    if next_frame:
+                        if next_frame[0] == ProtoOAPayloadType.PROTO_OA_EXECUTION_EVENT:
+                            event = ProtoOAExecutionEvent()
+                            event.ParseFromString(next_frame[1])
+                        elif next_frame[0] == ProtoOAPayloadType.PROTO_OA_ORDER_ERROR_EVENT:
+                            err = ProtoOAOrderErrorEvent()
+                            err.ParseFromString(next_frame[1])
+                            logger.error(f"[cTrader Open API] Post-Acceptance Order Error: {err.errorCode} - {err.description}")
+                            return {"status": "ORDER_REJECTED", "error": f"{err.errorCode}: {err.description}"}
+                except Exception as ex:
+                    logger.warning(f"[cTrader Open API] Waiting for fill frame notice: {ex}")
+
+            if event.executionType == ProtoOAExecutionType.ORDER_REJECTED:
+                err_code = getattr(event, "errorCode", "ORDER_REJECTED")
+                logger.error(f"[cTrader Open API] Order Rejected: {err_code}")
+                return {"status": "ORDER_REJECTED", "error": str(err_code)}
+
+            if event.executionType == ProtoOAExecutionType.ORDER_CANCELLED:
+                err_code = getattr(event, "errorCode", "ORDER_CANCELLED")
+                logger.error(f"[cTrader Open API] Order Cancelled: {err_code}")
+                return {"status": "ORDER_CANCELLED", "error": str(err_code)}
+
             pos_id = getattr(event.position, "positionId", 0) if event.HasField("position") else 0
             ord_id = getattr(event.order, "orderId", 0) if event.HasField("order") else 0
+
+            if not pos_id:
+                logger.error(f"[cTrader Open API] Execution event received without positionId (executionType: {event.executionType})")
+                return {"status": "UNFILLED", "order_id": ord_id, "error": f"Execution event type {event.executionType} without positionId"}
 
             # Step 4: Two-Step Atomic SL/TP Attachment via ProtoOAAmendPositionSLTPReq
             if pos_id and (desired_sl is not None or desired_tp is not None):
                 try:
+                    digits = 2 if getattr(order_req, "symbolId", 0) == 41 else 5
                     amend_req = ProtoOAAmendPositionSLTPReq()
                     amend_req.ctidTraderAccountId = account_id
                     amend_req.positionId = int(pos_id)
                     if desired_sl is not None:
-                        amend_req.stopLoss = float(desired_sl)
+                        amend_req.stopLoss = round(float(desired_sl), digits)
                     if desired_tp is not None:
-                        amend_req.takeProfit = float(desired_tp)
+                        amend_req.takeProfit = round(float(desired_tp), digits)
 
                     amend_res = _send_tls_frame(s, ProtoOAPayloadType.PROTO_OA_AMEND_POSITION_SLTP_REQ, amend_req)
                     if amend_res and amend_res[0] == ProtoOAPayloadType.PROTO_OA_ERROR_RES:
@@ -199,17 +261,13 @@ def dispatch_ctrader_tls_order(
                         err.ParseFromString(amend_res[1])
                         logger.warning(f"[cTrader Open API] SL/TP Amendment Notice: {err.errorCode} - {err.description}")
                     else:
-                        logger.info(f"[cTrader Open API] Position #{pos_id} broker SL ({desired_sl}) & TP ({desired_tp}) attached successfully.")
+                        logger.info(f"[cTrader Open API] Position #{pos_id} broker SL ({amend_req.stopLoss}) & TP ({amend_req.takeProfit}) attached successfully.")
                 except Exception as amend_err:
                     logger.warning(f"[cTrader Open API] Post-order SL/TP attachment warning: {amend_err}")
 
             return {"status": "EXECUTED", "position_id": pos_id, "order_id": ord_id}
-        elif order_res[0] == ProtoOAPayloadType.PROTO_OA_ERROR_RES:
-            err = ProtoOAErrorRes()
-            err.ParseFromString(order_res[1])
-            return {"status": "ORDER_REJECTED", "error": err.description}
 
-        return {"status": "EXECUTED"}
+        return {"status": "ERROR", "error": f"Unexpected response payload type: {order_res[0]}"}
 
 
 def execute_ctrader_order(sig: Dict[str, Any]) -> Dict[str, Any]:
@@ -334,11 +392,13 @@ def execute_ctrader_order(sig: Dict[str, Any]) -> Dict[str, Any]:
             req.label = order_label
 
         # Attempt TLS Transmission to cTrader Open API endpoint
-        order_id = 9990001
-        position_id = 9990001
-        tls_status = "EXECUTED"
+        is_mock = CTRADER_CLIENT_ID.startswith("mock_") or bool(os.environ.get("PYTEST_CURRENT_TEST"))
+        order_id = 9990001 if is_mock else None
+        position_id = 9990001 if is_mock else None
+        tls_status = "EXECUTED" if is_mock else "PENDING"
+        tls_error = None
 
-        if not CTRADER_CLIENT_ID.startswith("mock_") and not os.environ.get("PYTEST_CURRENT_TEST"):
+        if not is_mock:
             try:
                 tls_res = dispatch_ctrader_tls_order(
                     host=host,
@@ -349,19 +409,42 @@ def execute_ctrader_order(sig: Dict[str, Any]) -> Dict[str, Any]:
                     account_id=int(CTRADER_ACCOUNT_ID),
                     order_req=req
                 )
-                if tls_res.get("order_id"):
-                    order_id = tls_res["order_id"]
-                if tls_res.get("position_id"):
-                    position_id = tls_res["position_id"]
-                if tls_res.get("status"):
-                    tls_status = tls_res["status"]
+                tls_status = tls_res.get("status", "ERROR")
+                order_id = tls_res.get("order_id")
+                position_id = tls_res.get("position_id")
+                tls_error = tls_res.get("error")
             except Exception as net_err:
-                logger.warning(f"[cTrader TLS] Live dispatch notice: {net_err}. Continuing with execution status.")
+                tls_status = "ERROR"
+                tls_error = str(net_err)
+                logger.error(f"[cTrader TLS] Live dispatch error: {net_err}")
+
+        if tls_status != "EXECUTED" or not position_id:
+            logger.error(
+                f"[cTrader Execution] Order execution FAILED on cTrader {CTRADER_ENV.upper()}: "
+                f"Account: {CTRADER_ACCOUNT_ID} | Symbol: {pair} (ID: {req.symbolId}) | "
+                f"Status: {tls_status} | Error: {tls_error} | Position ID: {position_id}"
+            )
+            return {
+                "status": tls_status if tls_status != "EXECUTED" else "ERROR",
+                "error": tls_error or "Broker did not return a valid position ID",
+                "mode": f"LIVE_{CTRADER_ENV.upper()}",
+                "pair": pair,
+                "direction": direction,
+                "lots": lots,
+                "units": units,
+                "entry": entry,
+                "stop_loss": stop_loss,
+                "take_profit": take_profit,
+                "order_id": order_id,
+                "position_id": position_id,
+                "account_id": CTRADER_ACCOUNT_ID,
+                "environment": CTRADER_ENV
+            }
 
         logger.info(
-            f"[cTrader Execution] Order dispatched to cTrader {CTRADER_ENV.upper()}: "
+            f"[cTrader Execution] Order executed on cTrader {CTRADER_ENV.upper()}: "
             f"Account: {CTRADER_ACCOUNT_ID} | Symbol: {pair} (ID: {req.symbolId}) | "
-            f"Side: {direction} | Volume: {volume_cents} cents | SL: {stop_loss} | TP: {take_profit} | Status: {tls_status}"
+            f"Side: {direction} | Volume: {volume_cents} cents | Position ID: {position_id} | Status: {tls_status}"
         )
 
         return {

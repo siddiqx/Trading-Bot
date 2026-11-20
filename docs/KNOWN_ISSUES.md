@@ -262,7 +262,25 @@ This document tracks verified defects, architectural discrepancies, and security
   - Excluded 10:00 UTC and 14:00 UTC from `INSTITUTIONAL_HOURS` in `core/config.py` and added explicit execution guards in `market_scanner.py`.
 ---
 
-### ISSUE-EDGE-01: Telegram Bot /radar & /active Gold Presentation Disjoint and State Exclusion
+### ISSUE-EXEC-02: cTrader Silent Pseudo-Fill on Rejection & Gold PnL Unit Formatting Discrepancy
+
+* **Severity:** **High** (Broker Execution Integrity & State Divergence Defect)
+* **Status:** **REMEDIATED IN CODE & DEPLOYED (2026-11-20)** — Tested and verified with 163 pytest unit tests, Cloudflare Worker deployment, and KV ledger reconciliation.
+* **Affected Files:** `core/ctrader_executor.py`, `satellite/market_scanner_gold.py`, `market_scanner.py`, `cloudflare_worker.js`, `data/gold_trade_records.json`
+* **Root Cause:**
+  1. *cTrader Executor Silent Fallback to 9990001:* In `core/ctrader_executor.py`, `order_id` and `position_id` defaulted to `9990001` and `tls_status` defaulted to `"EXECUTED"`. In `dispatch_ctrader_tls_order`, `PROTO_OA_ORDER_ERROR_EVENT` (2132) was not caught, falling through to `return {"status": "EXECUTED"}` without `position_id`. Furthermore, `execute_ctrader_order` hardcoded `"status": "EXECUTED"` on return regardless of broker outcome. As a result, when cTrader rejected or failed an order, the system reported `status: "EXECUTED"` with mock `position_id: 9990001`, leading `market_scanner_gold.py` to record phantom trades (`GOLD_20261120_080251`) into active trade ledgers and Cloudflare KV while no broker position existed.
+  2. *Two-Step Execution Event Fragmentation:* `ProtoOANewOrderReq` for market orders triggers `ProtoOAExecutionType.ORDER_ACCEPTED` (2) as an immediate precursor before the `ORDER_FILLED` (3) event arrives. Reading only a single TLS frame terminated socket communication before position creation was confirmed.
+  3. *Unfragmented TCP Socket Frame Reading:* Socket reads did not loop until complete length-prefixed Protobuf frames were received, creating vulnerability to TCP segmentation.
+  4. *Gold Unit Formatting Discrepancy:* Floating PnL for Gold in `/active` and `/radar` was displayed as `+$X.XX/oz`, which did not provide the actual monetary USD floating profit or unified pip metrics requested by the user.
+* **Remediation Implemented:**
+  1. Implemented `_read_exact` and `_read_tls_frame` in `core/ctrader_executor.py` to ensure complete, framed Protobuf transmissions over TLS.
+  2. Enhanced `dispatch_ctrader_tls_order` to explicitly parse `ProtoOAOrderErrorEvent` (2132), `ProtoOAErrorRes` (2142), and `ProtoOAExecutionType.ORDER_REJECTED` (7) / `ORDER_CANCELLED` (5). When `ORDER_ACCEPTED` (2) is returned, the subsequent frame is read to capture the true `ORDER_FILLED` position ID.
+  3. Replaced mock defaults in `execute_ctrader_order` with strict validation: when running in non-mock live/demo environments, any broker rejection or missing `position_id` returns `status: "ORDER_REJECTED"` or `"ERROR"` with `position_id: None`, preventing phantom fills.
+  4. Added execution safeguards in `satellite/market_scanner_gold.py` and `market_scanner.py`: signals are only admitted to `active_trades` if cTrader returns `status: "EXECUTED"` with a valid broker `position_id > 0` (or `SIMULATED_DEMO_FILL` in paper trading). Rejections dispatch a broker rejection alert to Telegram and stand down without creating ghost trades.
+  5. Cleared the phantom trade `GOLD_20261120_080251` from `data/gold_trade_records.json` and reset `active_trades` and `gold_active_trades` in remote Cloudflare KV.
+  6. Updated `cloudflare_worker.js` to compute and display floating profit directly in **USD** and **pips** (`+$XX.XX USD (+YY.Y pips) | +Z.ZZR`) for Gold in both `/active` and `/radar`, removing all `$/oz` references across the entire Worker.
+  7. Deployed updated Cloudflare Worker to production (`https://tradingview-telegram-relay.siddiqsiddiq00012.workers.dev`).
+
 
 * **Severity:** **Medium** (State Visibility & UI Consistency Defect)
 * **Status:** **REMEDIATED IN CODE (2026-11-20)** — Tested and verified with Node CJS integration runner and pytest test suite.

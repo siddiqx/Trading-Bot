@@ -3474,11 +3474,29 @@ def run_scan_cycle():
                     logger.info(f"==> NEW SIGNAL: {sig['pair']} {sig['timeframe']} {sig['direction']} @ {sig['entry']}")
 
                     # Stage 2 Automated Prop Execution (cTrader Demo / Dry-Run)
+                    ctrader_receipt = None
                     try:
                         ctrader_receipt = execute_ctrader_order(sig)
                         sig["ctrader_receipt"] = ctrader_receipt
                     except Exception as ex:
                         logger.warning(f"cTrader auto-execution hook error: {ex}")
+                        ctrader_receipt = {"status": "ERROR", "error": str(ex)}
+                        sig["ctrader_receipt"] = ctrader_receipt
+
+                    # Live Execution Safeguard:
+                    # If cTrader execution was attempted and rejected/failed, do NOT record a phantom active trade.
+                    if ctrader_receipt and ctrader_receipt.get("status") not in ("EXECUTED", "SIMULATED_DEMO_FILL"):
+                        err_msg = ctrader_receipt.get("error", "cTrader order rejected by broker")
+                        logger.error(f"[Forex Scanner] Aborting trade recording for {sig['pair']}: cTrader execution failed ({err_msg}).")
+                        send_telegram_alert(
+                            f"⚠️ <b>[{sig['pair']} EXECUTION REJECTED]</b>\n\n"
+                            f"• <b>Instrument:</b> {sig['pair']}\n"
+                            f"• <b>Direction:</b> {sig['direction']}\n"
+                            f"• <b>Status:</b> {ctrader_receipt.get('status')}\n"
+                            f"• <b>Broker Reason:</b> <code>{err_msg}</code>\n"
+                            f"• <i>No active position recorded in trade journal.</i>"
+                        )
+                        continue
 
                     msg = format_alert_message(sig)
                     telemetry["telegram_attempts"] += 1

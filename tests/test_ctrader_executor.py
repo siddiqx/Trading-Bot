@@ -198,4 +198,37 @@ def test_stealth_comment_and_label_configuration(monkeypatch):
     assert res["status"] == "EXECUTED"
 
 
+def test_live_order_rejection_safety(monkeypatch):
+    """Verify that execute_ctrader_order does not report fake execution when broker rejects order."""
+    import core.ctrader_executor as ce
+    monkeypatch.setattr(ce, "ENABLE_CTRADER_EXECUTION", True)
+    monkeypatch.setattr(ce, "CTRADER_CLIENT_ID", "real_client_id")
+    monkeypatch.setattr(ce, "CTRADER_CLIENT_SECRET", "real_client_secret")
+    monkeypatch.setattr(ce, "CTRADER_ACCESS_TOKEN", "real_token")
+    monkeypatch.setattr(ce, "CTRADER_ACCOUNT_ID", "12345678")
+    monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)
+
+    # Mock dispatch_ctrader_tls_order returning broker rejection
+    monkeypatch.setattr(
+        ce,
+        "dispatch_ctrader_tls_order",
+        lambda **kwargs: {"status": "ORDER_REJECTED", "error": "TRADING_BAD_VOLUME: Invalid volume"}
+    )
+
+    sig = {
+        "pair": "XAUUSD",
+        "direction": "LONG",
+        "entry": 3575.10,
+        "stop_loss": 3540.10,
+        "take_profit": 3627.60,
+        "suggested_lots": 0.03
+    }
+
+    res = ce.execute_ctrader_order(sig)
+    assert res["status"] == "ORDER_REJECTED"
+    assert res["position_id"] is None
+    assert "TRADING_BAD_VOLUME" in res["error"]
+
+
+
 

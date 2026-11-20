@@ -1233,11 +1233,10 @@ async function sendRadarMessage(chatId, env) {
 
           if (isPending) {
             const distPips = (Math.abs(liveP - activeTrade.entry) / asset.pip).toFixed(1);
-            const distStr = isGold ? `$${(Math.abs(liveP - activeTrade.entry)).toFixed(2)}/oz (${distPips}p)` : `${distPips}p`;
             return (
               `<b>${num}. ${asset.name}</b> · <code>${liveP.toFixed(asset.digits)}</code>\n` +
               `⏳ <b>PENDING ${activeTrade.direction}</b> (${activeTrade.timeframe || (isGold ? "1H" : "15M")})\n` +
-              `• Entry Target: <code>${activeTrade.entry.toFixed(asset.digits)}</code> (⏳ ${distStr} away)\n` +
+              `• Entry Target: <code>${activeTrade.entry.toFixed(asset.digits)}</code> (⏳ ${distPips}p away)\n` +
               `• Float: <code>0.0 pips (Awaiting Fill)</code>\n` +
               `• SL: <code>${activeTrade.stop_loss.toFixed(asset.digits)}</code> | TP: <code>${activeTrade.take_profit.toFixed(asset.digits)}</code>`
             );
@@ -1247,7 +1246,6 @@ async function sendRadarMessage(chatId, env) {
           const pnlPips = ((liveP - activeTrade.entry) / asset.pip) * (isLong ? 1 : -1);
           const rawDiff = (liveP - activeTrade.entry) * (isLong ? 1 : -1);
           const pnlSign = pnlPips >= 0 ? "+" : "";
-          const ptSign = rawDiff >= 0 ? "+" : "";
           const icon = isLong ? "🟢" : "🔴";
           const beStatus = activeTrade.partial_taken 
             ? ` 🛡<b>60% Banked (+${activeTrade.partial_banked_r || "0.60"}R)</b>` 
@@ -1259,12 +1257,21 @@ async function sendRadarMessage(chatId, env) {
                         ? " 🛡<b>Risk Halved</b>" 
                         : "")));
 
-          const extraDiff = isGold ? ` (${ptSign}$${rawDiff.toFixed(2)}/oz)` : "";
+          let floatStr = "";
+          if (isGold) {
+            const lots = activeTrade.lots ? parseFloat(activeTrade.lots) : 0.01;
+            const floatUsd = rawDiff * lots * 100.0;
+            const usdSign = floatUsd >= 0 ? "+" : "-";
+            const absUsd = Math.abs(floatUsd).toFixed(2);
+            floatStr = `${usdSign}$${absUsd} USD (${pnlSign}${pnlPips.toFixed(1)} pips)`;
+          } else {
+            floatStr = `${pnlSign}${pnlPips.toFixed(1)} pips`;
+          }
 
           return (
             `<b>${num}. ${asset.name}</b> · <code>${liveP.toFixed(asset.digits)}</code>\n` +
             `${icon} <b>LIVE ${activeTrade.direction}</b> (${activeTrade.timeframe || (isGold ? "1H" : "15M")})${beStatus}\n` +
-            `• Float: <code>${pnlSign}${pnlPips.toFixed(1)} pips${extraDiff}</code>\n` +
+            `• Float: <code>${floatStr}</code>\n` +
             `• Entry: <code>${activeTrade.entry.toFixed(asset.digits)}</code>\n` +
             `• SL: <code>${activeTrade.stop_loss.toFixed(asset.digits)}</code> | TP: <code>${activeTrade.take_profit.toFixed(asset.digits)}</code> (1:${activeTrade.rr || "1.50"}R)`
           );
@@ -1339,8 +1346,8 @@ async function sendRadarMessage(chatId, env) {
         const isCompressing = channelPips < minChannelPips;
         const breakDistance = isGold ? 15.0 : 3.0;
 
-        const formatDist = (valPips) => isGold ? `$${(valPips * asset.pip).toFixed(1)}/oz` : `${valPips.toFixed(1)}p`;
-        const formatChannel = (valPips) => isGold ? `$${(valPips * asset.pip).toFixed(1)}/oz` : `${valPips.toFixed(0)}p`;
+        const formatDist = (valPips) => `${valPips.toFixed(1)}p`;
+        const formatChannel = (valPips) => `${valPips.toFixed(0)}p`;
 
         let badge = "", status = "", detail = "";
         if (rsi > 80.0) {
@@ -1490,22 +1497,31 @@ async function sendActiveMessage(chatId, env) {
       if (currentPrice !== null && !isNaN(currentPrice)) {
         if (isPending) {
           const distPips = (Math.abs(currentPrice - t.entry) / asset.pip).toFixed(1);
-          const distExtra = isGold ? ` ($${Math.abs(currentPrice - t.entry).toFixed(2)}/oz)` : "";
           floatText = 
             `• Status: ⏳ <b>PENDING ENTRY FILL</b>\n` +
-            `• Live Price: <code>${currentPrice.toFixed(asset.digits)}</code> (⏳ <b>${distPips} pips${distExtra} to entry</b>)\n` +
+            `• Live Price: <code>${currentPrice.toFixed(asset.digits)}</code> (⏳ <b>${distPips} pips to entry</b>)\n` +
             `• Floating PnL: <b>0.0 pips</b> (<i>Awaiting Market Fill · Zero Exposure</i>)\n`;
         } else {
           const pnlPips = ((currentPrice - t.entry) / asset.pip) * (isLong ? 1 : -1);
           const rawDiff = (currentPrice - t.entry) * (isLong ? 1 : -1);
           const pnlSign = pnlPips >= 0 ? "+" : "";
-          const ptSign = rawDiff >= 0 ? "+" : "";
           const riskDist = Math.abs(t.entry - t.stop_loss) / asset.pip;
           const floatR = riskDist > 0 ? (pnlPips / riskDist).toFixed(2) : "0.00";
           const rSign = parseFloat(floatR) >= 0 ? "+" : "";
           const floatEmoji = pnlPips >= 0 ? "🟢" : "🔻";
-          const pointsDetail = isGold ? ` · <code>${ptSign}$${rawDiff.toFixed(2)}/oz</code>` : "";
-          floatText = `• Live Price: <code>${currentPrice.toFixed(asset.digits)}</code> (${floatEmoji} <b>${pnlSign}${pnlPips.toFixed(1)} pips</b>${pointsDetail} | <b>${rSign}${floatR}R</b>)\n`;
+
+          let pnlDetail = "";
+          if (isGold) {
+            const lots = t.lots ? parseFloat(t.lots) : 0.01;
+            const floatUsd = rawDiff * lots * 100.0;
+            const usdSign = floatUsd >= 0 ? "+" : "-";
+            const absUsd = Math.abs(floatUsd).toFixed(2);
+            pnlDetail = `<b>${usdSign}$${absUsd} USD</b> (<b>${pnlSign}${pnlPips.toFixed(1)} pips</b>)`;
+          } else {
+            pnlDetail = `<b>${pnlSign}${pnlPips.toFixed(1)} pips</b>`;
+          }
+
+          floatText = `• Live Price: <code>${currentPrice.toFixed(asset.digits)}</code> (${floatEmoji} ${pnlDetail} | <b>${rSign}${floatR}R</b>)\n`;
         }
       } else {
         if (isPending) {

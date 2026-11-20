@@ -125,5 +125,5 @@ Until explicitly authorized by the user:
 ### Current Production Status
 - **System Status:** **COMPLETED & IN PRODUCTION (v3.3.0)**.
 - **24/7 Cloud Surveillance:** Actively executing every 15 minutes during market hours via GitHub Actions (`.github/workflows/scanner.yml`).
-- **Interactive Mobile Terminal:** Telegram slash commands routed through Cloudflare Global Edge V8 Worker.
-- **Execution & Safety Gate:** Signal generation and paper tracking fully active; automated broker execution (`core/ctrader_executor.py`) verified in test suite and stage-gated behind `ENABLE_CTRADER_EXECUTION=false` until explicit user authorization.
+- **Interactive Mobile Terminal:** Telegram slash commands routed through Cloudflare Global Edge V8 Worker (`cloudflare_worker.js`), with unified multi-asset reporting across Forex and Gold, eliminating separate `/gold` commands, formatting Gold floating PnL directly in USD and pips (zero `/oz` display), and syncing cleanly with KV.
+- **Execution & Safety Gate:** Signal generation and paper tracking fully active; automated broker execution (`core/ctrader_executor.py`) hardened with Protobuf length-prefixed TLS framing, `ProtoOAOrderErrorEvent` (2132) parsing, two-step fill reconciliation (`ORDER_ACCEPTED` -> `ORDER_FILLED`), and broker rejection safeguards in both Forex and Gold scanners to prevent phantom active trades.
