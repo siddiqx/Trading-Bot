@@ -7,7 +7,7 @@
 ![cTrader Open API](https://img.shields.io/badge/cTrader-Automated_Execution-green?logo=tradingview)
 ![License](https://img.shields.io/badge/License-Proprietary-red)
 ![System Version](https://img.shields.io/badge/System-v3.3.0--Production-success)
-![Test Suite](https://img.shields.io/badge/Tests-159%20Passing-brightgreen)
+![Test Suite](https://img.shields.io/badge/Tests-182%20Passing-brightgreen)
 
 An institutional-grade, **24/7 autonomous systematic algorithmic trading bot, trade journal, and execution gateway** engineered for institutional Forex markets and Spot Gold commodity trading.
 
@@ -97,11 +97,16 @@ The system was engineered from the ground up to comply with institutional prop f
 | Risk Control | Implementation | Purpose |
 | :--- | :--- | :--- |
 | **Dynamic Lot Sizing** | `core/instrument_validator.py` & `satellite/gold_validator.py` | Automatically computes exact position size so monetary risk never exceeds budget (e.g. 0.50% = $25 on $5k, 1.00% = $250 on $25k). Conservative lot flooring prevents over-budget rounding. |
+| **Live Equity & Floating Drawdown Guardrail (ROP-03)** | `core/ctrader_executor.py` (`ProtoOATraderReq` + `ProtoOAGetPositionUnrealizedPnLReq`) | Real-time broker polling tracks floating equity and halts bot at 3.0% daily loss (`BOT_HALT_DAILY_LOSS_PCT`), guaranteeing immunity beneath firm 5.0% limit (`FIRM_DAILY_LOSS_LIMIT_PCT`), resetting daily at 00:00 UTC rollover. |
+| **Atomic SL/TP Attachment & 3-Retry Guard (ROP-01)** | `core/ctrader_executor.py` (`ProtoOANewOrderReq` scaled to $10^{-5}$) | Enforces server-side `relativeStopLoss` / `relativeTakeProfit` directly upon order fill. If broker fills naked, triggers 3-retry fallback amendment loop with exponential backoff and emergency market liquidation if SL fails. |
+| **Broker State Reconciler & Fill Recovery (ROP-09)** | `core/ctrader_executor.py` (`ProtoOAReconcileReq`) | Expands socket timeout to 10.0s and reconciles with broker before retrying or declaring failure, seamlessly recovering "timeout-then-fill" executions without creating duplicate or phantom orders. |
+| **Forex Weekend Flat Auto-Close** | `market_scanner.py` (`CLOSE_FOREX_BEFORE_WEEKEND = True`) | Prohibits fresh entries after 12:00 UTC on Friday, and automatically liquidates all open Forex positions flat and cancels pending orders at 20:00 UTC (`FRIDAY_MARKET_FLAT_HOUR_UTC = 20`) to guarantee strict compliance with prop firm weekend holding bans (The 5%ers, FTMO). |
+| **Server-Side Close Watchdog Prevention** | `core/ctrader_executor.py` & `market_scanner.py` | Reconciles `POSITION_NOT_FOUND` as `ALREADY_CLOSED` when positions hit broker server-side SL/TP, eliminating infinite 48-hour watchdog retry loops. |
+| **Capped Market Order Slippage** | `core/config.py` (`MAX_SLIPPAGE_PIPS = 3.0`, `MAX_GOLD_SLIPPAGE_POINTS = 50.0`) | Enforces `baseSlippagePrice` and `slippageInPoints` (30 points for Forex, 50 points for Gold) to reject fills beyond max slippage tolerance during news volatility spikes. |
 | **USD Correlation Interlock** | `MAX_CONCURRENT_USD_EXPOSURE = 2` | Strictly limits simultaneous net USD exposure to 2 positions across **both** Forex and Gold ledgers, preventing multi-pair news cascade wipeouts. |
 | **Forex Factory News Filter** | `core/news_filter.py` | Automatically suppresses fresh entries 30 minutes before and after high-impact (Red Folder) economic events. |
 | **Daily Loss Circuit Breaker** | `DAILY_LOSS_CIRCUIT_BREAKER = 2` | Halts fresh entries for the day if 2 stop-outs occur or daily loss exceeds $-2.00$R, guaranteeing immunity from prop firm 4–5% daily drawdown limits. |
 | **Rollover Blackout** | 20:30 – 22:30 UTC (Gold) & 21:00 – 23:00 UTC (Forex) | Halts entries during illiquid interbank rollover when spreads widen drastically. |
-| **Friday Weekend Cutoff** | 12:00 UTC (Forex) & 16:00 UTC (Gold) | Blocks fresh entries ahead of the weekend and exits remaining open Gold positions flat to eliminate 48-hour gap risk. |
 | **Monday London Window** | 06:00 – 12:00 UTC strictly | Prohibits entries during erratic Asian opens and low-volume NY afternoon drift. |
 | **Post-Loss Cooldown** | 60 Minutes | Enforces mandatory 1-hour timeout following a stop-out to prevent revenge trading. |
 
@@ -156,10 +161,12 @@ trading-bot/
 │   ├── gold_validator.py            # Gold position sizing & correlation interlock
 │   └── market_scanner_gold.py       # Standalone 24/7 Gold scanning & trailing engine
 ├── scripts/                         # Research, backtesting & simulation scripts
+│   ├── demo_live_equity.py          # Standalone live account equity & floating drawdown inspector
+│   ├── demo_timeout_reconciliation.py# Standalone socket timeout & reconciliation validator
 │   ├── forward_test_tracker.py      # Out-of-sample forward validation tracker
 │   ├── run_canonical_backtest.py    # Walk-forward 70/30 backtest engine
 │   └── simulate_prop_firm_5k.py     # Prop firm challenge Monte Carlo simulation
-├── tests/                           # Complete automated unit test suite (159 tests)
+├── tests/                           # Complete automated unit test suite (182 tests)
 │   ├── test_canonical_strategy.py   # CCRS factor matrix & regime tests
 │   ├── test_ctrader_executor.py     # cTrader Protobuf message & TLS client tests
 │   ├── test_gold_satellite.py       # Gold contract geometry, sizing & interlock tests
@@ -211,8 +218,14 @@ To deploy:
 # Activate virtual environment
 source .venv/bin/activate  # On Windows: .venv\Scripts\Activate.ps1
 
-# Run complete automated test suite (159 unit tests)
+# Run complete automated test suite (182 unit tests)
 pytest
+
+# Inspect live account balance, equity, and floating drawdown over TLS
+python scripts/demo_live_equity.py
+
+# Verify timeout reconciliation and broker recovery
+python scripts/demo_timeout_reconciliation.py
 
 # Execute a single Forex market scan cycle
 python market_scanner.py
@@ -241,7 +254,7 @@ python scripts/forward_test_tracker.py --markdown
 
 | Verification Dimension | Status | Evidence / Metric |
 | :--- | :---: | :--- |
-| **Unit Test Coverage** | **100% PASS** | **159 automated unit tests** passing with zero regressions across all core components. |
+| **Unit Test Coverage** | **100% PASS** | **182 automated unit tests** passing with zero regressions across all core components. |
 | **Cloud Surveillance** | **OPERATIONAL** | GitHub Actions 24/7 runner executing cycles every 15 minutes during global market hours. |
 | **Signal Dispatch** | **OPERATIONAL** | Real-time HTML alerts delivered to Telegram with entry, SL, TP, lot size, and confluence metrics. |
 | **Edge Synchronization** | **OPERATIONAL** | Atomic two-way synchronization between Python scanner ledgers and Cloudflare Worker KV. |

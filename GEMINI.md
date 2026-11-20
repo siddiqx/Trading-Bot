@@ -65,7 +65,7 @@ For every coding task:
 1. **Context Initialization:** Read [`docs/PROJECT_CONTEXT.md`](docs/PROJECT_CONTEXT.md) and examine the affected source files.
 2. **Minimum Safe Change:** Formulate the smallest, cleanest, self-contained change that resolves the issue without introducing regressions.
 3. **Pre-Change Alignment:** Explain the proposed modification, its architectural consequences, affected files, and validation plan.
-4. **Validation:** Execute relevant automated unit tests (`pytest`). All 162 tests must pass with zero regressions.
+4. **Validation:** Execute relevant automated unit tests (`pytest`). All 182 tests must pass with zero regressions.
 5. **Documentation Synchronization:** If code changes alter the strategy, configuration, architecture, or issue status, immediately update the corresponding document in `docs/`.
 
 ---
@@ -73,7 +73,7 @@ For every coding task:
 ## 6. Key Commands Quick Reference
 
 ```bash
-# Run complete test suite (159 unit tests)
+# Run complete test suite (182 unit tests)
 pytest
 
 # Execute manual Forex market scan cycle
