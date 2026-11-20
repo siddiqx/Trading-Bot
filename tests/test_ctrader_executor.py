@@ -767,5 +767,79 @@ def test_rop09_post_acceptance_missing_position_reconciled():
     assert res.get("reconciled_after_timeout") is True
 
 
+def test_close_position_already_closed_by_broker_reconciled():
+    """Verify _dispatch_close_over_socket treats POSITION_NOT_FOUND as ALREADY_CLOSED."""
+    from ctrader_open_api.messages.OpenApiModelMessages_pb2 import ProtoOAPayloadType
+    from ctrader_open_api.messages.OpenApiMessages_pb2 import ProtoOAErrorRes, ProtoOAClosePositionReq
+    from core.ctrader_executor import _dispatch_close_over_socket
+
+    responses = _build_test_auth_responses()
+    err = ProtoOAErrorRes()
+    err.ctidTraderAccountId = 111
+    err.errorCode = "POSITION_NOT_FOUND"
+    err.description = "Position #88888 not found (already closed by server)"
+    responses.append((ProtoOAPayloadType.PROTO_OA_ERROR_RES, err))
+
+    sock = _FakeSocket(responses)
+    close_req = ProtoOAClosePositionReq()
+    close_req.ctidTraderAccountId = 111
+    close_req.positionId = 88888
+    close_req.volume = 100000
+
+    res = _dispatch_close_over_socket(sock, "client_id", "secret", "token", 111, close_req)
+
+    assert res["status"] == "ALREADY_CLOSED"
+    assert res["position_id"] == 88888
+    assert "already closed by server" in res["error"]
+
+
+def test_close_position_normal_close_success():
+    """Verify _dispatch_close_over_socket returns CLOSED on execution event."""
+    from ctrader_open_api.messages.OpenApiModelMessages_pb2 import ProtoOAPayloadType
+    from ctrader_open_api.messages.OpenApiMessages_pb2 import ProtoOAClosePositionReq
+    from core.ctrader_executor import _dispatch_close_over_socket
+
+    responses = _build_test_auth_responses()
+    ev_closed = _build_test_execution_event(position_id=88888)
+    responses.append((ProtoOAPayloadType.PROTO_OA_EXECUTION_EVENT, ev_closed))
+
+    sock = _FakeSocket(responses)
+    close_req = ProtoOAClosePositionReq()
+    close_req.ctidTraderAccountId = 111
+    close_req.positionId = 88888
+    close_req.volume = 100000
+
+    res = _dispatch_close_over_socket(sock, "client_id", "secret", "token", 111, close_req)
+
+    assert res["status"] == "CLOSED"
+    assert res["position_id"] == 88888
+
+
+def test_close_position_other_error_rejected():
+    """Verify _dispatch_close_over_socket returns CLOSE_REJECTED on genuine errors."""
+    from ctrader_open_api.messages.OpenApiModelMessages_pb2 import ProtoOAPayloadType
+    from ctrader_open_api.messages.OpenApiMessages_pb2 import ProtoOAErrorRes, ProtoOAClosePositionReq
+    from core.ctrader_executor import _dispatch_close_over_socket
+
+    responses = _build_test_auth_responses()
+    err = ProtoOAErrorRes()
+    err.ctidTraderAccountId = 111
+    err.errorCode = "MARKET_CLOSED"
+    err.description = "Market is currently closed"
+    responses.append((ProtoOAPayloadType.PROTO_OA_ERROR_RES, err))
+
+    sock = _FakeSocket(responses)
+    close_req = ProtoOAClosePositionReq()
+    close_req.ctidTraderAccountId = 111
+    close_req.positionId = 88888
+    close_req.volume = 100000
+
+    res = _dispatch_close_over_socket(sock, "client_id", "secret", "token", 111, close_req)
+
+    assert res["status"] == "CLOSE_REJECTED"
+    assert res["error"] == "Market is currently closed"
+
+
+
 
 

@@ -1240,7 +1240,7 @@ def reconcile_and_close_orphaned_ctrader_positions(records: dict) -> bool:
 
         pos_id = tr.get("ctrader_position_id") or (tr.get("ctrader_receipt") or {}).get("position_id")
         close_receipt = tr.get("ctrader_close_receipt") or {}
-        if pos_id and close_receipt.get("status") not in ("CLOSED", "SIMULATED_CLOSE"):
+        if pos_id and close_receipt.get("status") not in ("CLOSED", "SIMULATED_CLOSE", "ALREADY_CLOSED"):
             logger.warning(f"[Broker Watchdog] Found completed trade {tr.get('trade_id')} with unclosed cTrader position #{pos_id}. Dispatching close order...")
             try:
                 vol_units = tr.get("units") or (tr.get("ctrader_receipt") or {}).get("units")

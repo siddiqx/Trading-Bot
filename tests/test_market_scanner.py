@@ -574,6 +574,57 @@ def test_forex_weekend_flat_auto_close_active_trades(monkeypatch):
     assert len(alerts) == 2
 
 
+def test_watchdog_loop_prevention_on_already_closed(monkeypatch):
+    """
+    Verify that reconcile_and_close_orphaned_ctrader_positions treats ALREADY_CLOSED
+    as a final resolved close state, stopping infinite watchdog retry loops.
+    """
+    from market_scanner import reconcile_and_close_orphaned_ctrader_positions
+
+    records = {
+        "active_trades": {},
+        "completed_trades": [
+            {
+                "trade_id": "EURUSD_test_watchdog",
+                "pair": "EURUSD",
+                "direction": "LONG",
+                "entry": 1.08500,
+                "exit_price": 1.08800,
+                "outcome": "WIN",
+                "ctrader_position_id": 77777,
+                "closed_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "ctrader_close_receipt": None
+            }
+        ],
+        "alerted_exits": ["EURUSD_test_watchdog"]
+    }
+
+    close_calls = []
+    def mock_close(position_id, **kw):
+        close_calls.append(position_id)
+        return {
+            "status": "ALREADY_CLOSED",
+            "position_id": position_id,
+            "error": "Position #77777 not found (already closed by server)"
+        }
+
+    monkeypatch.setattr("market_scanner.close_ctrader_position", mock_close)
+    monkeypatch.setattr("market_scanner.save_trade_records", lambda recs: None)
+    monkeypatch.setattr("market_scanner.sync_worker", lambda recs: None)
+
+    # First cycle: Watchdog attempts close, receives ALREADY_CLOSED, and saves it
+    mod1 = reconcile_and_close_orphaned_ctrader_positions(records)
+    assert mod1 is True
+    assert len(close_calls) == 1
+    assert records["completed_trades"][0]["ctrader_close_receipt"]["status"] == "ALREADY_CLOSED"
+
+    # Second cycle (e.g. 15 mins later): Watchdog inspects trade, sees ALREADY_CLOSED, and skips!
+    mod2 = reconcile_and_close_orphaned_ctrader_positions(records)
+    assert mod2 is False
+    assert len(close_calls) == 1  # No repeated close order!
+
+
+
 
 def test_gold_config_excluded_from_scanner_symbols():
     """Ensure Gold (XAUUSD) is completely removed from scanner SYMBOLS whitelist."""

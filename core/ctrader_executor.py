@@ -958,6 +958,80 @@ def modify_ctrader_position(
         }
 
 
+def _dispatch_close_over_socket(
+    s: Any,
+    client_id: str,
+    client_secret: str,
+    access_token: str,
+    account_id: int,
+    close_req: Any,
+) -> Dict[str, Any]:
+    """Execute position close request over an established TLS socket."""
+    from ctrader_open_api.messages.OpenApiModelMessages_pb2 import ProtoOAPayloadType
+    from ctrader_open_api.messages.OpenApiMessages_pb2 import (
+        ProtoOAApplicationAuthReq, ProtoOAAccountAuthReq,
+        ProtoOAExecutionEvent, ProtoOAErrorRes
+    )
+
+    req_pos_id = getattr(close_req, "positionId", 0)
+
+    # 1. Application Authentication
+    app_req = ProtoOAApplicationAuthReq()
+    app_req.clientId = client_id
+    app_req.clientSecret = client_secret
+    app_res = _send_tls_frame(s, ProtoOAPayloadType.PROTO_OA_APPLICATION_AUTH_REQ, app_req)
+    if not app_res or app_res[0] == ProtoOAPayloadType.PROTO_OA_ERROR_RES:
+        return {"status": "AUTH_FAILED"}
+
+    # 2. Account Authentication
+    acc_req = ProtoOAAccountAuthReq()
+    acc_req.ctidTraderAccountId = account_id
+    acc_req.accessToken = access_token
+    acc_res = _send_tls_frame(s, ProtoOAPayloadType.PROTO_OA_ACCOUNT_AUTH_REQ, acc_req)
+    if not acc_res or acc_res[0] == ProtoOAPayloadType.PROTO_OA_ERROR_RES:
+        return {"status": "AUTH_FAILED"}
+
+    # 3. Position Close Dispatch
+    close_res = _send_tls_frame(s, ProtoOAPayloadType.PROTO_OA_CLOSE_POSITION_REQ, close_req)
+    if not close_res:
+        return {"status": "ERROR", "error": "No response to ProtoOAClosePositionReq"}
+    if close_res[0] == ProtoOAPayloadType.PROTO_OA_EXECUTION_EVENT:
+        event = ProtoOAExecutionEvent()
+        event.ParseFromString(close_res[1])
+        pos_id = getattr(event.position, "positionId", req_pos_id) if event.HasField("position") else req_pos_id
+        return {"status": "CLOSED", "position_id": pos_id}
+    elif close_res[0] == ProtoOAPayloadType.PROTO_OA_ERROR_RES:
+        err = ProtoOAErrorRes()
+        err.ParseFromString(close_res[1])
+        err_code = str(err.errorCode).upper()
+        err_desc = str(err.description or "").upper()
+        logger.warning(f"[cTrader Open API] Close Position Error: {err.errorCode} - {err.description}")
+
+        # If position was already closed by broker server (SL/TP trigger or manual close),
+        # reconcile as ALREADY_CLOSED to prevent watchdog retry loops.
+        already_closed_patterns = (
+            "POSITION_NOT_FOUND",
+            "POSITION_STATUS_CLOSED",
+            "POSITION_CLOSED",
+            "POSITION_LOCKED",
+            "NOT_FOUND",
+        )
+        if any(p in err_code or p in err_desc for p in already_closed_patterns):
+            logger.info(
+                f"[cTrader Open API] Position #{req_pos_id} already closed on broker server "
+                f"({err.errorCode}: {err.description}). Reconciled as ALREADY_CLOSED."
+            )
+            return {
+                "status": "ALREADY_CLOSED",
+                "position_id": req_pos_id,
+                "error": err.description,
+            }
+
+        return {"status": "CLOSE_REJECTED", "error": err.description}
+
+    return {"status": "CLOSED", "position_id": req_pos_id}
+
+
 def dispatch_ctrader_tls_close(
     host: str,
     port: int,
@@ -969,51 +1043,21 @@ def dispatch_ctrader_tls_close(
     timeout: float = 5.0
 ) -> Dict[str, Any]:
     """Execute live position close directly over TLS socket with cTrader Open API."""
-    if os.environ.get("PYTEST_CURRENT_TEST"):
+    if os.environ.get("PYTEST_CURRENT_TEST") and not getattr(close_req, "_force_tls_test", False):
         return {"status": "CLOSED", "position_id": getattr(close_req, "positionId", 0)}
-    from ctrader_open_api.messages.OpenApiModelMessages_pb2 import ProtoOAPayloadType
-    from ctrader_open_api.messages.OpenApiMessages_pb2 import (
-        ProtoOAApplicationAuthReq, ProtoOAAccountAuthReq,
-        ProtoOAExecutionEvent, ProtoOAErrorRes
-    )
 
     ctx = ssl.create_default_context()
     with ctx.wrap_socket(socket.socket(), server_hostname=host) as s:
         s.settimeout(timeout)
         s.connect((host, port))
-
-        # 1. Application Authentication
-        app_req = ProtoOAApplicationAuthReq()
-        app_req.clientId = client_id
-        app_req.clientSecret = client_secret
-        app_res = _send_tls_frame(s, ProtoOAPayloadType.PROTO_OA_APPLICATION_AUTH_REQ, app_req)
-        if not app_res or app_res[0] == ProtoOAPayloadType.PROTO_OA_ERROR_RES:
-            return {"status": "AUTH_FAILED"}
-
-        # 2. Account Authentication
-        acc_req = ProtoOAAccountAuthReq()
-        acc_req.ctidTraderAccountId = account_id
-        acc_req.accessToken = access_token
-        acc_res = _send_tls_frame(s, ProtoOAPayloadType.PROTO_OA_ACCOUNT_AUTH_REQ, acc_req)
-        if not acc_res or acc_res[0] == ProtoOAPayloadType.PROTO_OA_ERROR_RES:
-            return {"status": "AUTH_FAILED"}
-
-        # 3. Position Close Dispatch
-        close_res = _send_tls_frame(s, ProtoOAPayloadType.PROTO_OA_CLOSE_POSITION_REQ, close_req)
-        if not close_res:
-            return {"status": "ERROR", "error": "No response to ProtoOAClosePositionReq"}
-        if close_res[0] == ProtoOAPayloadType.PROTO_OA_EXECUTION_EVENT:
-            event = ProtoOAExecutionEvent()
-            event.ParseFromString(close_res[1])
-            pos_id = getattr(event.position, "positionId", getattr(close_req, "positionId", 0)) if event.HasField("position") else getattr(close_req, "positionId", 0)
-            return {"status": "CLOSED", "position_id": pos_id}
-        elif close_res[0] == ProtoOAPayloadType.PROTO_OA_ERROR_RES:
-            err = ProtoOAErrorRes()
-            err.ParseFromString(close_res[1])
-            logger.warning(f"[cTrader Open API] Close Position Error: {err.errorCode} - {err.description}")
-            return {"status": "CLOSE_REJECTED", "error": err.description}
-
-        return {"status": "CLOSED", "position_id": getattr(close_req, "positionId", 0)}
+        return _dispatch_close_over_socket(
+            s=s,
+            client_id=client_id,
+            client_secret=client_secret,
+            access_token=access_token,
+            account_id=account_id,
+            close_req=close_req,
+        )
 
 
 def close_ctrader_position(
