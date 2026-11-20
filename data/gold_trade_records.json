@@ -1,5 +1,49 @@
 {
-  "active_trades": {},
+  "active_trades": {
+    "GOLD_20261120_080251": {
+      "trade_id": "GOLD_20261120_080251",
+      "symbol": "XAUUSD",
+      "direction": "LONG",
+      "entry_price": 3575.10009765625,
+      "sl_price": 3540.10009765625,
+      "tp_price": 3627.60009765625,
+      "current_sl_price": 3540.10009765625,
+      "current_tp_price": 3627.60009765625,
+      "init_sl_points": 35.0,
+      "sl_points": 35.0,
+      "tp_points": 52.5,
+      "lots": 0.03,
+      "monetary_risk_usd": 105.0,
+      "equity": 25000.0,
+      "entry_time": "2026-11-20T08:02:51.786646+00:00",
+      "z_usd": -1.265901289308097,
+      "trigger_type": "EMA20 Retest Rejection",
+      "h4_bull": false,
+      "h4_bear": true,
+      "cushion_stage": 0,
+      "usd_exposure": 0,
+      "max_usd_exposure": 2,
+      "ctrader_receipt": {
+        "status": "EXECUTED",
+        "mode": "LIVE_LIVE",
+        "pair": "XAUUSD",
+        "direction": "LONG",
+        "lots": 0.03,
+        "units": 3,
+        "entry": 3575.10009765625,
+        "stop_loss": 3540.10009765625,
+        "take_profit": 3627.60009765625,
+        "order_id": 9990001,
+        "position_id": 9990001,
+        "account_id": "49435680",
+        "environment": "live"
+      },
+      "ctrader_position_id": 9990001
+    }
+  },
   "completed_trades": [],
-  "daily_losses": {}
+  "daily_losses": {},
+  "alerted_bars": [
+    "2026-11-20T07:00:00+00:00"
+  ]
 }
