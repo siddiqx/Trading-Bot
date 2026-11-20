@@ -296,6 +296,79 @@ def test_rop01_relative_sltp_market_framing(monkeypatch):
     assert not req_jpy.HasField("takeProfit")
 
 
+def test_market_order_slippage_parameters(monkeypatch):
+    """Verify market orders enforce baseSlippagePrice and slippageInPoints to prevent spikes."""
+    import core.ctrader_executor as ce
+    monkeypatch.setattr(ce, "ENABLE_CTRADER_EXECUTION", True)
+    monkeypatch.setattr(ce, "CTRADER_CLIENT_ID", "real_client_id")
+    monkeypatch.setattr(ce, "CTRADER_CLIENT_SECRET", "real_client_secret")
+    monkeypatch.setattr(ce, "CTRADER_ACCESS_TOKEN", "real_token")
+    monkeypatch.setattr(ce, "CTRADER_ACCOUNT_ID", "12345678")
+    monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)
+
+    captured_req = {}
+    def mock_dispatch(**kwargs):
+        captured_req["req"] = kwargs.get("order_req")
+        return {"status": "EXECUTED", "position_id": 12345, "order_id": 67890}
+
+    monkeypatch.setattr(ce, "dispatch_ctrader_tls_order", mock_dispatch)
+
+    # 1. Default Forex: 3.0 pips -> 30 points
+    sig_eur = {
+        "pair": "EURUSD",
+        "direction": "LONG",
+        "entry": 1.08500,
+        "stop_loss": 1.08280,
+        "take_profit": 1.08830,
+        "suggested_lots": 0.10
+    }
+    res_eur = ce.execute_ctrader_order(sig_eur)
+    req_eur = captured_req["req"]
+    assert req_eur.baseSlippagePrice == 1.08500
+    assert req_eur.slippageInPoints == 30
+    assert res_eur["base_slippage_price"] == 1.08500
+    assert res_eur["slippage_in_points"] == 30
+
+    # 2. Custom Forex slippage override: 1.5 pips -> 15 points
+    sig_custom_fx = {
+        "pair": "USDCAD",
+        "direction": "SHORT",
+        "entry": 1.35000,
+        "stop_loss": 1.35200,
+        "take_profit": 1.34700,
+        "suggested_lots": 0.10,
+        "max_slippage_pips": 1.5
+    }
+    res_custom = ce.execute_ctrader_order(sig_custom_fx)
+    req_custom = captured_req["req"]
+    assert req_custom.baseSlippagePrice == 1.35000
+    assert req_custom.slippageInPoints == 15
+
+    # 3. Default Gold: 50 points ($0.50)
+    sig_gold = {
+        "pair": "XAUUSD",
+        "direction": "LONG",
+        "entry": 2750.00,
+        "stop_loss": 2725.00,
+        "take_profit": 2787.50,
+        "suggested_lots": 0.05
+    }
+    res_gold = ce.execute_ctrader_order(sig_gold)
+    req_gold = captured_req["req"]
+    assert req_gold.baseSlippagePrice == 2750.00
+    assert req_gold.slippageInPoints == 50
+    assert res_gold["base_slippage_price"] == 2750.00
+    assert res_gold["slippage_in_points"] == 50
+
+    # 4. Dry-Run / Paper simulator reflects slippage parameters
+    monkeypatch.setattr(ce, "ENABLE_CTRADER_EXECUTION", False)
+    res_dry = ce.execute_ctrader_order(sig_eur)
+    assert res_dry["status"] == "SIMULATED_DEMO_FILL"
+    assert res_dry["base_slippage_price"] == 1.08500
+    assert res_dry["slippage_in_points"] == 30
+
+
+
 class _FakeSocket:
     """Mock socket for testing TLS framing without connecting to cTrader broker."""
     def __init__(self, responses):

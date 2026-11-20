@@ -63,6 +63,13 @@ if _ENV_MAP:
 else:
     SYMBOL_MAP = DEFAULT_SYMBOL_MAP
 
+try:
+    from core.config import MAX_SLIPPAGE_PIPS, MAX_GOLD_SLIPPAGE_POINTS
+except ImportError:
+    MAX_SLIPPAGE_PIPS = float(os.environ.get("MAX_SLIPPAGE_PIPS", "3.0"))
+    MAX_GOLD_SLIPPAGE_POINTS = float(os.getenv("MAX_GOLD_SLIPPAGE_POINTS", "50.0"))
+
+
 
 def has_valid_credentials() -> bool:
     """Check whether all required cTrader credentials are provided."""
@@ -689,6 +696,8 @@ def execute_ctrader_order(sig: Dict[str, Any]) -> Dict[str, Any]:
             "entry": entry,
             "stop_loss": stop_loss,
             "take_profit": take_profit,
+            "base_slippage_price": entry if entry > 0 else None,
+            "slippage_in_points": int(round(float(sig.get("max_gold_slippage_points", MAX_GOLD_SLIPPAGE_POINTS)))) if is_gold else int(round(float(sig.get("max_slippage_pips", MAX_SLIPPAGE_PIPS)) * 10)),
             "order_id": 9990001,
             "position_id": 9990001,
             "environment": CTRADER_ENV
@@ -709,10 +718,20 @@ def execute_ctrader_order(sig: Dict[str, Any]) -> Dict[str, Any]:
         req.orderType = ProtoOAOrderType.MARKET
         req.tradeSide = ProtoOATradeSide.BUY if direction == "LONG" else ProtoOATradeSide.SELL
         req.volume = volume_cents
-        # Relative SL/TP Calculation (ROP-01)
+        # Relative SL/TP Calculation (ROP-01) & Slippage Defense (Anti-Ban)
         # Scaled to 10^-5 (1/100,000 unit of price) as mandated by cTrader Open API Protobuf specification.
         # MARKET orders use relativeStopLoss & relativeTakeProfit to guarantee atomic server-side attachment upon fill.
         if req.orderType == ProtoOAOrderType.MARKET:
+            # Slippage Protection: Enforce baseSlippagePrice and slippageInPoints to prevent catastrophic fills
+            if entry > 0:
+                req.baseSlippagePrice = float(entry)
+                if is_gold:
+                    gold_slip = float(sig.get("max_gold_slippage_points", MAX_GOLD_SLIPPAGE_POINTS))
+                    req.slippageInPoints = int(round(gold_slip))
+                else:
+                    forex_slip = float(sig.get("max_slippage_pips", MAX_SLIPPAGE_PIPS))
+                    req.slippageInPoints = int(round(forex_slip * 10))
+
             if stop_loss > 0 and entry > 0:
                 sl_distance = abs(entry - stop_loss)
                 req.relativeStopLoss = int(round(sl_distance * 100_000))
@@ -820,6 +839,8 @@ def execute_ctrader_order(sig: Dict[str, Any]) -> Dict[str, Any]:
             "position_id": position_id,
             "account_id": CTRADER_ACCOUNT_ID,
             "environment": CTRADER_ENV,
+            "base_slippage_price": req.baseSlippagePrice if req.HasField("baseSlippagePrice") else None,
+            "slippage_in_points": req.slippageInPoints if req.HasField("slippageInPoints") else None,
             "reconciled_after_timeout": tls_res.get("reconciled_after_timeout", False) if not is_mock else False
         }
 

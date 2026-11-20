@@ -228,3 +228,8 @@ DAILY_RESET_HOUR_UTC: int = int(os.getenv("DAILY_RESET_HOUR_UTC", "0"))  # Daily
 FRIDAY_MARKET_FLAT_HOUR_UTC: int = int(os.getenv("FRIDAY_MARKET_FLAT_HOUR_UTC", "20"))  # Auto-close open positions Friday 20:00 UTC
 CLOSE_FOREX_BEFORE_WEEKEND: bool = os.getenv("CLOSE_FOREX_BEFORE_WEEKEND", "true").lower() in ("true", "1", "yes")
 
+# Market Order Slippage Protections (Prop Firm Anti-Ban & Execution Defense)
+MAX_SLIPPAGE_PIPS: float = float(os.getenv("MAX_SLIPPAGE_PIPS", "3.0"))  # Max tolerated slippage for Forex in pips (3.0 pips = 30 points)
+MAX_GOLD_SLIPPAGE_POINTS: float = float(os.getenv("MAX_GOLD_SLIPPAGE_POINTS", "50.0"))  # Max tolerated slippage for Gold in points ($0.50/oz)
+
+
