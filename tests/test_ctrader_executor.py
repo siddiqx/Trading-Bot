@@ -624,5 +624,148 @@ def test_rop03_daily_circuit_breaker_floating_equity(monkeypatch):
     assert "3.50%" in reason
 
 
+def _build_test_reconcile_response(positions=None):
+    import time
+    from ctrader_open_api.messages.OpenApiModelMessages_pb2 import ProtoOAPayloadType
+    from ctrader_open_api.messages.OpenApiMessages_pb2 import ProtoOAReconcileRes
+    res = ProtoOAReconcileRes()
+    res.ctidTraderAccountId = 111
+    if positions:
+        for pos_id, symbol_id, trade_side, volume, sl in positions:
+            p = res.position.add()
+            p.positionId = pos_id
+            p.positionStatus = 1  # OPEN
+            p.swap = 0
+            p.tradeData.symbolId = symbol_id
+            p.tradeData.tradeSide = trade_side
+            p.tradeData.volume = volume
+            p.tradeData.openTimestamp = int(time.time() * 1000)
+            if sl:
+                p.stopLoss = sl
+    return (ProtoOAPayloadType.PROTO_OA_RECONCILE_RES, res)
+
+
+class _TimeoutFakeSocket:
+    """Mock socket that simulates a timeout on NewOrderReq, then returns ProtoOAReconcileRes on ReconcileReq."""
+    def __init__(self, auth_responses, reconcile_response=None, raise_timeout=True):
+        import struct
+        from ctrader_open_api.messages.OpenApiCommonMessages_pb2 import ProtoMessage
+        self.auth_responses = auth_responses
+        self.reconcile_response = reconcile_response
+        self.raise_timeout = raise_timeout
+        self.order_req_received = False
+        self._read_buffer = bytearray()
+
+        # Populate initial auth frames
+        for p_type, msg in auth_responses:
+            proto_msg = ProtoMessage()
+            proto_msg.payloadType = p_type
+            proto_msg.payload = msg.SerializeToString()
+            data = proto_msg.SerializeToString()
+            self._read_buffer.extend(struct.pack('>I', len(data)) + data)
+
+    def sendall(self, data):
+        import struct
+        from ctrader_open_api.messages.OpenApiCommonMessages_pb2 import ProtoMessage
+        from ctrader_open_api.messages.OpenApiModelMessages_pb2 import ProtoOAPayloadType
+        if len(data) > 4:
+            proto_msg = ProtoMessage()
+            proto_msg.ParseFromString(data[4:])
+            if proto_msg.payloadType == ProtoOAPayloadType.PROTO_OA_NEW_ORDER_REQ:
+                self.order_req_received = True
+            elif proto_msg.payloadType == ProtoOAPayloadType.PROTO_OA_RECONCILE_REQ:
+                if self.reconcile_response:
+                    p_type, msg = self.reconcile_response
+                    res_proto = ProtoMessage()
+                    res_proto.payloadType = p_type
+                    res_proto.payload = msg.SerializeToString()
+                    res_data = res_proto.SerializeToString()
+                    self._read_buffer.extend(struct.pack('>I', len(res_data)) + res_data)
+
+    def recv(self, num_bytes):
+        if self.order_req_received and len(self._read_buffer) == 0:
+            if self.raise_timeout:
+                import socket
+                raise socket.timeout("Socket recv timed out waiting for ProtoOANewOrderReq response")
+            return b""
+        chunk = self._read_buffer[:num_bytes]
+        self._read_buffer = self._read_buffer[num_bytes:]
+        return bytes(chunk)
+
+
+def test_rop09_timeout_then_fill_reconciliation():
+    """Verify ROP-09 recovers filled position via ProtoOAReconcileReq when order response times out."""
+    from ctrader_open_api.messages.OpenApiModelMessages_pb2 import ProtoOATradeSide
+    from core.ctrader_executor import _dispatch_order_over_socket
+
+    auth_res = _build_test_auth_responses()
+    rec_res = _build_test_reconcile_response(
+        positions=[(88888, 1, ProtoOATradeSide.BUY, 100000, 1.08280)]
+    )
+
+    sock = _TimeoutFakeSocket(auth_res, rec_res, raise_timeout=True)
+    req = _build_test_order_req()
+    req.symbolId = 1
+    req.tradeSide = ProtoOATradeSide.BUY
+    req.volume = 100000
+
+    res = _dispatch_order_over_socket(sock, "client_id", "secret", "token", 111, req)
+
+    assert res["status"] == "EXECUTED"
+    assert res["position_id"] == 88888
+    assert res.get("reconciled_after_timeout") is True
+
+
+def test_rop09_timeout_unfilled_reconciliation():
+    """Verify ROP-09 confirms order was NOT filled when reconcile returns no matching position."""
+    from ctrader_open_api.messages.OpenApiModelMessages_pb2 import ProtoOATradeSide
+    from core.ctrader_executor import _dispatch_order_over_socket
+
+    auth_res = _build_test_auth_responses()
+    rec_res = _build_test_reconcile_response(positions=[])
+
+    sock = _TimeoutFakeSocket(auth_res, rec_res, raise_timeout=True)
+    req = _build_test_order_req()
+    req.symbolId = 1
+    req.tradeSide = ProtoOATradeSide.BUY
+    req.volume = 100000
+
+    res = _dispatch_order_over_socket(sock, "client_id", "secret", "token", 111, req)
+
+    assert res["status"] == "TIMEOUT_UNFILLED"
+    assert res["position_id"] is None
+    assert "confirmed NOT filled" in res["error"]
+
+
+def test_rop09_post_acceptance_missing_position_reconciled():
+    """Verify ROP-09 recovers position when ORDER_ACCEPTED is received without positionId."""
+    from ctrader_open_api.messages.OpenApiModelMessages_pb2 import (
+        ProtoOAPayloadType, ProtoOAExecutionType, ProtoOATradeSide
+    )
+    from core.ctrader_executor import _dispatch_order_over_socket
+
+    # 1. Auth responses + ORDER_ACCEPTED (executionType: 2) without positionId
+    initial_responses = _build_test_auth_responses()
+    ev_accepted = _build_test_execution_event(position_id=0, execution_type=ProtoOAExecutionType.ORDER_ACCEPTED)
+    initial_responses.append((ProtoOAPayloadType.PROTO_OA_EXECUTION_EVENT, ev_accepted))
+
+    # 2. Reconcile response returning the filled position #99999
+    rec_res = _build_test_reconcile_response(
+        positions=[(99999, 1, ProtoOATradeSide.BUY, 100000, 1.08280)]
+    )
+
+    sock = _TimeoutFakeSocket(initial_responses, rec_res, raise_timeout=False)
+    req = _build_test_order_req()
+    req.symbolId = 1
+    req.tradeSide = ProtoOATradeSide.BUY
+    req.volume = 100000
+
+    res = _dispatch_order_over_socket(sock, "client_id", "secret", "token", 111, req)
+
+    assert res["status"] == "EXECUTED"
+    assert res["position_id"] == 99999
+    assert res.get("reconciled_after_timeout") is True
+
+
 
 

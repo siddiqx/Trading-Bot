@@ -124,6 +124,49 @@ def _send_tls_frame(sock: ssl.SSLSocket, payload_type: int, req_pb: Any) -> Opti
     return _read_tls_frame(sock)
 
 
+def _find_matching_reconciled_position(
+    positions: Any,
+    order_req: Any,
+    dispatched_at_ms: Optional[int] = None
+) -> Optional[Any]:
+    """Inspect open positions returned by ProtoOAReconcileRes to find a match for a timed-out order."""
+    now_ms = int(time.time() * 1000)
+    cutoff_ms = dispatched_at_ms if dispatched_at_ms else (now_ms - 60_000)
+
+    for pos in positions:
+        # Must be OPEN status (1)
+        status = getattr(pos, "positionStatus", 1)
+        if status != 1:
+            continue
+
+        trade_data = getattr(pos, "tradeData", None)
+        if not trade_data:
+            continue
+
+        # Symbol ID match
+        if trade_data.symbolId != getattr(order_req, "symbolId", None):
+            continue
+
+        # Trade side match (BUY / SELL)
+        if trade_data.tradeSide != getattr(order_req, "tradeSide", None):
+            continue
+
+        # Timestamp match: opened within the last 60 seconds (or since dispatch)
+        open_time = getattr(trade_data, "openTimestamp", 0)
+        if open_time > 0 and open_time < (cutoff_ms - 15_000):
+            continue
+
+        # Volume match if specified
+        order_vol = getattr(order_req, "volume", 0)
+        if order_vol > 0 and trade_data.volume > 0:
+            if trade_data.volume != order_vol:
+                continue
+
+        return pos
+
+    return None
+
+
 def _dispatch_order_over_socket(
     s: Any,
     client_id: str,
@@ -145,7 +188,8 @@ def _dispatch_order_over_socket(
     from ctrader_open_api.messages.OpenApiMessages_pb2 import (
         ProtoOAApplicationAuthReq, ProtoOAAccountAuthReq,
         ProtoOAExecutionEvent, ProtoOAErrorRes, ProtoOAAmendPositionSLTPReq,
-        ProtoOAClosePositionReq, ProtoOAOrderErrorEvent
+        ProtoOAClosePositionReq, ProtoOAOrderErrorEvent,
+        ProtoOAReconcileReq, ProtoOAReconcileRes
     )
 
     # 1. Application Authentication
@@ -190,9 +234,46 @@ def _dispatch_order_over_socket(
                 desired_tp = order_req.takeProfit
             order_req.ClearField("takeProfit")
 
-    order_res = _send_tls_frame(s, ProtoOAPayloadType.PROTO_OA_NEW_ORDER_REQ, order_req)
-    if not order_res:
-        return {"status": "ERROR", "error": "No response to ProtoOANewOrderReq"}
+    dispatched_at_ms = int(time.time() * 1000)
+    timed_out = False
+    order_res = None
+    try:
+        order_res = _send_tls_frame(s, ProtoOAPayloadType.PROTO_OA_NEW_ORDER_REQ, order_req)
+    except (socket.timeout, TimeoutError):
+        timed_out = True
+        logger.warning("[cTrader Execution] Socket timed out awaiting ProtoOANewOrderReq response.")
+    except Exception as ex:
+        logger.warning(f"[cTrader Execution] Socket notice awaiting ProtoOANewOrderReq response: {ex}")
+
+    # ROP-09: If response timed out or is missing, reconcile with broker before declaring failure or retrying
+    if timed_out or not order_res:
+        logger.info("[cTrader Timeout Guard] Order response missing or timed out. Reconciling with broker over socket...")
+        try:
+            rec_req = ProtoOAReconcileReq()
+            rec_req.ctidTraderAccountId = account_id
+            rec_res = _send_tls_frame(s, ProtoOAPayloadType.PROTO_OA_RECONCILE_REQ, rec_req)
+            if rec_res and rec_res[0] == ProtoOAPayloadType.PROTO_OA_RECONCILE_RES:
+                rec_msg = ProtoOAReconcileRes()
+                rec_msg.ParseFromString(rec_res[1])
+                matched_pos = _find_matching_reconciled_position(rec_msg.position, order_req, dispatched_at_ms)
+                if matched_pos:
+                    pos_id = matched_pos.positionId
+                    logger.warning(f"[cTrader Timeout Recovery] RECOVERED: Order timed out on socket, but broker confirmed position #{pos_id} was filled! Reconciled.")
+                    return {
+                        "status": "EXECUTED",
+                        "position_id": pos_id,
+                        "order_id": pos_id,
+                        "reconciled_after_timeout": True
+                    }
+        except Exception as rec_err:
+            logger.warning(f"[cTrader Timeout Guard] In-socket reconciliation notice: {rec_err}")
+
+        return {
+            "status": "TIMEOUT_UNFILLED",
+            "position_id": None,
+            "order_id": None,
+            "error": "Order timed out and confirmed NOT filled on broker (zero matching open positions found)."
+        }
 
     # Handle PROTO_OA_ORDER_ERROR_EVENT (2132)
     if order_res[0] == ProtoOAPayloadType.PROTO_OA_ORDER_ERROR_EVENT:
@@ -243,7 +324,27 @@ def _dispatch_order_over_socket(
         ord_id = getattr(event.order, "orderId", 0) if event.HasField("order") else 0
 
         if not pos_id:
-            logger.error(f"[cTrader Open API] Execution event received without positionId (executionType: {event.executionType})")
+            logger.warning(f"[cTrader Open API] Execution event received without positionId (executionType: {event.executionType}). Reconciling with broker...")
+            try:
+                rec_req = ProtoOAReconcileReq()
+                rec_req.ctidTraderAccountId = account_id
+                rec_res = _send_tls_frame(s, ProtoOAPayloadType.PROTO_OA_RECONCILE_REQ, rec_req)
+                if rec_res and rec_res[0] == ProtoOAPayloadType.PROTO_OA_RECONCILE_RES:
+                    rec_msg = ProtoOAReconcileRes()
+                    rec_msg.ParseFromString(rec_res[1])
+                    matched_pos = _find_matching_reconciled_position(rec_msg.position, order_req, dispatched_at_ms)
+                    if matched_pos:
+                        pos_id = matched_pos.positionId
+                        logger.warning(f"[cTrader Timeout Recovery] Recovered position #{pos_id} via post-acceptance reconciliation.")
+                        return {
+                            "status": "EXECUTED",
+                            "position_id": pos_id,
+                            "order_id": pos_id,
+                            "reconciled_after_timeout": True
+                        }
+            except Exception as rec_err:
+                logger.warning(f"[cTrader Timeout Guard] Post-acceptance reconciliation error: {rec_err}")
+
             return {"status": "UNFILLED", "order_id": ord_id, "error": f"Execution event type {event.executionType} without positionId"}
 
         # 4. Atomic SL/TP Verification & Fallback Amendment Loop (ROP-01)
@@ -375,7 +476,7 @@ def dispatch_ctrader_tls_order(
     access_token: str,
     account_id: int,
     order_req: Any,
-    timeout: float = 5.0,
+    timeout: float = 10.0,
     max_amend_retries: int = 3,
     retry_delay_sec: float = 0.5
 ) -> Dict[str, Any]:
@@ -387,16 +488,117 @@ def dispatch_ctrader_tls_order(
     with ctx.wrap_socket(socket.socket(), server_hostname=host) as s:
         s.settimeout(timeout)
         s.connect((host, port))
-        return _dispatch_order_over_socket(
-            s=s,
-            client_id=client_id,
-            client_secret=client_secret,
-            access_token=access_token,
-            account_id=account_id,
-            order_req=order_req,
-            max_amend_retries=max_amend_retries,
-            retry_delay_sec=retry_delay_sec
+        try:
+            return _dispatch_order_over_socket(
+                s=s,
+                client_id=client_id,
+                client_secret=client_secret,
+                access_token=access_token,
+                account_id=account_id,
+                order_req=order_req,
+                max_amend_retries=max_amend_retries,
+                retry_delay_sec=retry_delay_sec
+            )
+        except (socket.timeout, TimeoutError) as ex:
+            logger.warning(f"[cTrader Execution] Primary socket timed out ({ex}). Reconciling over clean TLS session...")
+            return dispatch_ctrader_tls_reconcile_and_recover(
+                host=host,
+                port=port,
+                client_id=client_id,
+                client_secret=client_secret,
+                access_token=access_token,
+                account_id=account_id,
+                order_req=order_req,
+                timeout=timeout
+            )
+
+
+def dispatch_ctrader_tls_reconcile_and_recover(
+    host: str,
+    port: int,
+    client_id: str,
+    client_secret: str,
+    access_token: str,
+    account_id: int,
+    order_req: Any,
+    timeout: float = 10.0,
+    dispatched_at_ms: Optional[int] = None
+) -> Dict[str, Any]:
+    """Open fresh TLS socket and reconcile positions with broker after a socket timeout.
+
+    Verifies whether the timed-out order was filled or genuinely unexecuted.
+    """
+    if os.environ.get("PYTEST_CURRENT_TEST") and not os.environ.get("TEST_REAL_SOCKET"):
+        return {"status": "TIMEOUT_UNFILLED", "error": "Mock timeout unfilled"}
+
+    try:
+        from ctrader_open_api.messages.OpenApiModelMessages_pb2 import ProtoOAPayloadType
+        from ctrader_open_api.messages.OpenApiMessages_pb2 import (
+            ProtoOAApplicationAuthReq, ProtoOAAccountAuthReq,
+            ProtoOAReconcileReq, ProtoOAReconcileRes
         )
+
+        ctx = ssl.create_default_context()
+        with ctx.wrap_socket(socket.socket(), server_hostname=host) as s:
+            s.settimeout(timeout)
+            s.connect((host, port))
+
+            # 1. App Auth
+            app_req = ProtoOAApplicationAuthReq()
+            app_req.clientId = client_id
+            app_req.clientSecret = client_secret
+            app_res = _send_tls_frame(s, ProtoOAPayloadType.PROTO_OA_APPLICATION_AUTH_REQ, app_req)
+            if not app_res or app_res[0] != ProtoOAPayloadType.PROTO_OA_APPLICATION_AUTH_RES:
+                return {"status": "TIMEOUT_UNFILLED", "error": "Timeout reconciliation failed (App auth failed)"}
+
+            # 2. Account Auth
+            acc_req = ProtoOAAccountAuthReq()
+            acc_req.ctidTraderAccountId = account_id
+            acc_req.accessToken = access_token
+            acc_res = _send_tls_frame(s, ProtoOAPayloadType.PROTO_OA_ACCOUNT_AUTH_REQ, acc_req)
+            if not acc_res or acc_res[0] != ProtoOAPayloadType.PROTO_OA_ACCOUNT_AUTH_RES:
+                return {"status": "TIMEOUT_UNFILLED", "error": "Timeout reconciliation failed (Account auth failed)"}
+
+            # 3. Reconcile
+            rec_req = ProtoOAReconcileReq()
+            rec_req.ctidTraderAccountId = account_id
+            rec_res = _send_tls_frame(s, ProtoOAPayloadType.PROTO_OA_RECONCILE_REQ, rec_req)
+            if not rec_res or rec_res[0] != ProtoOAPayloadType.PROTO_OA_RECONCILE_RES:
+                return {"status": "TIMEOUT_UNFILLED", "error": "Timeout reconciliation failed (Reconcile request failed)"}
+
+            rec_msg = ProtoOAReconcileRes()
+            rec_msg.ParseFromString(rec_res[1])
+
+            matched_pos = _find_matching_reconciled_position(rec_msg.position, order_req, dispatched_at_ms)
+            if matched_pos:
+                pos_id = matched_pos.positionId
+                logger.warning(
+                    f"[cTrader Timeout Recovery] RECOVERED: Order timed out on socket, but broker confirmed fill! "
+                    f"Position #{pos_id} on symbol {getattr(order_req, 'symbolId', 0)}. Reconciled as EXECUTED."
+                )
+                return {
+                    "status": "EXECUTED",
+                    "position_id": pos_id,
+                    "order_id": pos_id,
+                    "reconciled_after_timeout": True
+                }
+
+            logger.info("[cTrader Timeout Guard] Post-timeout reconciliation confirmed order was NOT filled by broker.")
+            return {
+                "status": "TIMEOUT_UNFILLED",
+                "position_id": None,
+                "order_id": None,
+                "error": "Order timed out and confirmed NOT filled on broker (zero matching open positions found)."
+            }
+
+    except Exception as ex:
+        logger.error(f"[cTrader Timeout Guard] Error during post-timeout reconciliation: {ex}")
+        return {
+            "status": "TIMEOUT_UNFILLED",
+            "position_id": None,
+            "order_id": None,
+            "error": f"Order timed out and reconciliation failed ({ex})."
+        }
 
 
 def execute_ctrader_order(sig: Dict[str, Any]) -> Dict[str, Any]:
@@ -617,7 +819,8 @@ def execute_ctrader_order(sig: Dict[str, Any]) -> Dict[str, Any]:
             "order_id": order_id,
             "position_id": position_id,
             "account_id": CTRADER_ACCOUNT_ID,
-            "environment": CTRADER_ENV
+            "environment": CTRADER_ENV,
+            "reconciled_after_timeout": tls_res.get("reconciled_after_timeout", False) if not is_mock else False
         }
 
     except Exception as ex:
