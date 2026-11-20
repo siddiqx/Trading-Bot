@@ -1357,6 +1357,7 @@ async function sendRadarMessage(chatId, env) {
         const breakDistance = isGold ? 15.0 : 3.0;
 
         const formatDist = (valPips) => `${valPips.toFixed(1)}p`;
+        const isDeWhitelisted = (asset.symbol === "USDJPY" || asset.symbol === "GBPUSD" || asset.symbol === "XAUUSD");
         const formatChannel = (valPips) => `${valPips.toFixed(0)}p`;
 
         let badge = "", status = "", detail = "";
@@ -1373,22 +1374,22 @@ async function sendRadarMessage(chatId, env) {
           status = "Tight Squeeze (Low Volatility)";
           detail = `${formatChannel(channelPips)} Band · Awaiting Volume`;
         } else if (distHigh <= 0.0 && isBullish && rsi >= 40.0 && rsi <= 80.0) {
-          hasImminentBreakout = true;
+          if (!isDeWhitelisted) hasImminentBreakout = true;
           badge = "⚡";
           status = "Testing Breakout (Live Bar at High)";
           detail = `Awaiting Close · Trend Bullish`;
         } else if (distHigh <= breakDistance && isBullish && rsi >= 40.0 && rsi <= 80.0) {
-          hasImminentBreakout = true;
+          if (!isDeWhitelisted) hasImminentBreakout = true;
           badge = "⚡";
           status = "Imminent Breakout Setup";
           detail = `${formatDist(distHigh)} to Break · Trend Bullish`;
         } else if (distLow <= 0.0 && isBearish && rsi >= 20.0 && rsi <= 60.0) {
-          hasImminentBreakout = true;
+          if (!isDeWhitelisted) hasImminentBreakout = true;
           badge = "⚡";
           status = "Testing Breakdown (Live Bar at Low)";
           detail = `Awaiting Close · Trend Bearish`;
         } else if (distLow <= breakDistance && isBearish && rsi >= 20.0 && rsi <= 60.0) {
-          hasImminentBreakout = true;
+          if (!isDeWhitelisted) hasImminentBreakout = true;
           badge = "⚡";
           status = "Imminent Breakdown Setup";
           detail = `${formatDist(distLow)} to Break · Trend Bearish`;
@@ -1406,7 +1407,8 @@ async function sendRadarMessage(chatId, env) {
           detail = `${formatChannel(channelPips)} Channel · Mid-Range (${posPct.toFixed(0)}%)`;
         }
 
-        return `<b>${num}. ${asset.name}</b> · <code>${price.toFixed(asset.digits)}</code>\n${badge} <b>${status}</b> (${detail})`;
+        const tag = isDeWhitelisted ? ` (🛡 <i>De-whitelisted</i>)` : "";
+        return `<b>${num}. ${asset.name}</b> · <code>${price.toFixed(asset.digits)}</code>${tag}\n${badge} <b>${status}</b> (${detail})`;
       } catch (e) {
         return `<b>${num}. ${asset.name}</b> · <i>Feed Offline</i>`;
       }
@@ -1465,7 +1467,7 @@ async function sendActiveMessage(chatId, env) {
       `━━━━━━━━━━━━━━━━━━\n` +
       `<i>No active positions currently running.</i>\n\n` +
       `Institutional Universe under active surveillance:\n` +
-      `<code>EURUSD · USDCAD · USDCHF · AUDUSD · XAUUSD</code> (USDJPY & GBPUSD de-whitelisted)\n\n` +
+      `<code>EURUSD · USDCAD · USDCHF · AUDUSD</code> (USDJPY, GBPUSD & XAUUSD de-whitelisted)\n\n` +
       `Signals trigger strictly on confirmed candle closes.\n` +
       `━━━━━━━━━━━━━━━━━━\n` +
       `🕒 <code>${utcNow}</code>`;
@@ -2085,9 +2087,9 @@ async function sendStrategyMessage(chatId) {
 ` +
     `• <b>Economic News Filter:</b> 30-min blackout around Red Folder releases
 ` +
-    `• <b>Monitored Universe:</b> 4 Active Forex Pairs (<code>EURUSD · USDCAD · USDCHF · AUDUSD</code>) + Isolated Gold Satellite (<code>XAUUSD</code>) [<code>USDJPY, GBPUSD</code> de-whitelisted: BoJ intervention chop & Cable whipsaw traps]
+    `• <b>Active Trading Universe:</b> 4 Active Forex Pairs (<code>EURUSD · USDCAD · USDCHF · AUDUSD</code>) [<code>USDJPY, GBPUSD, XAUUSD</code> de-whitelisted: BoJ intervention chop, Cable whipsaw traps & Gold liquidity sweeps]
 ` +
-    `• <b>Commodity Engine:</b> 1H CCRS USD Factor (|Z_USD| ≥ 1.25σ) + Donchian Reclaim
+    `• <b>Surveillance Mode:</b> Spot Gold (<code>XAUUSD</code>) retained strictly for reference radar quotes & synthetic macro basket calculations
 ` +
     `━━━━━━━━━━━━━━━━━━
 ` +

@@ -71,6 +71,7 @@ from satellite.gold_config import (
     TRANSACTION_COSTS,
     GOLD_TRADE_RECORDS_PATH,
     FOREX_TRADE_RECORDS_PATH,
+    GOLD_TRADING_ENABLED,
     STRATEGY_NAME,
     STRATEGY_VERSION,
 )
@@ -611,6 +612,11 @@ def run_gold_scan_cycle() -> None:
     closed_any = check_active_gold_trades(records, forming_bar)
     if closed_any:
         sync_gold_worker(records)
+
+    # 3b. De-whitelisted Engine Guard (Option A): Permanently suppress fresh Gold entries
+    if not GOLD_TRADING_ENABLED:
+        logger.info("Gold Satellite Engine is permanently de-whitelisted from active trading (negative expectancy: 38.4% WR, 0.84 PF, -23.06R). Fresh entries suppressed.")
+        return
 
     # 4. Filter: Rollover Blackout (20:30 - 22:30 UTC) - Fresh entries suppressed to avoid wide spreads
     if is_rollover_blackout_active(now_utc):

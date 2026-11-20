@@ -35,7 +35,8 @@ CANONICAL_SYMBOLS: List[str] = [
 # De-whitelisted / Paused pairs due to empirical negative statistical expectancy:
 # 1. USDJPY: 2026 BoJ currency intervention regime (20% live win rate, PF 0.38)
 # 2. GBPUSD: Structural sweep traps / negative expectancy (0.0% live win rate, 33.3% 5-year backtest WR, PF 0.72)
-DEWHITELISTED_PAIRS: set[str] = {"USDJPY", "GBPUSD"}
+# 3. XAUUSD: Negative expectancy in 2-year look-ahead-free backtest (38.4% WR, 0.84 PF, -23.06R drag, 57.4% Friday losses)
+DEWHITELISTED_PAIRS: set[str] = {"USDJPY", "GBPUSD", "XAUUSD"}
 
 # Active trading universe (Eligible for fresh signal generation and execution)
 ACTIVE_FOREX_SYMBOLS: List[str] = [

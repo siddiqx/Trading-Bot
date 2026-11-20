@@ -15,6 +15,16 @@ from pathlib import Path
 from typing import Dict, Any
 
 # ==============================================================================
+# 0. MASTER TRADING SWITCH (DE-WHITELISTED STATUS)
+# ==============================================================================
+# Empirical Quantitative Study (2-Year Backtest 2024-2026, 11,427 1H bars):
+# Full 2-year look-ahead-free backtesting confirmed negative expectancy across all parameters
+# (38.4% Win Rate, 0.84 Profit Factor, -$5,015.68 Net Loss, 57.4% losses on Friday).
+# Gold is permanently de-whitelisted from active automated execution alongside USDJPY and GBPUSD
+# to protect portfolio expectancy and eliminate commodity whip drag.
+GOLD_TRADING_ENABLED: bool = os.environ.get("ENABLE_GOLD_TRADING", "false").lower() == "true"
+
+# ==============================================================================
 # 1. ASSET SPECIFICATIONS & CONTRACT GEOMETRY
 # ==============================================================================
 GOLD_SYMBOL: str = "XAUUSD"

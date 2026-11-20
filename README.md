@@ -71,7 +71,7 @@ The system deploys a decoupled, multi-asset quantitative strategy that separates
 
 ### A. Core Institutional Forex Engine (`market_scanner.py`)
 * **Monitored Universe (4 Active Pairs):** `EURUSD`, `USDCAD`, `USDCHF`, `AUDUSD`.
-* **USDJPY & GBPUSD De-whitelisted:** Paused due to empirical negative statistical expectancy: USDJPY (20% live win rate, PF 0.38) caused by BoJ intervention whipsaws; GBPUSD (0% live win rate, 33.3% 5-year backtest WR, PF 0.72) caused by structural Cable liquidity sweep traps. Quotes are retained solely for synthetic currency basket mathematics.
+* **USDJPY, GBPUSD & XAUUSD De-whitelisted:** Paused due to empirical negative statistical expectancy: USDJPY (20% live win rate, PF 0.38) caused by BoJ intervention whipsaws; GBPUSD (0% live win rate, 33.3% 5-year backtest WR, PF 0.72) caused by structural Cable liquidity sweep traps; and XAUUSD (38.4% 2-year backtest WR, PF 0.84, -23.06R net loss) caused by commodity liquidity sweeps. Quotes are retained solely for synthetic currency basket mathematics and reference radar quotes.
 * **Macro Factor Model (1H CCRS):** Decomposes 6 major Forex pairs into 7 pure currency strength indices (`EUR`, `GBP`, `AUD`, `JPY`, `CAD`, `CHF`, `USD`). Normalizes 120-hour returns across a 200-hour rolling volatility window into Z-scores. Trades active macro momentum regimes where pairwise spread divergence $|D| \ge 1.75\sigma$.
 * **Precision Execution (15M):** Evaluates completed 15M candle bars for 20-EMA pullback rejections and 10-bar Donchian / fractal liquidity sweeps aligned with the 1H macro bias.
 * **Dynamic Exits:** Stop Loss dynamically anchored to 14-period ATR ($20.0 - 25.0$ pips, canonical $22.0$ pips). Take Profit fixed at $1:1.50$ Risk-to-Reward ratio ($30.0 - 37.5$ pips, canonical $33.0 - 35.0$ pips).
@@ -79,8 +79,9 @@ The system deploys a decoupled, multi-asset quantitative strategy that separates
   - **Tier 1 (+1.20R):** Halves risk by advancing SL to $-0.50$R of entry.
   - **Tier 2 (+1.50R):** Locks in $+0.50$R guaranteed profit and extends runner target to $+2.00$R.
 
-### B. Dedicated Gold Satellite Engine (`satellite/market_scanner_gold.py`)
+### B. Dedicated Gold Satellite Engine (`satellite/market_scanner_gold.py`) — *De-whitelisted (Surveillance Only)*
 * **Asset:** Spot Gold (`XAUUSD` / front-month futures `GC=F`).
+* **Execution Status:** **De-whitelisted from active trading** (`GOLD_TRADING_ENABLED=false`). In 2-year look-ahead-free backtesting (11,427 1H bars), Gold demonstrated negative expectancy (38.4% Win Rate, 0.84 Profit Factor, -23.06R drag), with 57.4% of total losses concentrated on Fridays. Quotes are actively tracked on Telegram `/radar` and `/prices` for reference surveillance and macro flow calculations.
 * **Contract Geometry:** 1 Standard Lot = 100 Troy Ounces ($1.00 move in Gold price = $100.00 USD per standard lot). Minimum trade = 0.01 lot (1 Troy Ounce = $1.00/point).
 * **Macro Factor (1H CCRS Single-Factor):** Computes isolated USD basket factor $Z_{\text{USD}}$. Macro flow is established when $|Z_{\text{USD}}| \ge 1.25\sigma$ (statistically calibrated to match the $1.75\sigma$ pairwise Forex threshold: $1.25 \times \sqrt{2} \approx 1.76\sigma$).
   - $Z_{\text{USD}} \le -1.25\sigma$ $\implies$ Institutional USD Weakness $\implies$ **Long Gold (BUY)**.

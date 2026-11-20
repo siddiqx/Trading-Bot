@@ -88,10 +88,14 @@ jobs:
           ACCOUNT_EQUITY: ${{ secrets.ACCOUNT_EQUITY || '25000.0' }}
           RISK_PCT: ${{ secrets.RISK_PCT || '1.00' }}
         run: |
-          echo "=== [1/2] Scanning Forex Markets (6 Institutional Pairs) ==="
+          echo "=== [1/2] Scanning Forex Markets (4 Active Institutional Pairs) ==="
           python market_scanner.py
-          echo "=== [2/2] Scanning Gold Satellite Engine (XAUUSD) ==="
-          python satellite/market_scanner_gold.py
+          if [ "${{ secrets.ENABLE_GOLD_TRADING || 'false' }}" = "true" ]; then
+            echo "=== [2/2] Scanning Gold Satellite Engine (XAUUSD) ==="
+            python satellite/market_scanner_gold.py
+          else
+            echo "=== [2/2] Gold Satellite Engine de-whitelisted (ENABLE_GOLD_TRADING=false). Skipping Gold scan. ==="
+          fi
 
       - name: Commit & Push Updated Trade Records
         if: always()
