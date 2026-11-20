@@ -44,7 +44,8 @@ const ASSETS = [
   { name: "GBP/USD", symbol: "GBPUSD", ticker: "GBPUSD=X", pip: 0.0001, digits: 5, donchian_len: 20 },
   { name: "USD/JPY", symbol: "USDJPY", ticker: "USDJPY=X", pip: 0.01,   digits: 3, donchian_len: 20 },
   { name: "USD/CHF", symbol: "USDCHF", ticker: "USDCHF=X", pip: 0.0001, digits: 5, donchian_len: 20 },
-  { name: "AUD/USD", symbol: "AUDUSD", ticker: "AUDUSD=X", pip: 0.0001, digits: 5, donchian_len: 20 }
+  { name: "AUD/USD", symbol: "AUDUSD", ticker: "AUDUSD=X", pip: 0.0001, digits: 5, donchian_len: 20 },
+  { name: "XAU/USD (Gold)", symbol: "XAUUSD", ticker: "GC=F", pip: 0.1, digits: 2, donchian_len: 10 }
 ];
 
 const ALL_KNOWN_CONFIGS = {
@@ -53,20 +54,32 @@ const ALL_KNOWN_CONFIGS = {
   "GBPUSD": { name: "GBP/USD", ticker: "GBPUSD=X", pip: 0.0001, digits: 5, donchian_len: 20 },
   "USDJPY": { name: "USD/JPY", ticker: "USDJPY=X", pip: 0.01,   digits: 3, donchian_len: 20 },
   "USDCHF": { name: "USD/CHF", ticker: "USDCHF=X", pip: 0.0001, digits: 5, donchian_len: 20 },
-  "AUDUSD": { name: "AUD/USD", ticker: "AUDUSD=X", pip: 0.0001, digits: 5, donchian_len: 20 }
+  "AUDUSD": { name: "AUD/USD", ticker: "AUDUSD=X", pip: 0.0001, digits: 5, donchian_len: 20 },
+  "XAUUSD": { name: "XAU/USD (Gold)", ticker: "GC=F", pip: 0.1, digits: 2, donchian_len: 10 }
 };
 
 const ALL_KNOWN_TICKERS = Object.fromEntries(Object.entries(ALL_KNOWN_CONFIGS).map(([k, v]) => [k, v.ticker]));
 
 /**
  * Universal Symbol Normalizer
- * Extracts base asset symbol (e.g., 'EURUSD') from slot keys like 'EURUSD_15M' or trade records
+ * Extracts base asset symbol (e.g., 'EURUSD' or 'XAUUSD') from slot keys like 'EURUSD_15M' or trade records
  */
 function getBaseSymbol(key, trade = null) {
-  if (trade && trade.symbol) return String(trade.symbol).toUpperCase();
-  if (trade && trade.pair) return String(trade.pair).toUpperCase();
-  if (typeof key === "string" && key.includes("_")) {
-    return key.split("_")[0].toUpperCase();
+  if (trade && trade.symbol) {
+    const s = String(trade.symbol).toUpperCase();
+    if (s.includes("XAU") || s.includes("GOLD")) return "XAUUSD";
+    return s;
+  }
+  if (trade && trade.pair) {
+    const p = String(trade.pair).toUpperCase();
+    if (p.includes("XAU") || p.includes("GOLD")) return "XAUUSD";
+    return p;
+  }
+  if (typeof key === "string") {
+    const k = key.toUpperCase();
+    if (k.includes("XAU") || k.includes("GOLD")) return "XAUUSD";
+    if (k.includes("_")) return k.split("_")[0];
+    return k;
   }
   return String(key || "").toUpperCase();
 }
@@ -81,7 +94,8 @@ const PAIR_SCHEDULES = {
   "AUDUSD": { sl_pips: 22.0, tp_rr: 1.50, bank_pct: 0.0, hours: [7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17] },
   "USDCAD": { sl_pips: 22.0, tp_rr: 1.50, bank_pct: 0.0, hours: [7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17] },
   "USDJPY": { sl_pips: 22.0, tp_rr: 1.50, bank_pct: 0.0, hours: [7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17] },
-  "GBPUSD": { sl_pips: 22.0, tp_rr: 1.50, bank_pct: 0.0, hours: [7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17] }
+  "GBPUSD": { sl_pips: 22.0, tp_rr: 1.50, bank_pct: 0.0, hours: [7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17] },
+  "XAUUSD": { sl_pips: 250.0, tp_rr: 1.50, bank_pct: 0.0, hours: [6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17] }
 };
 const _OLD_PAIR_SCHEDULES = {
   "EURUSD": { sl_pips: 16.0, tp_rr: 1.50, bank_pct: 0.0, hours: [6, 7, 9, 10, 11, 12, 13, 15] },
@@ -98,18 +112,19 @@ const _OLD_PAIR_SCHEDULES = {
  */
 function getAssetConfig(symbolOrKey, trade = null) {
   const sym = getBaseSymbol(symbolOrKey, trade);
+  const isGold = (sym === "XAUUSD");
   const sched = PAIR_SCHEDULES[sym] || {};
   const base = ALL_KNOWN_CONFIGS[sym] || ASSETS.find(a => a.symbol === sym) || {
-    name: trade?.pair || sym,
-    ticker: trade?.ticker || `${sym}=X`,
-    pip: trade?.pip || (sym.includes("JPY") ? 0.01 : 0.0001),
-    digits: trade?.digits || (sym.includes("JPY") ? 3 : 5),
-    donchian_len: 20
+    name: trade?.pair || (isGold ? "XAU/USD (Gold)" : sym),
+    ticker: trade?.ticker || (isGold ? "GC=F" : `${sym}=X`),
+    pip: trade?.pip !== undefined ? trade.pip : (isGold ? 0.1 : (sym.includes("JPY") ? 0.01 : 0.0001)),
+    digits: trade?.digits !== undefined ? trade.digits : (isGold ? 2 : (sym.includes("JPY") ? 3 : 5)),
+    donchian_len: isGold ? 10 : 20
   };
   return {
     ...base,
     symbol: sym,
-    sl_pips: trade?.sl_pips || sched.sl_pips || 16.0,
+    sl_pips: trade?.sl_pips || sched.sl_pips || (isGold ? 250.0 : 22.0),
     tp_rr: trade?.rr || sched.tp_rr || 1.50,
     bank_pct: 0.0
   };
@@ -147,26 +162,28 @@ async function getLivePriceFast(asset, maxWaitMs = 4000) {
   }
 
   // Forex Majors & Crosses
-  // A. TradingView Forex Scanner (Ultra-fast, institutional quotes)
-  try {
-    const res = await fetchWithTimeout("https://scanner.tradingview.com/forex/scan", {
-      method: "POST",
-      headers: { "User-Agent": "Mozilla/5.0", "Content-Type": "application/json" },
-      body: JSON.stringify({ symbols: { tickers: [`FX_IDC:${sym}`, `FX:${sym}`] }, columns: ["close"] })
-    }, maxWaitMs);
-    if (res.ok) {
-      const json = await res.json();
-      const p = parseFloat(json?.data?.[0]?.d?.[0]);
-      if (!isNaN(p) && p > 0) {
-        QUOTE_CACHE[sym] = p;
-        QUOTE_CACHE_TIME[sym] = now;
-        return p;
+  // A. TradingView Forex Scanner (Ultra-fast, institutional quotes) - Forex only
+  if (sym !== "XAUUSD") {
+    try {
+      const res = await fetchWithTimeout("https://scanner.tradingview.com/forex/scan", {
+        method: "POST",
+        headers: { "User-Agent": "Mozilla/5.0", "Content-Type": "application/json" },
+        body: JSON.stringify({ symbols: { tickers: [`FX_IDC:${sym}`, `FX:${sym}`] }, columns: ["close"] })
+      }, Math.min(maxWaitMs, 2500));
+      if (res.ok) {
+        const json = await res.json();
+        const p = parseFloat(json?.data?.[0]?.d?.[0]);
+        if (!isNaN(p) && p > 0) {
+          QUOTE_CACHE[sym] = p;
+          QUOTE_CACHE_TIME[sym] = now;
+          return p;
+        }
       }
-    }
-  } catch (e) {}
+    } catch (e) {}
+  }
 
   // B. Fallback: Yahoo Finance (query1 & query2 mirrors)
-  const ticker = asset.ticker || `${sym}=X`;
+  const ticker = asset.ticker || (sym === "XAUUSD" ? "GC=F" : `${sym}=X`);
   for (const host of ["query1.finance.yahoo.com", "query2.finance.yahoo.com"]) {
     try {
       const url = `https://${host}/v8/finance/chart/${ticker}?range=1d&interval=5m`;
@@ -175,7 +192,7 @@ async function getLivePriceFast(asset, maxWaitMs = 4000) {
       }, maxWaitMs);
       if (res.ok) {
         const json = await res.json();
-        const closes = json?.chart?.result?.[0]?.indicators?.quote?.[0]?.close?.filter(v => v !== null && v !== undefined) || [];
+        const closes = json?.chart?.result?.[0]?.indicators?.quote?.[0]?.close?.filter(v => v !== null && v !== undefined && !isNaN(v)) || [];
         if (closes.length > 0) {
           const p = closes[closes.length - 1];
           QUOTE_CACHE[sym] = p;
@@ -221,31 +238,82 @@ let STORED_ACTIVE_TRADES = {};
 let STORED_COMPLETED_TRADES = [];
 
 /**
- * Strict Ledger Sanitizer: Permanently excludes any Gold (XAUUSD / GOLD) records from all bot views.
+ * Universal Trade Normalizer
+ * Ensures both Forex and Gold trades expose consistent properties across all bot views
+ */
+function normalizeTrade(rawT) {
+  if (!rawT || typeof rawT !== "object") return rawT;
+  const t = { ...rawT };
+  const entry = parseFloat(t.entry !== undefined ? t.entry : (t.entry_price !== undefined ? t.entry_price : 0));
+  const stopLoss = parseFloat(t.stop_loss !== undefined ? t.stop_loss : (t.current_sl_price !== undefined ? t.current_sl_price : (t.sl_price !== undefined ? t.sl_price : 0)));
+  const takeProfit = parseFloat(t.take_profit !== undefined ? t.take_profit : (t.current_tp_price !== undefined ? t.current_tp_price : (t.tp_price !== undefined ? t.tp_price : 0)));
+  const sym = getBaseSymbol(t.symbol || t.pair || (t.trade_id ? t.trade_id.split("_")[0] : "UNKNOWN"), t);
+  const isGold = (sym === "XAUUSD" || sym === "GOLD" || sym.includes("XAU"));
+  const canonicalSymbol = isGold ? "XAUUSD" : sym;
+  const openedAt = t.opened_at || t.entry_time || t.timestamp || new Date().toISOString();
+  const timeframe = t.timeframe || (isGold ? "1H" : "15M");
+  const pip = t.pip !== undefined ? t.pip : (isGold ? 0.1 : (canonicalSymbol.includes("JPY") ? 0.01 : 0.0001));
+  const digits = t.digits !== undefined ? t.digits : (isGold ? 2 : (canonicalSymbol.includes("JPY") ? 3 : 5));
+  const pairName = t.pair || (isGold ? "XAU/USD (Gold)" : ALL_KNOWN_CONFIGS[canonicalSymbol]?.name || canonicalSymbol);
+
+  t.symbol = canonicalSymbol;
+  t.pair = pairName;
+  t.entry = entry;
+  t.stop_loss = stopLoss;
+  t.take_profit = takeProfit;
+  t.opened_at = openedAt;
+  t.timeframe = timeframe;
+  t.pip = pip;
+  t.digits = digits;
+  let rawDir = String(t.direction || t.action || t.side || t.type || t.dir || "").toUpperCase();
+  if (rawDir.includes("BUY") || rawDir.includes("LONG")) {
+    t.direction = "LONG";
+  } else if (rawDir.includes("SELL") || rawDir.includes("SHORT")) {
+    t.direction = "SHORT";
+  } else if (entry > 0 && takeProfit > 0 && takeProfit < entry) {
+    t.direction = "SHORT";
+  } else {
+    t.direction = "LONG";
+  }
+
+  if (!t.status) {
+    t.status = "OPEN";
+  }
+  if (!t.rr && (t.risk_reward || t.tp_rr)) {
+    t.rr = t.risk_reward || t.tp_rr;
+  } else if (!t.rr) {
+    t.rr = 1.50;
+  }
+  if (t.lots === undefined && t.suggested_lots !== undefined) {
+    t.lots = t.suggested_lots;
+  }
+  if (isGold && (t.lots === undefined || !t.lots)) {
+    t.lots = 0.03;
+  }
+  return t;
+}
+
+/**
+ * Universal Ledger Sanitizer:
+ * Deduplicates, normalizes, and filters closed trades from active memory.
  */
 function sanitizeLedger(ledger) {
   if (!ledger) return { active: {}, completed: [] };
   const cleanActive = {};
-  const completedList = ledger.completed || [];
+  const completedList = (ledger.completed || []).map(normalizeTrade);
   const completedIds = new Set(
     completedList.map(t => t.trade_id || t.id).filter(Boolean)
   );
 
-  for (const [k, t] of Object.entries(ledger.active || {})) {
-    const sym = getBaseSymbol(k, t);
+  for (const [k, rawT] of Object.entries(ledger.active || {})) {
+    const t = normalizeTrade(rawT);
     const tradeId = t?.trade_id || t?.id;
-    if (sym !== "XAUUSD" && sym !== "GOLD" && !sym.includes("XAU")) {
-      if ((tradeId && completedIds.has(tradeId)) || t?.status === "CLOSED" || t?.status === "COMPLETED") {
-        continue; // Closed / completed trades must NEVER appear as active!
-      }
-      cleanActive[k] = t;
+    if ((tradeId && completedIds.has(tradeId)) || t?.status === "CLOSED" || t?.status === "COMPLETED") {
+      continue; // Closed / completed trades must NEVER appear as active!
     }
+    cleanActive[k] = t;
   }
-  const cleanCompleted = completedList.filter(t => {
-    const sym = getBaseSymbol(t.pair || t.symbol, t);
-    return sym !== "XAUUSD" && sym !== "GOLD" && !sym.includes("XAU");
-  });
-  return { active: cleanActive, completed: cleanCompleted };
+  return { active: cleanActive, completed: completedList };
 }
 
 /**
@@ -260,27 +328,51 @@ async function getLedger(env) {
   const kv = env && (env.TRADE_LEDGER || env.TRADES_KV || env.KV);
   let active = null;
   let completed = null;
+  let mergedActive = {};
+  let mergedCompleted = [];
   if (kv) {
     try {
       active = await kv.get("active_trades", "json");
       completed = await kv.get("completed_trades", "json");
+      const goldActive = await kv.get("gold_active_trades", "json");
+      const goldCompleted = await kv.get("gold_completed_trades", "json");
+
+      mergedActive = { ...(active || {}) };
+      if (goldActive && typeof goldActive === "object") {
+        for (const [k, t] of Object.entries(goldActive)) {
+          mergedActive[k] = t;
+        }
+      }
+
+      mergedCompleted = [ ...(completed || []) ];
+      if (Array.isArray(goldCompleted)) {
+        for (const t of goldCompleted) {
+          if (!mergedCompleted.some(x => (x.trade_id && x.trade_id === t.trade_id) || (x.id && x.id === t.id))) {
+            mergedCompleted.push(t);
+          }
+        }
+      }
+
+      // If we found active trades in KV, OR if both active and goldActive were explicitly populated in KV
+      const hasExplicitGold = (goldActive !== null && typeof goldActive === "object");
+      const hasActive = (Object.keys(mergedActive).length > 0);
+      if (hasActive || (active !== null && hasExplicitGold)) {
+        return sanitizeLedger({
+          active: mergedActive,
+          completed: mergedCompleted
+        });
+      }
     } catch (e) {
       console.error("KV read error:", e);
     }
-  }
-
-  // If KV is bound and successfully returned active trades (even if empty {}), KV IS AUTHORITATIVE!
-  if (active !== null && typeof active === "object") {
-    return sanitizeLedger({
-      active: active,
-      completed: completed || []
-    });
   }
 
   // 2. Private GitHub API fallback via GITHUB_TOKEN (in case trades were committed to git)
   const ghAuthToken = (env && (env.GITHUB_TOKEN || env.GH_TOKEN)) || DEFAULT_GH_TOKEN;
   if (ghAuthToken) {
     try {
+      let ghActive = {};
+      let ghCompleted = [];
       const ghRes = await fetch("https://api.github.com/repos/siddiqx/Trading-Bot/contents/trade_records.json", {
         headers: {
           "Authorization": `Bearer ${ghAuthToken}`,
@@ -290,18 +382,47 @@ async function getLedger(env) {
       });
       if (ghRes.ok) {
         const ghData = await ghRes.json();
-        const ghActive = ghData.active_trades || {};
-        const ghCompleted = ghData.completed_trades || [];
-        if (Object.keys(ghActive).length > 0) {
-          // Backfill KV so future lookups are fast
-          if (kv) {
-            kv.put("active_trades", JSON.stringify(ghActive)).catch(() => {});
+        ghActive = { ...(ghData.active_trades || {}) };
+        ghCompleted = [ ...(ghData.completed_trades || []) ];
+      }
+
+      try {
+        const ghGoldRes = await fetch("https://api.github.com/repos/siddiqx/Trading-Bot/contents/data/gold_trade_records.json", {
+          headers: {
+            "Authorization": `Bearer ${ghAuthToken}`,
+            "Accept": "application/vnd.github.raw",
+            "User-Agent": "Cloudflare-Worker-Ledger"
           }
-          return sanitizeLedger({
-            active: ghActive,
-            completed: (completed && completed.length > 0) ? completed : ghCompleted
-          });
+        });
+        if (ghGoldRes.ok) {
+          const goldData = await ghGoldRes.json();
+          ghActive = { ...ghActive, ...(goldData.active_trades || {}) };
+          if (Array.isArray(goldData.completed_trades)) {
+            for (const t of goldData.completed_trades) {
+              if (!ghCompleted.some(x => (x.trade_id && x.trade_id === t.trade_id))) {
+                ghCompleted.push(t);
+              }
+            }
+          }
         }
+      } catch (ge) {}
+
+      if (Object.keys(ghActive).length > 0 || ghCompleted.length > 0) {
+        // Backfill KV so future lookups are fast
+        if (kv) {
+          kv.put("active_trades", JSON.stringify(ghActive)).catch(() => {});
+          const ghGoldActive = {};
+          for (const [k, t] of Object.entries(ghActive)) {
+            if (getBaseSymbol(k, t) === "XAUUSD") ghGoldActive[k] = t;
+          }
+          if (Object.keys(ghGoldActive).length > 0) {
+            kv.put("gold_active_trades", JSON.stringify(ghGoldActive)).catch(() => {});
+          }
+        }
+        return sanitizeLedger({
+          active: { ...mergedActive, ...ghActive },
+          completed: (completed && completed.length > 0) ? completed : ghCompleted
+        });
       }
     } catch (e) {
       console.error("GitHub API fetch error:", e);
@@ -310,18 +431,48 @@ async function getLedger(env) {
 
   // 3. Raw GitHub URL (public repo fallback)
   try {
+    let rawActive = {};
+    let rawCompleted = [];
     const rawRes = await fetch("https://raw.githubusercontent.com/siddiqx/Trading-Bot/main/trade_records.json?t=" + Date.now(), {
       headers: { "User-Agent": "Cloudflare-Worker-Ledger" }
     });
     if (rawRes.ok) {
       const rawData = await rawRes.json();
-      const rawActive = rawData.active_trades || {};
-      if (Object.keys(rawActive).length > 0) {
-        return sanitizeLedger({
-          active: rawActive,
-          completed: (completed && completed.length > 0) ? completed : (rawData.completed_trades || [])
-        });
+      rawActive = { ...(rawData.active_trades || {}) };
+      rawCompleted = [ ...(rawData.completed_trades || []) ];
+    }
+    try {
+      const rawGoldRes = await fetch("https://raw.githubusercontent.com/siddiqx/Trading-Bot/main/data/gold_trade_records.json?t=" + Date.now(), {
+        headers: { "User-Agent": "Cloudflare-Worker-Ledger" }
+      });
+      if (rawGoldRes.ok) {
+        const rawGoldData = await rawGoldRes.json();
+        rawActive = { ...rawActive, ...(rawGoldData.active_trades || {}) };
+        if (Array.isArray(rawGoldData.completed_trades)) {
+          for (const t of rawGoldData.completed_trades) {
+            if (!rawCompleted.some(x => (x.trade_id && x.trade_id === t.trade_id))) {
+              rawCompleted.push(t);
+            }
+          }
+        }
       }
+    } catch (ge) {}
+
+    if (Object.keys(rawActive).length > 0 || rawCompleted.length > 0) {
+      if (kv) {
+        kv.put("active_trades", JSON.stringify(rawActive)).catch(() => {});
+        const rawGoldActive = {};
+        for (const [k, t] of Object.entries(rawActive)) {
+          if (getBaseSymbol(k, t) === "XAUUSD") rawGoldActive[k] = t;
+        }
+        if (Object.keys(rawGoldActive).length > 0) {
+          kv.put("gold_active_trades", JSON.stringify(rawGoldActive)).catch(() => {});
+        }
+      }
+      return sanitizeLedger({
+        active: { ...mergedActive, ...rawActive },
+        completed: (completed && completed.length > 0) ? completed : rawCompleted
+      });
     }
   } catch (e) {}
 
@@ -410,6 +561,18 @@ async function autoResolveTrade(symbol, t, outcome, exitPrice, env, prefetchedLe
   const kv = env && (env.TRADE_LEDGER || env.TRADES_KV || env.KV);
   if (kv) {
     try {
+      if (targetBase === "XAUUSD") {
+        const goldActive = (await kv.get("gold_active_trades", "json")) || {};
+        delete goldActive[symbol];
+        if (targetId) delete goldActive[targetId];
+        await kv.put("gold_active_trades", JSON.stringify(goldActive));
+
+        const goldCompleted = (await kv.get("gold_completed_trades", "json")) || [];
+        if (!goldCompleted.some(x => x.trade_id === targetId)) {
+          goldCompleted.push(completedRecord);
+        }
+        await kv.put("gold_completed_trades", JSON.stringify(goldCompleted));
+      }
       await kv.put("active_trades", JSON.stringify(currentActive));
       await kv.put("completed_trades", JSON.stringify(currentCompleted));
     } catch (e) {
@@ -478,6 +641,7 @@ async function runActiveTradeChecks(env) {
     return { checked_active: 0, resolved_trades: [], market_open: false, note: "Forex market is closed for the weekend" };
   }
 
+  const kv = env && (env.TRADE_LEDGER || env.TRADES_KV || env.KV);
   const ledger = await getLedger(env);
   const activeEntries = Object.entries(ledger.active);
   const resolved = [];
@@ -830,7 +994,7 @@ async function handleTelegramUpdate(update, env) {
     }
     else if (action === "cmd_active") await sendActiveMessage(chatId, env);
     else if (action === "cmd_prices") await sendPricesMessage(chatId);
-    else if (action === "cmd_gold") await sendGoldMessage(chatId, env);
+    else if (action === "cmd_gold") await sendRadarMessage(chatId, env);
     else if (action === "cmd_history") await sendHistoryMessage(chatId, "ALL", "ALL", env);
     else if (action === "cmd_performance") await sendPerformanceMessage(chatId, "ALL", env);
     else if (action === "cmd_patterns") await sendPatternsMessage(chatId, env);
@@ -876,7 +1040,7 @@ async function handleTelegramUpdate(update, env) {
     } else if (cmd === "/prices" || cmd === "/quotes") {
       await sendPricesMessage(chatId);
     } else if (cmd === "/gold" || cmd === "/xauusd") {
-      await sendGoldMessage(chatId, env);
+      await sendRadarMessage(chatId, env);
     } else if (cmd === "/history") {
       let filterPair = "ALL";
       let filterRange = "ALL";
@@ -940,7 +1104,7 @@ async function handleTelegramUpdate(update, env) {
           `<code>/close EURUSD WIN</code>\n` +
           `<code>/close EURUSD LOSS</code>\n` +
           `<code>/close EURUSD CANCEL</code>\n\n` +
-          `Available pairs: EURUSD · USDCAD · GBPUSD · USDJPY · USDCHF · AUDUSD`
+          `Available pairs: EURUSD · USDCAD · GBPUSD · USDJPY · USDCHF · AUDUSD · XAUUSD`
         );
       }
     } else {
@@ -969,52 +1133,54 @@ async function fetchAssetCandles(asset) {
   let liveSpotPrice = null;
   let tvIndicators = null;
 
-  // 1. Fetch live spot quote and real-time indicators directly from TradingView Forex Scanner
-  const tvUrl = "https://scanner.tradingview.com/forex/scan";
-  const tvTicker = `FX_IDC:${asset.symbol}`;
+  // 1. Fetch live spot quote and real-time indicators directly from TradingView Forex Scanner (Forex only)
+  if (asset.symbol !== "XAUUSD") {
+    const tvUrl = "https://scanner.tradingview.com/forex/scan";
+    const tvTicker = `FX_IDC:${asset.symbol}`;
 
-  try {
-    const tvRes = await fetchWithTimeout(tvUrl, {
-      method: "POST",
-      headers: { "User-Agent": "Mozilla/5.0", "Content-Type": "application/json" },
-      body: JSON.stringify({
-        symbols: { tickers: [tvTicker] },
-        columns: ["open|15", "high|15", "low|15", "close|15", "RSI|15", "EMA20|15", "EMA50|15", "ADX|15"]
-      })
-    }, 3000);
-    if (tvRes.ok) {
-      const tvJson = await tvRes.json();
-      const d = tvJson?.data?.[0]?.d;
-      if (Array.isArray(d) && d.length >= 8 && d[3] !== null) {
-        liveSpotPrice = parseFloat(d[3]);
-        tvIndicators = {
-          open: parseFloat(d[0]),
-          high: parseFloat(d[1]),
-          low: parseFloat(d[2]),
-          close: parseFloat(d[3]),
-          rsi: parseFloat(d[4]),
-          ema20: parseFloat(d[5]),
-          ema50: parseFloat(d[6]),
-          adx: parseFloat(d[7])
-        };
-        QUOTE_CACHE[asset.symbol] = liveSpotPrice;
-        QUOTE_CACHE_TIME[asset.symbol] = Date.now();
+    try {
+      const tvRes = await fetchWithTimeout(tvUrl, {
+        method: "POST",
+        headers: { "User-Agent": "Mozilla/5.0", "Content-Type": "application/json" },
+        body: JSON.stringify({
+          symbols: { tickers: [tvTicker] },
+          columns: ["open|15", "high|15", "low|15", "close|15", "RSI|15", "EMA20|15", "EMA50|15", "ADX|15"]
+        })
+      }, 2500);
+      if (tvRes.ok) {
+        const tvJson = await tvRes.json();
+        const d = tvJson?.data?.[0]?.d;
+        if (Array.isArray(d) && d.length >= 8 && d[3] !== null) {
+          liveSpotPrice = parseFloat(d[3]);
+          tvIndicators = {
+            open: parseFloat(d[0]),
+            high: parseFloat(d[1]),
+            low: parseFloat(d[2]),
+            close: parseFloat(d[3]),
+            rsi: parseFloat(d[4]),
+            ema20: parseFloat(d[5]),
+            ema50: parseFloat(d[6]),
+            adx: parseFloat(d[7])
+          };
+          QUOTE_CACHE[asset.symbol] = liveSpotPrice;
+          QUOTE_CACHE_TIME[asset.symbol] = Date.now();
+        }
       }
-    }
-  } catch (e) {}
+    } catch (e) {}
+  }
 
-  // 2. Fetch genuine 15M candle series from Yahoo Finance for Donchian channels
-  const yTicker = asset.ticker || `${asset.symbol}=X`;
+  // 2. Fetch genuine 15M candle series from Yahoo Finance for Donchian channels & Gold
+  const yTicker = asset.ticker || (asset.symbol === "XAUUSD" ? "GC=F" : `${asset.symbol}=X`);
   for (const host of ["query1.finance.yahoo.com", "query2.finance.yahoo.com"]) {
     try {
       const url = `https://${host}/v8/finance/chart/${yTicker}?range=5d&interval=15m`;
-      const res = await fetchWithTimeout(url, { headers: browserHeaders }, 3500);
+      const res = await fetchWithTimeout(url, { headers: browserHeaders }, 4000);
       if (res.ok) {
         const json = await res.json();
         const quote = json?.chart?.result?.[0]?.indicators?.quote?.[0];
-        const rawCloses = quote?.close?.filter(v => v !== null && v !== undefined) || [];
-        const rawHighs = quote?.high?.filter(v => v !== null && v !== undefined) || [];
-        const rawLows = quote?.low?.filter(v => v !== null && v !== undefined) || [];
+        const rawCloses = quote?.close?.filter(v => v !== null && v !== undefined && !isNaN(v)) || [];
+        const rawHighs = quote?.high?.filter(v => v !== null && v !== undefined && !isNaN(v)) || [];
+        const rawLows = quote?.low?.filter(v => v !== null && v !== undefined && !isNaN(v)) || [];
         if (rawCloses.length >= 10) {
           closes = rawCloses;
           highs = rawHighs;
@@ -1038,8 +1204,8 @@ async function fetchAssetCandles(asset) {
 }
 
 /**
- * /radar - Institutional Market Surveillance across all 6 monitored Forex pairs (Zero Gold)
- * Real-time 20/50 EMA, 15M Donchian Channels (Forex=20), RSI, and ADX
+ * /radar - Institutional Market Surveillance across all monitored Forex pairs and Spot Gold
+ * Real-time 20/50 EMA, Donchian Channels (Forex=20, Gold=10), RSI, and ADX
  * Read-only surveillance: Never mutates or closes trades on read queries!
  */
 async function sendRadarMessage(chatId, env) {
@@ -1049,54 +1215,77 @@ async function sendRadarMessage(chatId, env) {
   let activeCount = 0;
   let hasImminentBreakout = false;
 
-  const filteredAssets = ASSETS.filter(a => a.symbol !== "XAUUSD" && a.symbol !== "GOLD" && !a.symbol.includes("XAU"));
-
   const results = await Promise.all(
-    filteredAssets.map(async (asset, idx) => {
+    ASSETS.map(async (asset, idx) => {
       const num = idx + 1;
+      const isGold = asset.symbol === "XAUUSD";
       try {
         const { closes, highs, lows, price, indicators } = await fetchAssetCandles(asset);
+
+        // 1. CHECK IF PAIR HAS AN ACTIVE RUNNING TRADE
+        const rawActiveTrade = Object.entries(active).find(([k, t]) => getBaseSymbol(k, t) === asset.symbol)?.[1];
+        const activeTrade = rawActiveTrade ? normalizeTrade(rawActiveTrade) : null;
+        if (activeTrade) {
+          activeCount++;
+          const isPending = activeTrade.status === "PENDING";
+          const isLong = (activeTrade.direction || "").toUpperCase() === "LONG";
+          const liveP = (price !== null && !isNaN(price)) ? price : activeTrade.entry;
+
+          if (isPending) {
+            const distPips = (Math.abs(liveP - activeTrade.entry) / asset.pip).toFixed(1);
+            const distStr = isGold ? `$${(Math.abs(liveP - activeTrade.entry)).toFixed(2)}/oz (${distPips}p)` : `${distPips}p`;
+            return (
+              `<b>${num}. ${asset.name}</b> · <code>${liveP.toFixed(asset.digits)}</code>\n` +
+              `⏳ <b>PENDING ${activeTrade.direction}</b> (${activeTrade.timeframe || (isGold ? "1H" : "15M")})\n` +
+              `• Entry Target: <code>${activeTrade.entry.toFixed(asset.digits)}</code> (⏳ ${distStr} away)\n` +
+              `• Float: <code>0.0 pips (Awaiting Fill)</code>\n` +
+              `• SL: <code>${activeTrade.stop_loss.toFixed(asset.digits)}</code> | TP: <code>${activeTrade.take_profit.toFixed(asset.digits)}</code>`
+            );
+          }
+
+          // Active OPEN position
+          const pnlPips = ((liveP - activeTrade.entry) / asset.pip) * (isLong ? 1 : -1);
+          const rawDiff = (liveP - activeTrade.entry) * (isLong ? 1 : -1);
+          const pnlSign = pnlPips >= 0 ? "+" : "";
+          const ptSign = rawDiff >= 0 ? "+" : "";
+          const icon = isLong ? "🟢" : "🔴";
+          const beStatus = activeTrade.partial_taken 
+            ? ` 🛡<b>60% Banked (+${activeTrade.partial_banked_r || "0.60"}R)</b>` 
+            : (activeTrade.be_active 
+                ? " 🛡<b>BE Locked</b>" 
+                : (activeTrade.cushion_stage === 2 || activeTrade.runner_active 
+                    ? " 🏃<b>Runner Extended</b>" 
+                    : (activeTrade.cushion_stage === 1 || activeTrade.cushion_active 
+                        ? " 🛡<b>Risk Halved</b>" 
+                        : "")));
+
+          const extraDiff = isGold ? ` (${ptSign}$${rawDiff.toFixed(2)}/oz)` : "";
+
+          return (
+            `<b>${num}. ${asset.name}</b> · <code>${liveP.toFixed(asset.digits)}</code>\n` +
+            `${icon} <b>LIVE ${activeTrade.direction}</b> (${activeTrade.timeframe || (isGold ? "1H" : "15M")})${beStatus}\n` +
+            `• Float: <code>${pnlSign}${pnlPips.toFixed(1)} pips${extraDiff}</code>\n` +
+            `• Entry: <code>${activeTrade.entry.toFixed(asset.digits)}</code>\n` +
+            `• SL: <code>${activeTrade.stop_loss.toFixed(asset.digits)}</code> | TP: <code>${activeTrade.take_profit.toFixed(asset.digits)}</code> (1:${activeTrade.rr || "1.50"}R)`
+          );
+        }
 
         if (price === null) {
           return `<b>${num}. ${asset.name}</b> · <i>Feed Initializing</i>`;
         }
 
-        // 1. CHECK IF PAIR HAS AN ACTIVE RUNNING TRADE
-        const activeTrade = Object.entries(active).find(([k, t]) => getBaseSymbol(k, t) === asset.symbol)?.[1];
-        if (activeTrade) {
-          const isPending = activeTrade.status === "PENDING";
-          const isLong = activeTrade.direction === "LONG";
-
-          if (isPending) {
-            const distPips = (Math.abs(price - activeTrade.entry) / asset.pip).toFixed(1);
-            return (
-              `<b>${num}. ${asset.name}</b> · <code>${price.toFixed(asset.digits)}</code>\n` +
-              `⏳ <b>PENDING ${activeTrade.direction}</b> (${activeTrade.timeframe})\n` +
-              `• Entry Target: <code>${activeTrade.entry}</code> (⏳ ${distPips}p away)\n` +
-              `• Float: <code>0.0 pips (Awaiting Fill)</code>\n` +
-              `• SL: <code>${activeTrade.stop_loss}</code> | TP: <code>${activeTrade.take_profit}</code>`
-            );
+        // Check Rollover Blackout for Gold (20:30 - 22:30 UTC)
+        if (isGold) {
+          const d = new Date();
+          const utcMins = d.getUTCHours() * 60 + d.getUTCMinutes();
+          const isRollover = (utcMins >= 1230 && utcMins <= 1350);
+          if (isRollover) {
+            return `<b>${num}. ${asset.name}</b> · <code>${price.toFixed(asset.digits)}</code>\n🛡 <b>Rollover Blackout Active</b> (20:30-22:30 UTC · Execution Paused)`;
           }
-
-          // Active OPEN position
-          activeCount++;
-          const pnlPips = ((price - activeTrade.entry) / asset.pip) * (isLong ? 1 : -1);
-          const pnlSign = pnlPips >= 0 ? "+" : "";
-          const icon = isLong ? "🟢" : "🔴";
-          const beStatus = activeTrade.partial_taken ? ` 🛡<b>60% Banked (+${activeTrade.partial_banked_r || "0.60"}R)</b>` : (activeTrade.be_active ? " 🛡<b>BE Locked</b>" : "");
-
-          return (
-            `<b>${num}. ${asset.name}</b> · <code>${price.toFixed(asset.digits)}</code>\n` +
-            `${icon} <b>LIVE ${activeTrade.direction}</b> (${activeTrade.timeframe})${beStatus}\n` +
-            `• Float: <code>${pnlSign}${pnlPips.toFixed(1)} pips</code>\n` +
-            `• Entry: <code>${activeTrade.entry}</code>\n` +
-            `• SL: <code>${activeTrade.stop_loss}</code> | TP: <code>${activeTrade.take_profit}</code> (1:${activeTrade.rr || "1.50"}R)`
-          );
-
         }
 
         // 2. NORMAL SURVEILLANCE (NO ACTIVE TRADE)
-        const donchLen = 20;
+        const donchLen = asset.donchian_len || 20;
         let donchHigh = price, donchLow = price;
         if (highs.length >= donchLen && lows.length >= donchLen) {
           donchHigh = Math.max(...highs.slice(-(donchLen + 1), -1));
@@ -1145,10 +1334,13 @@ async function sendRadarMessage(chatId, env) {
           }
         }
 
-        // Calibrate channel minimum for Forex
-        const minChannelPips = 12.0;
+        // Calibrate channel minimum and break distance
+        const minChannelPips = isGold ? 50.0 : 12.0;
         const isCompressing = channelPips < minChannelPips;
-        const breakDistance = 3.0;
+        const breakDistance = isGold ? 15.0 : 3.0;
+
+        const formatDist = (valPips) => isGold ? `$${(valPips * asset.pip).toFixed(1)}/oz` : `${valPips.toFixed(1)}p`;
+        const formatChannel = (valPips) => isGold ? `$${(valPips * asset.pip).toFixed(1)}/oz` : `${valPips.toFixed(0)}p`;
 
         let badge = "", status = "", detail = "";
         if (rsi > 80.0) {
@@ -1162,39 +1354,39 @@ async function sendRadarMessage(chatId, env) {
         } else if (isCompressing) {
           badge = "💤";
           status = "Tight Squeeze (Low Volatility)";
-          detail = `${channelPips.toFixed(0)}p Band · Awaiting Volume`;
+          detail = `${formatChannel(channelPips)} Band · Awaiting Volume`;
         } else if (distHigh <= 0.0 && isBullish && rsi >= 40.0 && rsi <= 80.0) {
           hasImminentBreakout = true;
           badge = "⚡";
           status = "Testing Breakout (Live Bar at High)";
-          detail = `Awaiting 15M Close · Trend Bullish`;
+          detail = `Awaiting Close · Trend Bullish`;
         } else if (distHigh <= breakDistance && isBullish && rsi >= 40.0 && rsi <= 80.0) {
           hasImminentBreakout = true;
           badge = "⚡";
           status = "Imminent Breakout Setup";
-          detail = `${distHigh.toFixed(1)}p to Break · Trend Bullish`;
+          detail = `${formatDist(distHigh)} to Break · Trend Bullish`;
         } else if (distLow <= 0.0 && isBearish && rsi >= 20.0 && rsi <= 60.0) {
           hasImminentBreakout = true;
           badge = "⚡";
           status = "Testing Breakdown (Live Bar at Low)";
-          detail = `Awaiting 15M Close · Trend Bearish`;
+          detail = `Awaiting Close · Trend Bearish`;
         } else if (distLow <= breakDistance && isBearish && rsi >= 20.0 && rsi <= 60.0) {
           hasImminentBreakout = true;
           badge = "⚡";
           status = "Imminent Breakdown Setup";
-          detail = `${distLow.toFixed(1)}p to Break · Trend Bearish`;
+          detail = `${formatDist(distLow)} to Break · Trend Bearish`;
         } else if (posPct >= 80) {
           badge = "👀";
           status = "Testing Range High";
-          detail = `${distHigh.toFixed(1)}p to High · ${posPct.toFixed(0)}% Band`;
+          detail = `${formatDist(distHigh)} to High · ${posPct.toFixed(0)}% Band`;
         } else if (posPct <= 20) {
           badge = "👀";
           status = "Testing Range Low";
-          detail = `${distLow.toFixed(1)}p to Low · ${posPct.toFixed(0)}% Band`;
+          detail = `${formatDist(distLow)} to Low · ${posPct.toFixed(0)}% Band`;
         } else {
           badge = "⏸";
           status = "Range Consolidation";
-          detail = `${channelPips.toFixed(0)}p Channel · Mid-Range (${posPct.toFixed(0)}%)`;
+          detail = `${formatChannel(channelPips)} Channel · Mid-Range (${posPct.toFixed(0)}%)`;
         }
 
         return `<b>${num}. ${asset.name}</b> · <code>${price.toFixed(asset.digits)}</code>\n${badge} <b>${status}</b> (${detail})`;
@@ -1203,45 +1395,6 @@ async function sendRadarMessage(chatId, env) {
       }
     })
   );
-
-  // Spot Gold Satellite Surveillance Card
-  const kv = (env || CURRENT_ENV) && ((env || CURRENT_ENV).TRADE_LEDGER || (env || CURRENT_ENV).TRADES_KV || (env || CURRENT_ENV).KV);
-  try {
-    const goldP = await getLivePriceFast({ symbol: "XAUUSD", ticker: "GC=F", digits: 2 }, 3500);
-    const goldQuoteStr = (goldP !== null && !isNaN(goldP)) ? `$${goldP.toFixed(2)}` : "Awaiting Tick";
-    let goldActive = {};
-    if (kv) {
-      try {
-        goldActive = (await kv.get("gold_active_trades", "json")) || {};
-      } catch (e) {}
-    }
-    const goldActiveEntries = Object.entries(goldActive);
-    if (goldActiveEntries.length > 0) {
-      const [gKey, gTrade] = goldActiveEntries[0];
-      activeCount++;
-      const isLong = gTrade.direction === "LONG";
-      const icon = isLong ? "🟢" : "🔴";
-      const gPips = (goldP !== null && !isNaN(goldP)) ? ((goldP - gTrade.entry) * 10 * (isLong ? 1 : -1)).toFixed(1) : "0.0";
-      const pnlSign = Number(gPips) >= 0 ? "+" : "";
-      const runnerText = gTrade.runner_active ? " 🏃<b>Runner Extended</b>" : (gTrade.cushion_active ? " 🛡<b>Risk Halved</b>" : "");
-      results.push(
-        `🌟 <b>SPOT GOLD (XAUUSD)</b> · <code>${goldQuoteStr}</code>\n` +
-        `${icon} <b>LIVE ${gTrade.direction}</b> (1H Satellite)${runnerText}\n` +
-        `• Float: <code>${pnlSign}${gPips} pips</code>\n` +
-        `• Entry: <code>${gTrade.entry}</code>\n` +
-        `• SL: <code>${gTrade.stop_loss}</code> | TP: <code>${gTrade.take_profit}</code> (1:${gTrade.rr || "1.50"}R)`
-      );
-    } else {
-      const d = new Date();
-      const utcMins = d.getUTCHours() * 60 + d.getUTCMinutes();
-      const isRollover = (utcMins >= 1230 && utcMins <= 1350);
-      const goldStatus = isRollover ? "🛡 <b>Rollover Blackout</b> (20:30-22:30 UTC)" : "🧭 <b>Macro Surveillance Active</b> (USD Flow)";
-      results.push(
-        `🌟 <b>SPOT GOLD (XAUUSD)</b> · <code>${goldQuoteStr}</code>\n` +
-        `${goldStatus}`
-      );
-    }
-  } catch (ge) {}
 
   if (hasImminentBreakout && isMarketOpen()) {
     triggerGitHubScanner(env).catch(() => {});
@@ -1267,7 +1420,7 @@ async function sendRadarMessage(chatId, env) {
         { text: "⚡ Active Trades", callback_data: "cmd_active" }
       ],
       [
-        { text: "🌟 Spot Gold", callback_data: "cmd_gold" },
+        { text: "📊 Live Quotes", callback_data: "cmd_prices" },
         { text: "📜 History", callback_data: "cmd_history" },
         { text: "📈 Performance", callback_data: "cmd_performance" }
       ],
@@ -1277,7 +1430,7 @@ async function sendRadarMessage(chatId, env) {
     ]
   };
 
-  await sendTelegramMessage(chatId, text, keyboard);
+  await sendTelegramMessage(chatId, text, keyboard, env);
 }
 
 /**
@@ -1295,7 +1448,7 @@ async function sendActiveMessage(chatId, env) {
       `━━━━━━━━━━━━━━━━━━\n` +
       `<i>No active positions currently running.</i>\n\n` +
       `Institutional Universe under active surveillance:\n` +
-      `<code>EURUSD · USDCAD · USDCHF · AUDUSD</code> (USDJPY & GBPUSD de-whitelisted)\n\n` +
+      `<code>EURUSD · USDCAD · USDCHF · AUDUSD · XAUUSD</code> (USDJPY & GBPUSD de-whitelisted)\n\n` +
       `Signals trigger strictly on confirmed candle closes.\n` +
       `━━━━━━━━━━━━━━━━━━\n` +
       `🕒 <code>${utcNow}</code>`;
@@ -1313,14 +1466,16 @@ async function sendActiveMessage(chatId, env) {
       ]
     };
 
-    await sendTelegramMessage(chatId, text, keyboard);
+    await sendTelegramMessage(chatId, text, keyboard, env);
     return;
   }
 
   const rows = await Promise.all(
-    activeEntries.map(async ([symbolKey, t], idx) => {
+    activeEntries.map(async ([symbolKey, rawT], idx) => {
       const num = idx + 1;
+      const t = normalizeTrade(rawT);
       const asset = getAssetConfig(symbolKey, t);
+      const isGold = asset.symbol === "XAUUSD";
 
       const isLong = (t.direction || "").toUpperCase() === "LONG";
       const dirIcon = isLong ? "🟢" : "🔴";
@@ -1332,22 +1487,25 @@ async function sendActiveMessage(chatId, env) {
       let floatText = "";
       const isPending = (t.status === "PENDING");
 
-      if (currentPrice !== null) {
+      if (currentPrice !== null && !isNaN(currentPrice)) {
         if (isPending) {
           const distPips = (Math.abs(currentPrice - t.entry) / asset.pip).toFixed(1);
+          const distExtra = isGold ? ` ($${Math.abs(currentPrice - t.entry).toFixed(2)}/oz)` : "";
           floatText = 
             `• Status: ⏳ <b>PENDING ENTRY FILL</b>\n` +
-            `• Live Price: <code>${currentPrice.toFixed(asset.digits)}</code> (⏳ <b>${distPips} pips to entry</b>)\n` +
+            `• Live Price: <code>${currentPrice.toFixed(asset.digits)}</code> (⏳ <b>${distPips} pips${distExtra} to entry</b>)\n` +
             `• Floating PnL: <b>0.0 pips</b> (<i>Awaiting Market Fill · Zero Exposure</i>)\n`;
         } else {
           const pnlPips = ((currentPrice - t.entry) / asset.pip) * (isLong ? 1 : -1);
+          const rawDiff = (currentPrice - t.entry) * (isLong ? 1 : -1);
           const pnlSign = pnlPips >= 0 ? "+" : "";
+          const ptSign = rawDiff >= 0 ? "+" : "";
           const riskDist = Math.abs(t.entry - t.stop_loss) / asset.pip;
           const floatR = riskDist > 0 ? (pnlPips / riskDist).toFixed(2) : "0.00";
           const rSign = parseFloat(floatR) >= 0 ? "+" : "";
           const floatEmoji = pnlPips >= 0 ? "🟢" : "🔻";
-          floatText = `• Live Price: <code>${currentPrice.toFixed(asset.digits)}</code> (${floatEmoji} <b>${pnlSign}${pnlPips.toFixed(1)} pips</b> | <b>${rSign}${floatR}R</b>)\n`;
-
+          const pointsDetail = isGold ? ` · <code>${ptSign}$${rawDiff.toFixed(2)}/oz</code>` : "";
+          floatText = `• Live Price: <code>${currentPrice.toFixed(asset.digits)}</code> (${floatEmoji} <b>${pnlSign}${pnlPips.toFixed(1)} pips</b>${pointsDetail} | <b>${rSign}${floatR}R</b>)\n`;
         }
       } else {
         if (isPending) {
@@ -1360,12 +1518,21 @@ async function sendActiveMessage(chatId, env) {
       const statusBadge = isPending ? `⏳ <b>PENDING ${t.direction}</b>` : `${dirIcon} <b>${t.direction}</b>`;
       const entryLabel = isPending ? "• Entry Target:" : "• Entry:";
 
+      let planDetail = `1 : ${t.rr || t.risk_reward || "1.50"} R:R`;
+      if (isGold) {
+        const lotSize = t.lots ? `${parseFloat(t.lots).toFixed(2)} Lots` : "0.01 Lots";
+        planDetail += ` (${lotSize} · 1H CCRS Macro Flow)`;
+      } else {
+        const lotSize = t.lots ? `${parseFloat(t.lots).toFixed(2)} Lots` : "0.50% Equity Risk · $25 on $5k Prop Account";
+        planDetail += ` (${lotSize})`;
+      }
+
       return (
-        `<b>${num}. ${pName}</b> · ${t.timeframe || "15M"} · ${statusBadge}\n` +
-        `${entryLabel} <code>${t.entry}</code> (${openDate} ${openTime} UTC)\n` +
+        `<b>${num}. ${pName}</b> · ${t.timeframe || (isGold ? "1H" : "15M")} · ${statusBadge}\n` +
+        `${entryLabel} <code>${t.entry.toFixed(asset.digits)}</code> (${openDate} ${openTime} UTC)\n` +
         floatText +
-        `• Targets: SL <code>${t.stop_loss}</code> | TP <code>${t.take_profit}</code>\n` +
-        `• Plan: <b>1 : ${t.rr || t.risk_reward || "1.50"} R:R</b> (0.50% Equity Risk · $25 on $5k Prop Account)`
+        `• Targets: SL <code>${t.stop_loss.toFixed(asset.digits)}</code> | TP <code>${t.take_profit.toFixed(asset.digits)}</code>\n` +
+        `• Plan: <b>${planDetail}</b>`
       );
     })
   );
@@ -1396,7 +1563,7 @@ async function sendActiveMessage(chatId, env) {
     ]
   };
 
-  await sendTelegramMessage(chatId, text, keyboard);
+  await sendTelegramMessage(chatId, text, keyboard, env);
 }
 
 /**
@@ -1411,7 +1578,7 @@ async function sendHistoryMessage(chatId, filterPair = "ALL", filterRange = "ALL
 
   // 1. Filter by Pair
   if (filterPair !== "ALL") {
-    closedTrades = closedTrades.filter(t => (t.symbol || "").toUpperCase() === filterPair.toUpperCase());
+    closedTrades = closedTrades.filter(t => getBaseSymbol(t.symbol || t.pair, t) === filterPair.toUpperCase());
   }
 
   // 2. Filter by Date Range
@@ -1494,6 +1661,9 @@ async function sendHistoryMessage(chatId, filterPair = "ALL", filterRange = "ALL
         { text: "AUD/USD", callback_data: "hist_pair_AUDUSD" }
       ],
       [
+        { text: "XAU/USD (Gold)", callback_data: "hist_pair_XAUUSD" }
+      ],
+      [
         { text: "⚡ Active Trades", callback_data: "cmd_active" },
         { text: "📈 Performance", callback_data: "cmd_performance" },
         { text: "« Menu", callback_data: "cmd_menu" }
@@ -1501,7 +1671,7 @@ async function sendHistoryMessage(chatId, filterPair = "ALL", filterRange = "ALL
     ]
   };
 
-  await sendTelegramMessage(chatId, text, keyboard);
+  await sendTelegramMessage(chatId, text, keyboard, env);
 }
 
 /**
@@ -1515,8 +1685,8 @@ async function sendPerformanceMessage(chatId, filterPair = "ALL", env) {
   let active = Object.values(activeMap);
 
   if (filterPair !== "ALL") {
-    closed = closed.filter(t => (t.symbol || "").toUpperCase() === filterPair.toUpperCase());
-    active = active.filter(t => (t.symbol || "").toUpperCase() === filterPair.toUpperCase());
+    closed = closed.filter(t => getBaseSymbol(t.symbol || t.pair, t) === filterPair.toUpperCase());
+    active = active.filter(t => getBaseSymbol(t.symbol || t.pair, t) === filterPair.toUpperCase());
   }
 
   const totalClosed = closed.length;
@@ -1589,7 +1759,8 @@ async function sendPerformanceMessage(chatId, filterPair = "ALL", env) {
         { text: "USD/CHF", callback_data: "perf_pair_USDCHF" }
       ],
       [
-        { text: "AUD/USD", callback_data: "perf_pair_AUDUSD" }
+        { text: "AUD/USD", callback_data: "perf_pair_AUDUSD" },
+        { text: "XAU/USD (Gold)", callback_data: "perf_pair_XAUUSD" }
       ],
       [
         { text: "⚡ Active", callback_data: "cmd_active" },
@@ -1599,7 +1770,7 @@ async function sendPerformanceMessage(chatId, filterPair = "ALL", env) {
     ]
   };
 
-  await sendTelegramMessage(chatId, text, keyboard);
+  await sendTelegramMessage(chatId, text, keyboard, env);
 }
 
 /**
@@ -1720,89 +1891,9 @@ async function sendPatternsMessage(chatId, env) {
  * /prices - Raw live price table
  */
 
-/**
- * /gold - Dedicated Gold Satellite Engine Status & Live Spot Quote
- */
-async function sendGoldMessage(chatId, env = null) {
-  const utcNow = new Date().toISOString().replace("T", " ").substring(0, 16) + " UTC";
-  const p = await getLivePriceFast({ symbol: "XAUUSD", ticker: "GC=F", digits: 2 }, 4000);
-  const quoteStr = (p !== null && !isNaN(p)) ? `$${p.toFixed(2)}` : "Awaiting Tick";
 
-  const d = new Date();
-  const utcMins = d.getUTCHours() * 60 + d.getUTCMinutes();
-  const isRollover = (utcMins >= 1230 && utcMins <= 1350);
-  const rolloverStatus = isRollover 
-    ? "⚠️ ACTIVE (20:30-22:30 UTC - Execution Suppressed)"
-    : "🟢 INACTIVE (Clean Execution Window)";
 
-  // Check Cloudflare KV for running Gold satellite positions
-  const kv = (env || CURRENT_ENV) && ((env || CURRENT_ENV).TRADE_LEDGER || (env || CURRENT_ENV).TRADES_KV || (env || CURRENT_ENV).KV);
-  let goldActive = {};
-  if (kv) {
-    try {
-      goldActive = (await kv.get("gold_active_trades", "json")) || {};
-    } catch (e) {}
-  }
-  const activeEntries = Object.entries(goldActive);
-  let activePosText = "• <b>Active Position:</b> <code>NONE (Standby for CCRS Macro Trigger)</code>\n";
-  if (activeEntries.length > 0) {
-    const [tId, t] = activeEntries[0];
-    const dir = (t.direction || "LONG").toUpperCase();
-    const dirIcon = dir === "LONG" ? "🟢" : "🔴";
-    const entryPrice = parseFloat(t.entry_price || t.entry || 0);
-    const slPrice = parseFloat(t.current_sl_price || t.sl_price || t.stop_loss || 0);
-    const tpPrice = parseFloat(t.current_tp_price || t.tp_price || t.take_profit || 0);
-    const lots = parseFloat(t.lots || 0.01);
-    let floatPnlText = "";
-    if (p !== null && !isNaN(p) && entryPrice > 0) {
-      const oz = lots * 100.0;
-      const rawDiff = dir === "LONG" ? (p - entryPrice) : (entryPrice - p);
-      const floatPnl = (rawDiff * oz) - (oz * 0.36);
-      const sign = floatPnl >= 0 ? "+" : "";
-      floatPnlText = ` · Floating: <b>${sign}$${floatPnl.toFixed(2)}</b>`;
-    }
-    const stage = t.cushion_stage || 0;
-    const stageDesc = stage === 2 ? " [Runner Extended]" : stage === 1 ? " [Risk Halved]" : "";
-    activePosText = 
-      `• <b>Active Position:</b> ${dirIcon} <b>${dir} ${lots.toFixed(2)} Lots</b> @ $${entryPrice.toFixed(2)}
-` +
-      `  • Current SL: <code>$${slPrice.toFixed(2)}</code> | TP: <code>$${tpPrice.toFixed(2)}</code>${stageDesc}${floatPnlText}\n`;
-  }
-
-  const text = 
-    `🟡 <b>GOLD SATELLITE ENGINE (XAUUSD)</b>\n` +
-    `━━━━━━━━━━━━━━━━━━\n` +
-    `• <b>Live Spot Quote:</b> <code>${quoteStr} / oz</code>\n` +
-    activePosText +
-    `• <b>Engine Status:</b> <code>ONLINE (Isolated Satellite Mode)</code>\n` +
-    `• <b>Contract Sizing:</b> <code>100 oz / Std Lot ($100/pt · 0.01 Min)</code>\n` +
-    `• <b>Stop Loss Model:</b> <code>2.0× ATR(14) Dynamic ($20.0 - $35.0 pts)</code>\n` +
-    `• <b>Target Geometry:</b> <code>1:1.50 R:R + Volatility Cushion Runner</code>\n` +
-    `• <b>Trailing Protection:</b> <code>Tier 1 (+1.2R halving) · Tier 2 (+1.5R profit lock)</code>\n` +
-    `• <b>Macro Factor:</b> <code>CCRS USD Factor (|Z_USD| ≥ 1.75σ)</code>\n` +
-    `• <b>Correlation Interlock:</b> <code>Max 2 Net USD Exposure (Cross-Engine)</code>\n` +
-    `• <b>Rollover Blackout:</b> <code>${rolloverStatus}</code>\n` +
-    `• <b>Weekend Cutoff:</b> <code>Friday 16:00 UTC Mandatory Flat Exit</code>\n` +
-    `━━━━━━━━━━━━━━━━━━\n` +
-    `🕒 <code>${utcNow}</code> · <i>GC=F Interbank Feed</i>`;
-
-  const keyboard = {
-    inline_keyboard: [
-      [
-        { text: "🔄 Refresh Gold Quote", callback_data: "cmd_gold" },
-        { text: "📊 All Quotes", callback_data: "cmd_prices" }
-      ],
-      [
-        { text: "📡 Market Radar", callback_data: "cmd_radar" },
-        { text: "⚡ Active Trades", callback_data: "cmd_active" }
-      ]
-    ]
-  };
-
-  await sendTelegramMessage(chatId, text, keyboard);
-}
-
-async function sendPricesMessage(chatId) {
+async function sendPricesMessage(chatId, env = null) {
   const utcNow = new Date().toISOString().replace("T", " ").substring(0, 16) + " UTC";
   const marketStatus = isMarketOpen()
     ? `🟢 <b>Market Status:</b> <code>OPEN (Live Trading)</code>`
@@ -1829,22 +1920,22 @@ async function sendPricesMessage(chatId) {
     marketStatus + "\n\n" +
     rows.join("\n") + "\n" +
     `━━━━━━━━━━━━━━━━━━\n` +
-    `🕒 <code>${utcNow}</code> · <i>MT5 Spot Feed</i>`;
+    `🕒 <code>${utcNow}</code> · <i>Live Interbank Feed</i>`;
 
   const keyboard = {
     inline_keyboard: [
       [
         { text: "📡 Market Radar", callback_data: "cmd_radar" },
-        { text: "🔄 Refresh Quotes", callback_data: "cmd_prices" },
-        { text: "🟡 Spot Gold", callback_data: "cmd_gold" }
+        { text: "🔄 Refresh Quotes", callback_data: "cmd_prices" }
       ],
       [
+        { text: "⚡ Active Trades", callback_data: "cmd_active" },
         { text: "« Main Menu", callback_data: "cmd_menu" }
       ]
     ]
   };
 
-  await sendTelegramMessage(chatId, text, keyboard);
+  await sendTelegramMessage(chatId, text, keyboard, env);
 }
 
 /**
@@ -1918,7 +2009,7 @@ async function sendStatusMessage(chatId, env) {
     ]
   };
 
-  await sendTelegramMessage(chatId, text, keyboard);
+  await sendTelegramMessage(chatId, text, keyboard, env);
 }
 
 /**
@@ -1968,9 +2059,9 @@ async function sendStrategyMessage(chatId) {
 ` +
     `• <b>Economic News Filter:</b> 30-min blackout around Red Folder releases
 ` +
-    `• <b>Monitored Universe:</b> 4 Active Forex Pairs (<code>EURUSD · USDCAD · USDCHF · AUDUSD</code>) [<code>USDJPY, GBPUSD</code> de-whitelisted: BoJ intervention chop & Cable whipsaw traps]
+    `• <b>Monitored Universe:</b> 4 Active Forex Pairs (<code>EURUSD · USDCAD · USDCHF · AUDUSD</code>) + Isolated Gold Satellite (<code>XAUUSD</code>) [<code>USDJPY, GBPUSD</code> de-whitelisted: BoJ intervention chop & Cable whipsaw traps]
 ` +
-    `• <b>Strict Invariant:</b> Zero Gold (XAUUSD permanently disabled)
+    `• <b>Commodity Engine:</b> 1H CCRS USD Factor (|Z_USD| ≥ 1.25σ) + Donchian Reclaim
 ` +
     `━━━━━━━━━━━━━━━━━━
 ` +
@@ -2045,7 +2136,7 @@ async function sendMenuMessage(chatId, env) {
     `🏛 <b>INSTITUTIONAL SIGNAL TERMINAL v3.0</b>\n` +
     `━━━━━━━━━━━━━━━━━━\n` +
     `Automated 24/7 Algorithmic Trading &amp; Forward Verification\n` +
-    `Coverage: <b>6 Major Forex Pairs (Zero Gold)</b>\n\n` +
+    `Coverage: <b>4 Active Forex Majors + Gold Satellite (XAUUSD)</b>\n\n` +
     `<b>SYSTEM MODULES</b>\n` +
     `1. /active ── Running trades &amp; live float pips\n` +
     `2. /radar ── Market surveillance &amp; imminent breakouts\n` +
@@ -2080,7 +2171,7 @@ async function sendMenuMessage(chatId, env) {
     ]
   };
 
-  await sendTelegramMessage(chatId, text, keyboard);
+  await sendTelegramMessage(chatId, text, keyboard, env);
 }
 
 /**
@@ -2124,14 +2215,22 @@ async function handleIncomingSignal(payload, env) {
     const goldTradeEntry = {
       trade_id: payload.id || `GOLD_${Date.now()}`,
       symbol: "XAUUSD",
+      pair: "XAU/USD (Gold)",
       direction: dir,
+      entry: entryPrice,
       entry_price: entryPrice,
       sl_price: slPrice,
       tp_price: tpPrice,
+      stop_loss: slPrice,
+      take_profit: tpPrice,
       current_sl_price: slPrice,
       current_tp_price: tpPrice,
       init_sl_points: slPts,
       lots: lots,
+      pip: 0.1,
+      digits: 2,
+      timeframe: "1H",
+      opened_at: barTime,
       entry_time: barTime,
       status: "OPEN"
     };
@@ -2139,9 +2238,12 @@ async function handleIncomingSignal(payload, env) {
     const kv = env && (env.TRADE_LEDGER || env.TRADES_KV || env.KV);
     if (kv) {
       try {
-        const active = (await kv.get("gold_active_trades", "json")) || {};
+        const goldActive = (await kv.get("gold_active_trades", "json")) || {};
+        goldActive[goldTradeEntry.trade_id] = goldTradeEntry;
+        await kv.put("gold_active_trades", JSON.stringify(goldActive));
+        const active = (await kv.get("active_trades", "json")) || {};
         active[goldTradeEntry.trade_id] = goldTradeEntry;
-        await kv.put("gold_active_trades", JSON.stringify(active));
+        await kv.put("active_trades", JSON.stringify(active));
       } catch (e) {
         console.error("KV save error on gold incoming signal:", e);
       }

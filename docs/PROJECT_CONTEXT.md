@@ -11,7 +11,7 @@
 
 The system operates primarily via a **24/7 Serverless Cloud Architecture**:
 1. **Surveillance Runner (`market_scanner.py`):** Runs every 15 minutes during Forex market hours via GitHub Actions (`.github/workflows/scanner.yml`). Connects to Yahoo Finance, calculates indicators on closed bars, identifies institutional ICT Liquidity Sweeps and Pullback Rejections across 6 Forex pairs, monitors active positions, and sends Telegram alerts.
-2. **Edge Gateway & Router (`cloudflare_worker.js`):** Hosted on Cloudflare Workers (`tradingview-telegram-relay.siddiqsiddiq00012.workers.dev`). Maintains active and completed trade state in Cloudflare KV, routes Telegram commands (`/radar`, `/prices`, `/history`, `/performance`, `/strategy`, `/status`), and ensures 24/7 Telegram responsiveness.
+2. **Edge Gateway & Router (`cloudflare_worker.js`):** Hosted on Cloudflare Workers (`tradingview-telegram-relay.siddiqsiddiq00012.workers.dev`). Maintains active and completed trade state in Cloudflare KV (merging Forex and Gold Satellite ledgers), routes Telegram commands (`/radar`, `/prices`, `/active`, `/history`, `/performance`, `/strategy`, `/status`), and ensures 24/7 Telegram responsiveness with unified multi-asset reporting across Forex and Gold (no separate command needed).
 3. **Trade Ledger & Diagnostics:** State stored in `trade_records.json` and synchronized with Cloudflare KV. `core/post_mortem.py` logs trade excursions (MFE/MAE) and failure classifications to `data/patterns/` and `journals/`.
 4. **Secondary / Legacy Framework (`app/`):** FastAPI webhook service with SQLite database (`forex_signals.db`) designed to receive TradingView alert webhooks. Currently disconnected from the active 24/7 market scanner pipeline.
 

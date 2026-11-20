@@ -260,8 +260,24 @@ This document tracks verified defects, architectural discrepancies, and security
 * **Remediation Implemented:**
   - Enforced strict CCRS exclusivity in `market_scanner.py`: when `ccrs_matrix` is present, neutral macro flow or unconfirmed triggers stand down immediately (`return []`) rather than falling through to non-CCRS breakout entries.
   - Excluded 10:00 UTC and 14:00 UTC from `INSTITUTIONAL_HOURS` in `core/config.py` and added explicit execution guards in `market_scanner.py`.
+---
 
+### ISSUE-EDGE-01: Telegram Bot /radar & /active Gold Presentation Disjoint and State Exclusion
 
-
+* **Severity:** **Medium** (State Visibility & UI Consistency Defect)
+* **Status:** **REMEDIATED IN CODE (2026-11-20)** — Tested and verified with Node CJS integration runner and pytest test suite.
+* **Affected Files:** `cloudflare_worker.js`
+* **Root Cause:**
+  1. */radar Disjoint Formatting:* `/radar` mapped only 6 Forex pairs in its primary surveillance loop with Donchian channels, EMAs, and RSI, appending Gold as a static, unnumbered, hardcoded card at the bottom with inconsistent units and styling.
+  2. *Active Trade State Exclusion:* Legacy sanitization logic in `sanitizeLedger` explicitly purged any trade where `sym === "XAUUSD" || sym === "GOLD" || sym.includes("XAU")`. Additionally, `getLedger` queried only `active_trades` and ignored `gold_active_trades` in Cloudflare KV.
+  3. */active Blind to Commodity Alpha:* Active Gold trades never appeared in `/active`, forcing users to use `/gold`, which was cluttered with a 12-line wall of documentation text.
+* **Remediation Implemented:**
+  1. Added Gold (`XAU/USD (Gold)`) to `ASSETS` and `ALL_KNOWN_CONFIGS` with `symbol: "XAUUSD"`, `ticker: "GC=F"`, `pip: 0.1`, `digits: 2`, and `donchian_len: 10`.
+  2. Implemented `normalizeTrade()` to standardize trade schemas across Forex and Gold (`entry`, `stop_loss`, `take_profit`, `opened_at`, `timeframe`, `pip`, `digits`, `rr`, `lots`, `direction`).
+  3. Rewrote `getLedger()` and `sanitizeLedger()` to merge `gold_active_trades` and `gold_completed_trades` from KV and GitHub fallbacks, eliminating the legacy exclusion filter.
+  4. Updated `/radar` to incorporate Gold as item #7 directly inside the numbered asset surveillance list with unified formatting (live price, Donchian range in $/oz and pips, 20/50 EMA, RSI, and breakout/consolidation posture), removing the redundant bottom card.
+  5. Updated `/active` to render Gold trades seamlessly alongside Forex majors, reporting floating PnL in both pips and points (`+$X.XX/oz`).
+  6. Eliminated the separate `/gold` command entirely; any `/gold` command or callback now transparently redirects to the unified `/radar` surveillance terminal, and all menus/keyboards reflect the consolidated universe.
+  7. Updated `/prices` to stream Gold quotes alongside Forex pairs.
 
 
