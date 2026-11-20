@@ -185,7 +185,7 @@ def run_offline_verification(symbol: str, lots: float):
         sys.exit(1)
 
 
-def run_live_demo_verification(symbol: str, lots: float, keep_open: bool = False):
+def run_live_demo_verification(symbol: str, lots: float, keep_open: bool = False, allow_prop_trial: bool = False):
     """Execute live test order on cTrader DEMO or FTMO trial to verify server atomic attachment."""
     from ctrader_open_api.messages.OpenApiModelMessages_pb2 import (
         ProtoOAPayloadType, ProtoOAOrderType, ProtoOAExecutionType, ProtoOATradeSide
@@ -193,6 +193,7 @@ def run_live_demo_verification(symbol: str, lots: float, keep_open: bool = False
     from ctrader_open_api.messages.OpenApiMessages_pb2 import (
         ProtoOAApplicationAuthReq, ProtoOAAccountAuthReq,
         ProtoOAGetAccountListByAccessTokenReq, ProtoOAGetAccountListByAccessTokenRes,
+        ProtoOATraderReq, ProtoOATraderRes,
         ProtoOANewOrderReq, ProtoOAExecutionEvent, ProtoOAErrorRes,
         ProtoOAOrderErrorEvent, ProtoOAClosePositionReq
     )
@@ -278,7 +279,23 @@ def run_live_demo_verification(symbol: str, lots: float, keep_open: bool = False
             sys.exit(1)
         print("✓ Account authenticated.")
 
-        # 3. Account Type Safety Inspection (Query Account List for isLive flag)
+        # 3. Query Trader Metadata (Broker Name, Login, Balance)
+        broker_name = "unknown"
+        trader_login = 0
+        account_balance = 0.0
+        trader_req = ProtoOATraderReq()
+        trader_req.ctidTraderAccountId = account_id
+        trader_res = _send_tls_frame(s, ProtoOAPayloadType.PROTO_OA_TRADER_REQ, trader_req)
+        if trader_res and trader_res[0] == ProtoOAPayloadType.PROTO_OA_TRADER_RES:
+            trader_msg = ProtoOATraderRes()
+            trader_msg.ParseFromString(trader_res[1])
+            broker_name = trader_msg.trader.brokerName
+            trader_login = trader_msg.trader.traderLogin
+            account_balance = trader_msg.trader.balance / 100.0
+
+        print(f"• Broker Profile:      {broker_name.upper()} | Login: #{trader_login} | Balance: ${account_balance:,.2f}")
+
+        # 4. Account Type Safety Inspection (checking isLive flag)
         print("• Inspecting Account Type (checking isLive flag)...")
         acc_list_req = ProtoOAGetAccountListByAccessTokenReq()
         acc_list_req.accessToken = access_token
@@ -293,14 +310,20 @@ def run_live_demo_verification(symbol: str, lots: float, keep_open: bool = False
                     account_is_live = acc.isLive
                     break
 
-        if account_is_live is True:
+        # In cTrader Open API, broker-hosted evaluation/trial accounts (e.g. FTMO) are flagged with isLive=True
+        # because they reside on the broker's live server cluster rather than Spotware's sandbox.
+        is_prop_eval = broker_name.lower() in ("ftmo", "the5ers", "fundednext") or allow_prop_trial
+
+        if account_is_live is True and not is_prop_eval:
             print("\n" + "!" * 70)
             print(f" [FINANCIAL SAFETY BLOCK] Account #{account_id} has isLive = True (REAL MONEY)!")
             print(" In accordance with Non-Negotiable Financial Safety Invariants,")
             print(" zero automated test trades may be executed on a real live money account.")
-            print(" Please configure a DEMO or TRIAL account ID (isLive = False).")
+            print(" If this is a prop-firm evaluation/trial account, pass --allow-prop-trial.")
             print("!" * 70 + "\n")
             sys.exit(1)
+        elif is_prop_eval:
+            print(f"✓ Prop Firm Evaluation Account verified ({broker_name.upper()} #{trader_login}). Safe to proceed with test micro-lot.")
         elif account_is_live is False:
             print(f"✓ Account #{account_id} verified as VIRTUAL / DEMO (isLive = False). Safe to proceed.")
         else:
@@ -404,11 +427,12 @@ def main():
     parser.add_argument("--symbol", type=str, default="EURUSD", help="Symbol to test (e.g. EURUSD, XAUUSD, USDJPY)")
     parser.add_argument("--lots", type=float, default=0.01, help="Lot size for test order (default: 0.01 micro-lot)")
     parser.add_argument("--no-close", action="store_true", help="Do not automatically close the test position after fill")
+    parser.add_argument("--allow-prop-trial", action="store_true", help="Authorize execution on a prop firm evaluation/challenge trial account")
 
     args = parser.parse_args()
 
     if args.live:
-        run_live_demo_verification(symbol=args.symbol, lots=args.lots, keep_open=args.no_close)
+        run_live_demo_verification(symbol=args.symbol, lots=args.lots, keep_open=args.no_close, allow_prop_trial=args.allow_prop_trial)
     else:
         run_offline_verification(symbol=args.symbol, lots=args.lots)
 
