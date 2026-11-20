@@ -14,8 +14,9 @@ This analysis evaluates three hosting architectures for running the institutiona
 
 | Option | Monthly Cost | Execution Latency | Monthly Uptime | State Persistence Model | Risk Profile | Recommendation |
 | :--- | :---: | :---: | :---: | :--- | :--- | :---: |
-| **Option A: GitHub Actions (Private Repo)** | **$0.00 – $37.49/mo** | Variable (30s – 15m queue jitter) | ~99.5% | Ephemeral runner; git commits to repo branch | High cost if untrimmed; queue delay breaches 15M timing; eventual consistency risks | ⚠️ Viable for Seed Challenge *only if trimmed* |
-| **Option B: Dedicated Small Cloud VPS** | **$4.00 – $6.49/mo** | **Deterministic (<1 sec)** | **99.9%** | **Local persistent SSD (ACID SQLite / JSON)** | Clean isolation; reliable 24/5 daemon loop; zero queue latency | ✅ **STRONGLY RECOMMENDED for Scale** |
+| **Option A1: GitHub Actions (Public Repo - Current)** | **$0.00 / month (Unlimited Free Compute)** | Variable (30s – 15m queue jitter) | ~99.5% | Ephemeral runner; git commits to repo | Zero compute cost; requires strict secrets sanitation; public visibility of ledger commits | ✅ **Current Production Runner (Dec 1 Seed)** |
+| **Option A2: GitHub Actions (Private Repo)** | **$0.00 – $37.49/mo** (if private) | Variable (30s – 15m queue jitter) | ~99.5% | Ephemeral runner; git commits to repo | Costly if untrimmed; halts on minute exhaustion if billing cap hit | ⚠️ Unnecessary while public |
+| **Option B: Dedicated Small Cloud VPS** | **$4.00 – $6.49/mo** | **Deterministic (<1 sec)** | **99.9%** | **Local persistent SSD (ACID SQLite / JSON)** | Clean isolation; reliable 24/5 daemon loop; zero queue latency | ✅ **STRONGLY RECOMMENDED for 5-Account Scale** |
 | **Option C: Local Linux Machine** | **$0.00** | Deterministic (<1 sec) | Variable (power/ISP dependent) | Local filesystem shared with Phantom | Home power/ISP outages risk unmonitored positions; requires 24/5 workstation uptime | ⚠️ Backup / Development Only |
 
 ---
@@ -52,31 +53,31 @@ If the workflow crons are trimmed to run strictly during active market hours (`6
 
 ---
 
-### 2.2 GitHub Actions Pricing & Billed Compute Allowances
+### 2.2 GitHub Actions Pricing, Allowance Reconciliation & Compute Model
 
-The following external pricing facts were verified on **November 20, 2026** against official GitHub documentation:
+#### Reconciliation: $12.00 Monthly Compute Allowance vs. 2,000 Free Minutes
+There is often confusion between "2,000 free minutes" and the "$12.00 free monthly compute allowance". Below is the exact reconciliation verified against official GitHub documentation:
 
 > **Source:** [GitHub Docs: About billing for GitHub Actions](https://docs.github.com/en/billing/managing-billing-for-github-actions/about-billing-for-github-actions) `[VERIFIED 2026-11-20]`  
-> * "GitHub Actions usage is divided into two primary categories: Compute and Storage."  
-> * "Each plan includes a monthly amount of included compute usage expressed as a monetary value (rather than a static number of minutes)."  
-> * **GitHub Free (Personal & Organizations):** **$12.00 USD included compute / month**, 500 MB storage.  
-> * **GitHub Pro:** **$18.00 USD included compute / month**, 1 GB storage ($4.00/mo subscription).  
-> * **GitHub Team:** **$18.00 USD included compute / month**, 2 GB storage.  
-> * **Standard Runners on Public Repositories:** Free and unlimited.  
-> * **Standard Runners on Private Repositories:** Draws from the account's monthly compute allowance, then billed at metered per-minute rates.
+> * *"Each plan includes a monthly amount of included compute usage expressed as a monetary value (rather than a static number of minutes)."*  
+> * *"GitHub Free (Personal): $12 USD included compute, 500 MB storage"*  
+> * *"Standard GitHub-hosted runners for public repositories are entirely free and do not draw from your included compute allowance."*  
 
 > **Source:** [GitHub Docs: Per-minute rates for standard GitHub-hosted runners](https://docs.github.com/en/billing/managing-billing-for-github-actions/about-billing-for-github-actions#per-minute-rates) `[VERIFIED 2026-11-20]`  
-> * **Linux 2-core (x64 / standard `ubuntu-latest`):** **$0.006 USD per minute**.  
-> * **Linux 2-core (arm64):** **$0.005 USD per minute**.  
-> * **Linux 1-core (slim container):** **$0.002 USD per minute**.  
-> * **Windows 2-core:** **$0.010 USD per minute**.  
-> * **macOS 3/4-core:** **$0.062 USD per minute**.  
+> * *"Linux 2-core (x64 / standard `ubuntu-latest`): $0.006 USD per minute"*  
+> * *"Linux 1-core (slim container): $0.002 USD per minute"*  
+> * *"Linux 2-core (arm64): $0.005 USD per minute"*  
+> * *"Windows 2-core: $0.010 USD per minute"*  
+> * *"macOS 3/4-core: $0.062 USD per minute"*  
 
-#### Equivalent Linux 2-Core Minutes
-On standard Linux 2-core runners (`ubuntu-latest`):
-* **GitHub Free ($12.00 compute):** $\$12.00 / \$0.006 = \mathbf{2,000 \text{ standard Linux minutes / month}}$.
-* **GitHub Pro ($18.00 compute):** $\$18.00 / \$0.006 = \mathbf{3,000 \text{ standard Linux minutes / month}}$.
-* **Overage Rate:** **$0.006 per minute** (billed once the free dollar allowance is depleted).
+* **Historical Baseline:** GitHub previously documented Actions limits as a static minute quota: *"2,000 minutes per month on GitHub Free for private repositories."*
+* **Current Monetary Mechanism:** GitHub now assigns a **$12.00 USD monthly compute credit pool**.
+* **Exact Mathematical Equivalence:**
+  $$\frac{\$12.00 \text{ included compute}}{\$0.006 \text{ per minute (standard Linux 2-core)}} = \mathbf{2,000 \text{ standard Linux 2-core minutes / month}}$$
+  The $12.00 figure is the exact monetary equivalent of the 2,000 Linux 2-core minutes. However, because it is an expenditure pool:
+  * If executing on 1-core Linux ($0.002/min), $12.00 yields **6,000 minutes**.
+  * If executing on Windows ($0.010/min), $12.00 yields **1,200 minutes**.
+  * If executing on macOS ($0.062/min), $12.00 yields only **193 minutes**.
 
 ---
 
@@ -110,29 +111,28 @@ The 45 to 75 second execution estimate is an assumption that must be measured di
 
 ---
 
-### 2.4 Trimmed vs. Current Schedule & Fail-Safe Necessity
+### 2.4 Current vs. Trimmed Schedule & Why Trimming Is Blocked
 
-#### Why the Fail-Safe Schedule Was Introduced
-The fail-safe schedule (`:09, :24, :39, :54`) was originally configured to catch dropped runs if GitHub's shared runner queues lagged during peak market opens.
+#### Operational Schedule Reality
+The scanner workflow runs on two schedules across all 24 hours of Monday through Friday (UTC):
+* Primary: `2,17,32,47 * * * 1-5` (4 runs/hour)
+* Fail-safe: `9,24,39,54 * * * 1-5` (4 runs/hour)
+Total: 8 runs/hour $\times$ 24 hours $\times$ ~21.67 weekdays $\approx$ **4,160 runs / month**.
 
-#### Operational Concurrency Hazard
-Line 13–15 of [`.github/workflows/scanner.yml`](../.github/workflows/scanner.yml#L13-L15) defines:
-```yaml
-concurrency:
-  group: market-scanner
-  cancel-in-progress: false
-```
-Because `cancel-in-progress` is `false`, if a primary run at `:02` experiences runner queuing and starts at `:08`, the fail-safe run at `:09` will NOT cancel. Instead, it waits in the queue and executes immediately after the primary run finishes. Both runs execute back-to-back, doubling minute consumption without discovering any new candle information (the next 15M candle has not closed yet).
+#### Why Trimming to Entry Hours (`06:00–17:00 UTC`) Is Prohibited
+While new signal generation is gated to London and New York volume windows, **dynamic trade management and strategy exits operate 24 hours a day during market hours**. Trimming the workflow to entry-only hours would blind the bot to price action outside those windows, completely disabling:
+1. 20-EMA trend closure invalidation for open trades held into European lunch or US afternoon/evening.
+2. Weekend flat liquidation before market close on Friday.
+3. Volatility Cushion profit locking and trailing stop updates occurring during non-entry hours.
+4. Setup timeouts on pending orders placed near the end of a session.
 
-#### Recommendation on Schedules
-1. **Drop the fail-safe schedule entirely.** The primary offset schedule (`:02, :17, :32, :47`) already clears the top-of-the-hour queue crush (`:00, :15, :30, :45`).
-2. **Trim to active market hours (`6-17` UTC).** Running 48 times/day yields ~1,040 runs/month. If job duration stays under 60 seconds (aided by pip caching), **GitHub Actions remains 100% free even on a private repository**.
+Therefore, **the workflow schedule must remain running 24/5 during market hours**.
 
 ---
 
 ### 2.5 Behaviour When Free Minutes Run Out & Open Position Protection
 
-#### What Happens When Minutes Exhaust
+#### What Happens When Minutes Exhaust (Private Repository)
 If the account reaches its $12.00 compute limit on GitHub Free without a payment card or spending limit configured:
 1. GitHub Actions immediately disables scheduled workflow runs.
 2. The scanner stops triggering. Telegram alerts stop.
@@ -144,7 +144,36 @@ If the account reaches its $12.00 compute limit on GitHub Free without a payment
   1. *Early Invalidation Closes:* 20-EMA trend closure exits.
   2. *Volatility Cushion Trailing:* Locking break-even at +1.20R or trailing stops behind Donchian swings.
   3. *Session Timeout Exits:* 4-hour max hold exits on stagnating setups.
-  Positions will remain open until they touch either the original hard SL or the full Take Profit target.
+  4. *Friday Weekend Flat Cutoffs:* Unhedged weekend carry risk.
+
+---
+
+### 2.6 Strategy Exits & Management Checks Requiring 24/5 Scanner Execution
+
+The following table documents every strategy check, exit trigger, and holding rule in the bot that requires the scanner to execute continuously outside entry hours:
+
+| Strategy Check / Exit Rule | Source File & Location | Active Hours / Trigger Window | Failure Impact if Scanner Is Stopped Outside Entry Hours |
+| :--- | :--- | :--- | :--- |
+| **20-EMA Trend Invalidation Exit** | `market_scanner.py` (`manage_open_trades`) | Continuous (any confirmed 15M bar close) | Trade cannot exit upon macro invalidation; floats to full 2.0x ATR Stop Loss, increasing drawdown. |
+| **Setup Window Expiration** | `market_scanner.py` (`check_pending_orders`, lines 560–577, 795–863) | 2.0h (15M) or 4.0h (1H) post-signal | Stale setups placed late in the session (e.g. 16:30 UTC) will not expire at 18:30 UTC, risking late fills in illiquid hours. |
+| **Max Hold Timeout (36h to 48h)** | `market_scanner.py` (lines 775, 2546, 2677) | Continuous (any hour when hold duration $\ge$ 36h/48h) | Stagnating swing positions fail to close, tying up margin and accumulating rollover swap costs. |
+| **Friday Market Flat Cutoff** | `market_scanner.py` (lines 74, 2202) | Friday 17:00–21:00 UTC | Open positions fail to close before market close (21:59 UTC), violating prop firm weekend holding rules and risking weekend gap slippage. |
+| **Gold Weekend Flat Cutoff** | `satellite/market_scanner_gold.py` | Friday 21:00 UTC | Open XAUUSD positions carried into the weekend, risking catastrophic Sunday opening price gaps ($30–$50/oz). |
+| **Volatility Cushion Trailing Updates** | `core/ctrader_executor.py` (`modify_ctrader_position`), `market_scanner.py` | Continuous (any confirmed 15M bar crossing +1.20R, +1.50R, +2.00R) | Trailing stop cannot ratchet forward; winning trades (+1.20R to +1.80R) can reverse into full losses without locking break-even or profit. |
+
+---
+
+### 2.7 Public Repository Analysis (Zero Compute Cost & Unlimited Runtime)
+
+> **Source:** [GitHub Docs: About billing for GitHub Actions](https://docs.github.com/en/billing/managing-billing-for-github-actions/about-billing-for-github-actions) `[VERIFIED 2026-11-20]`  
+> *"Standard GitHub-hosted runners for public repositories are entirely free and do not draw from your included compute allowance."*  
+
+Because the repository is retained as a **public repository**:
+1. **$0.00 Monthly Compute Cost:** The 4,160 monthly workflow executions on `ubuntu-latest` consume **$0.00 USD**. There is zero draw against the $12.00 compute allowance, zero minute overage billing, and zero risk of GitHub Actions halting due to minute exhaustion.
+2. **24/5 Surveillance Intact:** The dual-schedule 24/5 execution can continue running uninterrupted, preserving all dynamic exits (20-EMA invalidation, setup timeouts, weekend flat cutoffs, and Volatility Cushion trailing).
+3. **Public Security Invariants (Mandatory):**
+   * **Zero Secret Exposure in Tree or Logs:** API keys, broker account numbers, tokens, and client secrets must **never** be hardcoded or printed. They reside strictly in encrypted GitHub Repository Secrets (`${{ secrets.CTRADER_ACCESS_TOKEN }}`, etc.) which GitHub automatically masks in execution logs.
+   * **Stealth Anti-Ban Settings:** Commit messages from automated runners must remain generic (`chore(ledger): update trade records [skip ci]`) to prevent third-party profiling.
 
 ---
 

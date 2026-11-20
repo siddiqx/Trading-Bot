@@ -450,5 +450,40 @@ def test_rop01_fake_socket_emergency_market_close_on_amend_failure():
     assert "Failed to attach Stop-Loss after 3 retries" in res["error"]
 
 
+def test_rop01_tick_rounding_5digit_forex_and_gold():
+    """Verify tick rounding calculations for 5-digit Forex (EURUSD) and Gold (XAUUSD)."""
+    from scripts.demo_relative_sltp import verify_tick_rounding
+
+    # 1. 5-digit Forex pair (EURUSD)
+    passed_forex, data_forex = verify_tick_rounding(
+        symbol="EURUSD",
+        entry=1.08543,
+        sl_distance=0.00220,
+        tp_distance=0.00330
+    )
+    assert passed_forex is True
+    assert data_forex["rel_sl"] == 220
+    assert data_forex["rel_tp"] == 330
+    assert data_forex["sl_price"] == 1.08323
+    assert data_forex["tp_price"] == 1.08873
+    assert data_forex["sl_diff"] <= 0.00001
+    assert data_forex["tp_diff"] <= 0.00001
+
+    # 2. Commodity Gold (XAUUSD)
+    passed_gold, data_gold = verify_tick_rounding(
+        symbol="XAUUSD",
+        entry=2750.65,
+        sl_distance=25.00,
+        tp_distance=37.50
+    )
+    assert passed_gold is True
+    assert data_gold["rel_sl"] == 2_500_000
+    assert data_gold["rel_tp"] == 3_750_000
+    assert data_gold["sl_price"] == 2725.65
+    assert data_gold["tp_price"] == 2788.15
+    assert data_gold["sl_diff"] <= 0.01
+    assert data_gold["tp_diff"] <= 0.01
+
+
 
 
