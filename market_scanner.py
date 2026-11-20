@@ -10,8 +10,9 @@ import time
 import json
 import re
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from zoneinfo import ZoneInfo
+from typing import Dict, Any, Optional, Tuple
 from pathlib import Path
 import httpx
 import numpy as np
@@ -137,6 +138,9 @@ from core.config import (
     FRIDAY_ENTRY_CUTOFF_HOUR_UTC,
     MONDAY_ENTRY_START_HOUR_UTC,
     MONDAY_ENTRY_CUTOFF_HOUR_UTC,
+    FIRM_DAILY_LOSS_LIMIT_PCT,
+    BOT_HALT_DAILY_LOSS_PCT,
+    DAILY_RESET_HOUR_UTC,
 )
 
 # Universal Strategy Exits (Non-negotiable baseline)
@@ -146,7 +150,12 @@ RISK_REWARD: float = FIXED_RISK_REWARD_RATIO      # 1:1.5 before costs
 
 # Prop Firm Account Sizing Parameters (Configurable via environment variables)
 from core.news_filter import is_news_window_active
-from core.ctrader_executor import execute_ctrader_order, modify_ctrader_position, close_ctrader_position
+from core.ctrader_executor import (
+    execute_ctrader_order,
+    modify_ctrader_position,
+    close_ctrader_position,
+    get_ctrader_account_equity,
+)
 
 DEFAULT_ACCOUNT_EQUITY: float = float(os.environ.get("ACCOUNT_EQUITY", "25000.0"))
 DEFAULT_RISK_PCT: float = float(os.environ.get("RISK_PCT", "1.00"))
@@ -3269,16 +3278,54 @@ def format_alert_message(sig: dict) -> str:
     )
 
 
-def check_daily_circuit_breaker(records: dict) -> tuple[bool, str]:
-    """Prop Firm Risk Safeguard (5K Standard 2-Step Optimized):
-    Monitors daily drawdown and halts execution if the daily loss circuit breaker is triggered.
+def check_daily_circuit_breaker(records: dict, live_equity_info: Optional[dict] = None) -> tuple[bool, str]:
+    """Prop Firm Risk Safeguard (v3.3.0 ROP-03 Multi-Tier Optimized):
+    Monitors live equity drawdown and daily closed trades against prop firm limits.
     Returns: (is_tripped: bool, reason: str)
     """
-    today_utc = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    now_utc = datetime.now(timezone.utc)
+
+    # 1. Align daily cycle date with DAILY_RESET_HOUR_UTC (broker rollover alignment)
+    reset_hour = DAILY_RESET_HOUR_UTC
+    if now_utc.hour < reset_hour:
+        cycle_date = (now_utc - timedelta(days=1)).strftime("%Y-%m-%d")
+    else:
+        cycle_date = now_utc.strftime("%Y-%m-%d")
+
+    # 2. Track Daily Starting Equity Baseline (ROP-03)
+    baseline = records.setdefault("daily_equity_baseline", {})
+    last_baseline_date = baseline.get("date")
+
+    current_equity = None
+    current_balance = None
+    if live_equity_info and live_equity_info.get("status") in ("OK", "SIMULATED"):
+        current_equity = float(live_equity_info.get("equity", 0.0))
+        current_balance = float(live_equity_info.get("balance", current_equity))
+
+    if current_equity is not None and current_equity > 0:
+        if last_baseline_date != cycle_date:
+            starting_cap = max(current_balance, current_equity)
+            baseline["date"] = cycle_date
+            baseline["starting_equity"] = starting_cap
+            baseline["starting_balance"] = current_balance
+            baseline["recorded_at"] = now_utc.isoformat()
+            logger.info(f"[Prop Firm Baseline] Initialized daily equity baseline for {cycle_date}: ${starting_cap:,.2f}")
+
+        # 3. Live Floating Equity Drawdown Check (ROP-03 Primary Guardrail)
+        starting_cap = float(baseline.get("starting_equity") or baseline.get("starting_balance") or current_equity)
+        if starting_cap > 0:
+            daily_dd_pct = max(0.0, (starting_cap - current_equity) / starting_cap * 100.0)
+            if daily_dd_pct >= BOT_HALT_DAILY_LOSS_PCT:
+                return True, (
+                    f"Prop Firm Daily Drawdown Guardrail Triggered (Current Daily DD: {daily_dd_pct:.2f}% >= "
+                    f"Bot Halt Limit {BOT_HALT_DAILY_LOSS_PCT:.1f}%). Standing down to protect {FIRM_DAILY_LOSS_LIMIT_PCT:.1f}% firm limit."
+                )
+
+    # 4. Closed Trade R-Loss & Count Check (Secondary Safety Shield)
     completed = records.get("completed_trades", [])
     today_trades = [
         t for t in completed 
-        if str(t.get("closed_at", "")).startswith(today_utc) and t.get("outcome") in ["WIN", "LOSS", "BREAK_EVEN"]
+        if str(t.get("closed_at", "")).startswith(cycle_date) and t.get("outcome") in ["WIN", "LOSS", "BREAK_EVEN"]
     ]
     
     today_r = sum(float(t.get("realized_r", 0.0)) for t in today_trades)
@@ -3287,9 +3334,9 @@ def check_daily_circuit_breaker(records: dict) -> tuple[bool, str]:
     # Daily Loss Circuit Breaker (v3.3.0 Prop Firm Optimized):
     # Halt if daily loss <= -2.00R or >= 2 losses in a single day.
     # On a $5,000 account risking $25.00 (0.50%), this caps maximum daily drawdown at <= $50.00 (1.00%),
-    # providing an ironclad 75% safety buffer before the 4.0% ($200.00) prop firm limit is ever threatened.
+    # providing an ironclad safety buffer before the firm limit is ever threatened.
     if today_r <= DAILY_LOSS_CIRCUIT_BREAKER_R or loss_count >= DAILY_LOSS_CIRCUIT_BREAKER_COUNT:
-        return True, f"Daily Loss Circuit Breaker Triggered ({today_r:+.2f}R, {loss_count} losses today). Standing down until next UTC session to protect daily drawdown limit."
+        return True, f"Daily Loss Circuit Breaker Triggered ({today_r:+.2f}R, {loss_count} losses today). Standing down until next session to protect daily drawdown limit."
         
     return False, ""
 
@@ -3385,8 +3432,24 @@ def run_scan_cycle():
     active_trades_map = records.get("active_trades", {})
     telemetry["active_trades_count"] = len(active_trades_map)
 
+    # 1.5 Live Broker Equity Surveillance (ROP-03)
+    live_equity_info = None
+    current_eq = DEFAULT_ACCOUNT_EQUITY
+    try:
+        live_equity_info = get_ctrader_account_equity()
+        if live_equity_info.get("status") in ("OK", "SIMULATED"):
+            current_eq = float(live_equity_info.get("equity", DEFAULT_ACCOUNT_EQUITY))
+            logger.info(
+                f"[Prop Firm Equity Guard] Broker: {live_equity_info.get('broker_name', 'N/A')} | "
+                f"Balance: ${live_equity_info.get('balance', 0.0):,.2f} | "
+                f"Floating PnL: ${live_equity_info.get('unrealized_pnl', 0.0):+,.2f} | "
+                f"Live Equity: ${current_eq:,.2f}"
+            )
+    except Exception as eq_err:
+        logger.warning(f"Failed to query cTrader live equity: {eq_err}")
+
     # 2. Check Prop Firm Daily Circuit Breakers
-    is_tripped, cb_reason = check_daily_circuit_breaker(records)
+    is_tripped, cb_reason = check_daily_circuit_breaker(records, live_equity_info)
     if is_tripped:
         logger.info(f"==> PROP FIRM CIRCUIT BREAKER: {cb_reason}")
         telemetry["circuit_breaker"] = f"TRIPPED ({cb_reason})"
@@ -3472,6 +3535,10 @@ def run_scan_cycle():
                     total_signals += 1
                     telemetry["signals_generated"] += 1
                     logger.info(f"==> NEW SIGNAL: {sig['pair']} {sig['timeframe']} {sig['direction']} @ {sig['entry']}")
+
+                    # Dynamic Risk Sizing against Live Broker Equity (ROP-03)
+                    sig["account_equity"] = current_eq
+                    sig["risk_budget_usd"] = current_eq * (DEFAULT_RISK_PCT / 100.0)
 
                     # Stage 2 Automated Prop Execution (cTrader Demo / Dry-Run)
                     ctrader_receipt = None

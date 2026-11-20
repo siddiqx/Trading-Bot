@@ -729,7 +729,16 @@ def run_gold_scan_cycle() -> None:
     sl_points = min(max(cur_atr * ATR_MULTIPLIER, MIN_SL_POINTS), MAX_SL_POINTS)
     tp_points = sl_points * BASE_RISK_REWARD_RATIO
 
-    equity = REFERENCE_ACCOUNT_EQUITY
+    # Dynamic Account Equity Resolution (ROP-03)
+    try:
+        from core.ctrader_executor import get_ctrader_account_equity
+        live_eq = get_ctrader_account_equity()
+        if live_eq.get("status") in ("OK", "SIMULATED"):
+            equity = float(live_eq.get("equity", REFERENCE_ACCOUNT_EQUITY))
+        else:
+            equity = REFERENCE_ACCOUNT_EQUITY
+    except Exception:
+        equity = REFERENCE_ACCOUNT_EQUITY
     lots, monetary_risk = calculate_gold_position_size(
         account_equity=equity,
         risk_pct=PROP_FIRM_RISK_PCT,

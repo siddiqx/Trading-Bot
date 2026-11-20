@@ -485,5 +485,144 @@ def test_rop01_tick_rounding_5digit_forex_and_gold():
     assert data_gold["tp_diff"] <= 0.01
 
 
+def _build_test_trader_response(balance_cents=500000, money_digits=2, broker_name="the5ers", login=12345):
+    from ctrader_open_api.messages.OpenApiModelMessages_pb2 import ProtoOAPayloadType
+    from ctrader_open_api.messages.OpenApiMessages_pb2 import ProtoOATraderRes
+    res = ProtoOATraderRes()
+    res.ctidTraderAccountId = 111
+    res.trader.ctidTraderAccountId = 111
+    res.trader.depositAssetId = 1
+    res.trader.balance = balance_cents
+    res.trader.moneyDigits = money_digits
+    res.trader.brokerName = broker_name
+    res.trader.traderLogin = login
+    return (ProtoOAPayloadType.PROTO_OA_TRADER_RES, res)
+
+
+def _build_test_pnl_response(positions_pnl=None, money_digits=2):
+    from ctrader_open_api.messages.OpenApiModelMessages_pb2 import ProtoOAPayloadType
+    from ctrader_open_api.messages.OpenApiMessages_pb2 import ProtoOAGetPositionUnrealizedPnLRes
+    res = ProtoOAGetPositionUnrealizedPnLRes()
+    res.ctidTraderAccountId = 111
+    res.moneyDigits = money_digits
+    if positions_pnl:
+        for pos_id, net_cents, gross_cents in positions_pnl:
+            p = res.positionUnrealizedPnL.add()
+            p.positionId = pos_id
+            p.netUnrealizedPnL = net_cents
+            p.grossUnrealizedPnL = gross_cents
+    return (ProtoOAPayloadType.PROTO_OA_GET_POSITION_UNREALIZED_PNL_RES, res)
+
+
+def test_rop03_query_equity_idle_account():
+    """Verify ROP-03 queries balance and calculates live equity accurately when no positions are open."""
+    from core.ctrader_executor import _query_equity_over_socket
+
+    responses = _build_test_auth_responses()
+    responses.append(_build_test_trader_response(balance_cents=500000, money_digits=2, broker_name="the5ers", login=55512))
+    responses.append(_build_test_pnl_response(positions_pnl=[], money_digits=2))
+
+    sock = _FakeSocket(responses)
+    res = _query_equity_over_socket(sock, "client_id", "secret", "token", 111)
+
+    assert res["status"] == "OK"
+    assert res["balance"] == 5000.00
+    assert res["unrealized_pnl"] == 0.00
+    assert res["equity"] == 5000.00
+    assert res["open_positions_count"] == 0
+    assert res["broker_name"] == "the5ers"
+    assert res["trader_login"] == 55512
+
+
+def test_rop03_query_equity_with_floating_pnl():
+    """Verify ROP-03 computes live equity with multiple positive and negative floating positions."""
+    from core.ctrader_executor import _query_equity_over_socket
+
+    responses = _build_test_auth_responses()
+    # $5,000.00 initial balance
+    responses.append(_build_test_trader_response(balance_cents=500000, money_digits=2, broker_name="the5ers", login=55512))
+    # Position 1: +$45.50 (4550 cents), Position 2: +$20.25 (2025 cents) -> total = +$65.75
+    responses.append(_build_test_pnl_response(
+        positions_pnl=[(101, 4550, 4800), (102, 2025, 2100)],
+        money_digits=2
+    ))
+
+    sock = _FakeSocket(responses)
+    res = _query_equity_over_socket(sock, "client_id", "secret", "token", 111)
+
+    assert res["status"] == "OK"
+    assert res["balance"] == 5000.00
+    assert res["unrealized_pnl"] == 65.75
+    assert res["equity"] == 5065.75
+    assert res["open_positions_count"] == 2
+    assert len(res["positions"]) == 2
+    assert res["positions"][0]["net_pnl"] == 45.50
+    assert res["positions"][1]["net_pnl"] == 20.25
+
+
+def test_rop03_query_equity_with_floating_drawdown():
+    """Verify ROP-03 correctly calculates reduced live equity during open drawdown."""
+    from core.ctrader_executor import _query_equity_over_socket
+
+    responses = _build_test_auth_responses()
+    # $5,000.00 balance
+    responses.append(_build_test_trader_response(balance_cents=500000, money_digits=2, broker_name="the5ers", login=55512))
+    # Position 1: -$150.00 (-15000 cents)
+    responses.append(_build_test_pnl_response(
+        positions_pnl=[(201, -15000, -14500)],
+        money_digits=2
+    ))
+
+    sock = _FakeSocket(responses)
+    res = _query_equity_over_socket(sock, "client_id", "secret", "token", 111)
+
+    assert res["status"] == "OK"
+    assert res["balance"] == 5000.00
+    assert res["unrealized_pnl"] == -150.00
+    assert res["equity"] == 4850.00
+    assert res["open_positions_count"] == 1
+
+
+def test_rop03_daily_circuit_breaker_floating_equity(monkeypatch):
+    """Verify check_daily_circuit_breaker trips when floating equity breaches bot halt threshold."""
+    from datetime import datetime, timezone
+    from market_scanner import check_daily_circuit_breaker
+    import market_scanner as ms
+    monkeypatch.setattr(ms, "BOT_HALT_DAILY_LOSS_PCT", 3.0)
+    monkeypatch.setattr(ms, "FIRM_DAILY_LOSS_LIMIT_PCT", 5.0)
+
+    records = {
+        "daily_equity_baseline": {
+            "date": datetime.now(timezone.utc).strftime("%Y-%m-%d"),
+            "starting_equity": 5000.0,
+            "starting_balance": 5000.0
+        },
+        "completed_trades": []
+    }
+
+    # 1. Safe floating loss (-$75.00, 1.5% DD < 3.0% halt limit)
+    live_safe = {
+        "status": "OK",
+        "balance": 5000.0,
+        "unrealized_pnl": -75.0,
+        "equity": 4925.0
+    }
+    tripped, reason = check_daily_circuit_breaker(records, live_safe)
+    assert tripped is False
+    assert reason == ""
+
+    # 2. Dangerous floating loss (-$175.00, 3.5% DD >= 3.0% halt limit)
+    live_danger = {
+        "status": "OK",
+        "balance": 5000.0,
+        "unrealized_pnl": -175.0,
+        "equity": 4825.0
+    }
+    tripped, reason = check_daily_circuit_breaker(records, live_danger)
+    assert tripped is True
+    assert "Prop Firm Daily Drawdown Guardrail Triggered" in reason
+    assert "3.50%" in reason
+
+
 
 

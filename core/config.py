@@ -17,6 +17,7 @@ Enforces:
 7. Realistic Institutional Transaction Costs (Spread + Commission + Slippage).
 """
 
+import os
 from typing import Dict, List, Any
 
 # ==============================================================================
@@ -217,4 +218,9 @@ DAILY_LOSS_CIRCUIT_BREAKER_PCT: float = 1.0
 FRIDAY_ENTRY_CUTOFF_HOUR_UTC: int = 12  # Prohibits fresh entries after 12:00 UTC on Friday (eliminates 48h weekend holding & Sunday gap risk)
 MONDAY_ENTRY_START_HOUR_UTC: int = 6   # Allows London session opening setups (06:00 UTC)
 MONDAY_ENTRY_CUTOFF_HOUR_UTC: int = 12 # Prohibits fresh entries after 12:00 UTC on Monday (filters low-liquidity post-London chop; +9.06R backtest, avoids all 3 live losses)
+
+# Prop Firm Multi-Tier Risk Guardrails (ROP-03)
+FIRM_DAILY_LOSS_LIMIT_PCT: float = float(os.getenv("FIRM_DAILY_LOSS_LIMIT_PCT", "5.0"))
+BOT_HALT_DAILY_LOSS_PCT: float = float(os.getenv("BOT_HALT_DAILY_LOSS_PCT", "3.0"))  # Internal circuit-breaker below firm limit
+DAILY_RESET_HOUR_UTC: int = int(os.getenv("DAILY_RESET_HOUR_UTC", "0"))  # Daily rollover reset hour in UTC (0 for UTC, or broker rollover)
 
