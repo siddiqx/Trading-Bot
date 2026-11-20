@@ -224,3 +224,7 @@ FIRM_DAILY_LOSS_LIMIT_PCT: float = float(os.getenv("FIRM_DAILY_LOSS_LIMIT_PCT", 
 BOT_HALT_DAILY_LOSS_PCT: float = float(os.getenv("BOT_HALT_DAILY_LOSS_PCT", "3.0"))  # Internal circuit-breaker below firm limit
 DAILY_RESET_HOUR_UTC: int = int(os.getenv("DAILY_RESET_HOUR_UTC", "0"))  # Daily rollover reset hour in UTC (0 for UTC, or broker rollover)
 
+# Weekend Holding Safeguards (Prop Firm Anti-Ban)
+FRIDAY_MARKET_FLAT_HOUR_UTC: int = int(os.getenv("FRIDAY_MARKET_FLAT_HOUR_UTC", "20"))  # Auto-close open positions Friday 20:00 UTC
+CLOSE_FOREX_BEFORE_WEEKEND: bool = os.getenv("CLOSE_FOREX_BEFORE_WEEKEND", "true").lower() in ("true", "1", "yes")
+

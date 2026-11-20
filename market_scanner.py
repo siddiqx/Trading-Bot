@@ -141,7 +141,37 @@ from core.config import (
     FIRM_DAILY_LOSS_LIMIT_PCT,
     BOT_HALT_DAILY_LOSS_PCT,
     DAILY_RESET_HOUR_UTC,
+    FRIDAY_MARKET_FLAT_HOUR_UTC,
+    CLOSE_FOREX_BEFORE_WEEKEND,
 )
+
+
+def is_forex_weekend_flat_cutoff(dt: datetime | None = None) -> bool:
+    """
+    Checks if the Friday weekend flat auto-close cutoff has arrived.
+    Prop firm anti-ban rule (e.g. The 5%ers, FTMO Standard):
+    All open Forex positions must be liquidated and pending orders cancelled
+    on Friday at or after FRIDAY_MARKET_FLAT_HOUR_UTC (default 20:00 UTC)
+    to eliminate holding risk and weekend gap risk.
+    """
+    if dt is None:
+        dt = datetime.now(timezone.utc)
+    elif dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+
+    # Friday (weekday 4) >= FRIDAY_MARKET_FLAT_HOUR_UTC or weekend (weekday 5 or 6 before reopen)
+    if dt.weekday() == 4 and dt.hour >= FRIDAY_MARKET_FLAT_HOUR_UTC:
+        return True
+    if dt.weekday() == 5:
+        return True
+    if dt.weekday() == 6:
+        # Sunday before market reopen (17:00 NY time ~ 21:00/22:00 UTC)
+        ny_tz = ZoneInfo("America/New_York")
+        ny_time = dt.astimezone(ny_tz)
+        if ny_time.hour < 17:
+            return True
+    return False
+
 
 # Universal Strategy Exits (Non-negotiable baseline)
 TAKE_PROFIT_PIPS: float = FIXED_TAKE_PROFIT_PIPS  # 15.0 pips
@@ -536,6 +566,109 @@ def check_active_trades(records: dict):
             continue
         if not ticker:
             continue
+
+        # Prop Firm Weekend Holding Defense (e.g. The 5%ers, FTMO)
+        # Liquidate all open positions and cancel pending orders before Friday market close
+        if CLOSE_FOREX_BEFORE_WEEKEND and is_forex_weekend_flat_cutoff():
+            is_pending_flat = (trade.get("status") == "PENDING")
+            if is_pending_flat:
+                logger.info(f"==> SETUP CANCELLED (Friday Weekend Flat Cutoff): {pair} {trade.get('direction')}")
+                completed_record = {
+                    **trade,
+                    "exit_price": float(trade.get("entry", 0.0)),
+                    "outcome": "CANCELLED_WEEKEND_FLAT",
+                    "realized_pips": 0.0,
+                    "realized_r": 0.0,
+                    "closed_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                    "status": "CANCELLED",
+                    "exit_reason": "WEEKEND_FLAT",
+                }
+                msg = (
+                    f"🏖️ <b>SETUP CANCELLED (WEEKEND FLAT) · {pair} {trade.get('direction')}</b>\n"
+                    f"━━━━━━━━━━━━━━━━━━\n"
+                    f"• <b>Entry Target:</b> <code>{trade.get('entry')}</code>\n"
+                    f"• <b>Reason:</b> Friday weekend cutoff reached ({FRIDAY_MARKET_FLAT_HOUR_UTC}:00 UTC). Pending orders cancelled to eliminate weekend gap risk.\n"
+                    f"• <b>Net Realized:</b> <b>0.0 pips / 0.00 R (Zero Loss)</b>\n"
+                    f"━━━━━━━━━━━━━━━━━━\n"
+                    f"🔓 <i>Pair unlocked. Surveillance suspended until Sunday market open.</i>"
+                )
+                send_telegram_alert(msg)
+                records.setdefault("completed_trades", []).append(completed_record)
+                records.get("active_trades", {}).pop(trade_key, None)
+                records.get("active_trades", {}).pop(pair, None)
+                resolved_pairs.append(pair)
+                continue
+            else:
+                pip = float(trade.get("pip", 0.0001))
+                digits = int(trade.get("digits", 5))
+                cur_price = get_live_price(ticker, pip, digits)
+                if cur_price is None:
+                    df_cur = fetch_candles(ticker, "5m", range_days="1d")
+                    if df_cur.empty:
+                        df_cur = fetch_candles(ticker, "15m", range_days="1d")
+                    if not df_cur.empty:
+                        cur_price = float(df_cur.iloc[-1]["close"])
+                    else:
+                        cur_price = float(trade.get("entry", 0.0))
+
+                is_long = (trade.get("direction") == "LONG")
+                entry = float(trade.get("entry", 0.0))
+                init_sl_pips = float(trade.get("sl_pips", 20.0))
+
+                if is_long:
+                    realized_pips = (cur_price - entry) / pip
+                else:
+                    realized_pips = (entry - cur_price) / pip
+                realized_r = realized_pips / (init_sl_pips + 1e-9)
+
+                outcome = "WIN" if realized_r > 0.05 else ("LOSS" if realized_r < -0.05 else "BREAK_EVEN")
+                logger.info(f"==> TRADE RESOLVED (FRIDAY WEEKEND FLAT AUTO-CLOSE): {pair} {trade.get('direction')} ({realized_pips:+.1f} pips, {realized_r:+.2f}R)")
+
+                pos_id = trade.get("ctrader_position_id") or trade.get("ctrader_receipt", {}).get("position_id")
+                ctrader_close_res = None
+                if pos_id:
+                    try:
+                        vol_units = trade.get("units") or trade.get("ctrader_receipt", {}).get("units")
+                        lots_val = trade.get("lots") or trade.get("ctrader_receipt", {}).get("lots")
+                        ctrader_close_res = close_ctrader_position(
+                            position_id=int(pos_id),
+                            volume_units=int(vol_units) if vol_units else None,
+                            lots=float(lots_val) if lots_val else None,
+                            pair=pair,
+                        )
+                        logger.info(f"[cTrader Weekend Flat] Position #{pos_id} close response: {ctrader_close_res.get('status')}")
+                    except Exception as ex:
+                        logger.error(f"[cTrader Weekend Flat] Error closing position #{pos_id}: {ex}")
+
+                completed_record = {
+                    **trade,
+                    "exit_price": float(cur_price),
+                    "outcome": outcome,
+                    "realized_pips": float(round(realized_pips, 1)),
+                    "realized_r": float(round(realized_r, 2)),
+                    "closed_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                    "status": "CLOSED",
+                    "exit_reason": "WEEKEND_FLAT",
+                    "ctrader_close_receipt": ctrader_close_res,
+                }
+
+                msg = (
+                    f"🏖️ <b>WEEKEND FLAT AUTO-CLOSE · {pair} {trade.get('direction')}</b>\n"
+                    f"━━━━━━━━━━━━━━━━━━\n"
+                    f"• <b>Exit Price:</b> <code>{cur_price}</code>\n"
+                    f"• <b>Realized:</b> <b>{realized_pips:+.1f} pips ({realized_r:+.2f}R)</b>\n"
+                    f"• <b>Outcome:</b> <code>{outcome}</code>\n"
+                    f"• <b>Reason:</b> Prop firm weekend holding defense (liquidated Friday before market close)\n"
+                    f"━━━━━━━━━━━━━━━━━━\n"
+                    f"🔒 <i>All risk neutralized. Zero weekend exposure.</i>"
+                )
+                send_telegram_alert(msg)
+
+                records.setdefault("completed_trades", []).append(completed_record)
+                records.get("active_trades", {}).pop(trade_key, None)
+                records.get("active_trades", {}).pop(pair, None)
+                resolved_pairs.append(pair)
+                continue
 
         # Use high-resolution 5M candles for precise intra-bar chronological exit evaluation, falling back to 15M
         df = fetch_candles(ticker, "5m", range_days="5d")  # 5d ensures trades held > 2 days are never orphaned

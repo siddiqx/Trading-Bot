@@ -460,6 +460,121 @@ def test_is_forex_market_open_cases():
     assert is_forex_market_open(sun_open) is True
 
 
+def test_is_forex_weekend_flat_cutoff_cases():
+    """Verify that is_forex_weekend_flat_cutoff triggers accurately for Friday cutoff and weekend hours."""
+    from market_scanner import is_forex_weekend_flat_cutoff
+
+    # Friday 18:00 UTC (before 20:00 cutoff) -> False
+    fri_before = datetime(2026, 10, 2, 18, 0, tzinfo=timezone.utc)
+    assert is_forex_weekend_flat_cutoff(fri_before) is False
+
+    # Friday 20:00 UTC (exact cutoff hour) -> True
+    fri_at = datetime(2026, 10, 2, 20, 0, tzinfo=timezone.utc)
+    assert is_forex_weekend_flat_cutoff(fri_at) is True
+
+    # Friday 21:30 UTC (after cutoff) -> True
+    fri_after = datetime(2026, 10, 2, 21, 30, tzinfo=timezone.utc)
+    assert is_forex_weekend_flat_cutoff(fri_after) is True
+
+    # Saturday 12:00 UTC -> True
+    sat_noon = datetime(2026, 10, 3, 12, 0, tzinfo=timezone.utc)
+    assert is_forex_weekend_flat_cutoff(sat_noon) is True
+
+    # Sunday 12:00 UTC (before 17:00 NY reopen) -> True
+    sun_noon = datetime(2026, 10, 4, 12, 0, tzinfo=timezone.utc)
+    assert is_forex_weekend_flat_cutoff(sun_noon) is True
+
+    # Sunday 22:30 UTC (after 17:00 NY reopen) -> False
+    sun_night = datetime(2026, 10, 4, 22, 30, tzinfo=timezone.utc)
+    assert is_forex_weekend_flat_cutoff(sun_night) is False
+
+    # Tuesday 14:00 UTC (mid-week trading) -> False
+    tue_noon = datetime(2026, 9, 29, 14, 0, tzinfo=timezone.utc)
+    assert is_forex_weekend_flat_cutoff(tue_noon) is False
+
+
+def test_forex_weekend_flat_auto_close_active_trades(monkeypatch):
+    """
+    Verify that check_active_trades liquidates open positions flat and cancels pending orders
+    when the Friday weekend flat cutoff triggers.
+    """
+    from market_scanner import check_active_trades
+
+    records = {
+        "active_trades": {
+            "EURUSD_trade_1": {
+                "trade_id": "EURUSD_trade_1",
+                "symbol": "EURUSD",
+                "ticker": "EURUSD=X",
+                "direction": "LONG",
+                "entry": 1.08500,
+                "stop_loss": 1.08300,
+                "take_profit": 1.08800,
+                "status": "OPEN",
+                "pip": 0.0001,
+                "digits": 5,
+                "sl_pips": 20.0,
+                "tp_pips": 30.0,
+                "opened_at": "2026-10-02T14:00:00Z",
+                "ctrader_position_id": 99001
+            },
+            "USDCAD_trade_2": {
+                "trade_id": "USDCAD_trade_2",
+                "symbol": "USDCAD",
+                "ticker": "USDCAD=X",
+                "direction": "SHORT",
+                "entry": 1.35000,
+                "stop_loss": 1.35200,
+                "take_profit": 1.34700,
+                "status": "PENDING",
+                "pip": 0.0001,
+                "digits": 5,
+                "sl_pips": 20.0,
+                "tp_pips": 30.0,
+                "opened_at": "2026-10-02T19:00:00Z"
+            }
+        },
+        "completed_trades": []
+    }
+
+    alerts = []
+    closed_ctrader_calls = []
+
+    monkeypatch.setattr("market_scanner.is_forex_market_open", lambda *a, **kw: True)
+    monkeypatch.setattr("market_scanner.is_forex_weekend_flat_cutoff", lambda *a, **kw: True)
+    monkeypatch.setattr("market_scanner.CLOSE_FOREX_BEFORE_WEEKEND", True)
+    monkeypatch.setattr("market_scanner.get_live_price", lambda ticker, pip, digits: 1.08600)
+    monkeypatch.setattr("market_scanner.send_telegram_alert", lambda msg: alerts.append(msg))
+    monkeypatch.setattr("market_scanner.close_ctrader_position", lambda position_id, **kw: (closed_ctrader_calls.append(position_id) or {"status": "CLOSED", "position_id": position_id}))
+    monkeypatch.setattr("market_scanner.save_trade_records", lambda recs: None)
+    monkeypatch.setattr("market_scanner.sync_worker", lambda recs: None)
+
+    check_active_trades(records)
+
+    # Active trades must be completely empty
+    assert len(records["active_trades"]) == 0
+    # Both trades must be moved to completed_trades
+    assert len(records["completed_trades"]) == 2
+
+    eur_closed = next(t for t in records["completed_trades"] if t["trade_id"] == "EURUSD_trade_1")
+    assert eur_closed["status"] == "CLOSED"
+    assert eur_closed["exit_reason"] == "WEEKEND_FLAT"
+    assert eur_closed["exit_price"] == 1.08600
+    assert eur_closed["realized_pips"] == 10.0
+    assert eur_closed["realized_r"] == 0.50
+    assert eur_closed["outcome"] == "WIN"
+    assert 99001 in closed_ctrader_calls
+
+    cad_cancelled = next(t for t in records["completed_trades"] if t["trade_id"] == "USDCAD_trade_2")
+    assert cad_cancelled["status"] == "CANCELLED"
+    assert cad_cancelled["exit_reason"] == "WEEKEND_FLAT"
+    assert cad_cancelled["outcome"] == "CANCELLED_WEEKEND_FLAT"
+    assert cad_cancelled["realized_pips"] == 0.0
+
+    assert len(alerts) == 2
+
+
+
 def test_gold_config_excluded_from_scanner_symbols():
     """Ensure Gold (XAUUSD) is completely removed from scanner SYMBOLS whitelist."""
     from market_scanner import SYMBOLS
