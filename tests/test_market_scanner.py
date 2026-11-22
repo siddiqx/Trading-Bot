@@ -1038,10 +1038,8 @@ def test_format_alert_message_ict():
     msg = format_alert_message(sig)
     assert "ICT Killzone Liquidity Sweep" in msg
     assert "1.08" in msg
-    assert "Pure Binary 1:1.50 Target (100% Runner to TP / SL, Zero Partials)" in msg
-    import market_scanner
-    assert f"${market_scanner.DEFAULT_ACCOUNT_EQUITY:,.2f} USD" in msg
-    assert "Risk Budget" in msg
+    assert "TRADE PARAMETERS" in msg
+    assert "Position Size" in msg
 
 
 def test_binary_target_execution_no_partial_banking_at_1r(monkeypatch):
@@ -1908,7 +1906,7 @@ def test_ccrs_alert_message_formatting():
     }
 
     msg = format_alert_message(sig)
-    assert "INSTITUTIONAL CCRS FACTOR MATRIX" in msg
+    assert "Macro Flow" in msg
     assert "+2.35σ" in msg
     assert "EUR" in msg
     assert "USD" in msg
@@ -2150,7 +2148,7 @@ def test_dual_timeframe_alert_message_formatting():
 
     msg = format_alert_message(sig)
     assert "15-MINUTE (15M) · 1H MACRO FLOW" in msg
-    assert "INSTITUTIONAL CCRS FACTOR MATRIX" in msg
+    assert "Macro Flow" in msg
     assert "+2.10σ" in msg
     assert "15M 20-EMA Equilibrium Pullback Rejection" in msg
     assert "22.0 pips" in msg
@@ -2158,7 +2156,7 @@ def test_dual_timeframe_alert_message_formatting():
 
 
 def test_v330_alert_message_volatility_cushion():
-    """Verify v3.3.0 alert message formats Volatility Cushion runner plan."""
+    """Verify v3.3.0 alert message formats clean trade parameters without clutter."""
     from market_scanner import format_alert_message
 
     sig = {
@@ -2187,11 +2185,13 @@ def test_v330_alert_message_volatility_cushion():
     }
 
     msg = format_alert_message(sig)
-    assert "TARGETS & RISK" in msg
-    assert "Volatility Cushion Trailing" in msg
-    assert "Tier 1 @ +26.4p (SL -10p)" in msg
-    assert "Tier 2 @ +33p (+11p lock & +44p runner)" in msg
-    assert "1.0894" in msg or "Extended Runner TP" in msg
+    assert "TRADE PARAMETERS" in msg
+    assert "1.085" in msg
+    assert "1.0828" in msg
+    assert "1.0883" in msg
+    assert "Extended Runner TP" not in msg
+    assert "Volatility Cushion Trailing" not in msg
+    assert "CONFLUENCE MODEL" not in msg
 
 
 def test_v330_daily_circuit_breaker_lockout():

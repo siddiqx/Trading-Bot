@@ -1545,15 +1545,11 @@ async function sendRadarMessage(chatId, env) {
           const rawDiff = (liveP - activeTrade.entry) * (isLong ? 1 : -1);
           const pnlSign = pnlPips >= 0 ? "+" : "";
           const icon = isLong ? "🟢" : "🔴";
-          const beStatus = activeTrade.partial_taken 
-            ? ` 🛡<b>60% Banked (+${activeTrade.partial_banked_r || "0.60"}R)</b>` 
-            : (activeTrade.be_active 
-                ? " 🛡<b>BE Locked</b>" 
-                : (activeTrade.cushion_stage === 2 || activeTrade.runner_active 
-                    ? " 🏃<b>Runner Extended</b>" 
-                    : (activeTrade.cushion_stage === 1 || activeTrade.cushion_active 
-                        ? " 🛡<b>Risk Halved</b>" 
-                        : "")));
+          const beStatus = activeTrade.cushion_stage === 2 || activeTrade.runner_active 
+            ? " 🏃<b>Runner Extended</b>" 
+            : (activeTrade.cushion_stage === 1 || activeTrade.cushion_active 
+                ? " 🛡<b>Risk Halved</b>" 
+                : (activeTrade.be_active ? " 🛡<b>BE Locked</b>" : ""));
 
           let floatStr = "";
           if (isGold) {
@@ -1834,21 +1830,16 @@ async function sendActiveMessage(chatId, env) {
       const statusBadge = isPending ? `⏳ <b>PENDING ${t.direction}</b>` : `${dirIcon} <b>${t.direction}</b>`;
       const entryLabel = isPending ? "• Entry Target:" : "• Entry:";
 
-      let planDetail = `1 : ${t.rr || t.risk_reward || "1.50"} R:R`;
-      if (isGold) {
-        const lotSize = t.lots ? `${parseFloat(t.lots).toFixed(2)} Lots` : "0.01 Lots";
-        planDetail += ` (${lotSize} · 1H CCRS Macro Flow)`;
-      } else {
-        const lotSize = t.lots ? `${parseFloat(t.lots).toFixed(2)} Lots` : "0.50% Equity Risk · $25 on $5k Prop Account";
-        planDetail += ` (${lotSize})`;
-      }
+      const baseSym = getBaseSymbol(symbolKey, t);
+      const lotDisplay = t.lots ? `${parseFloat(t.lots).toFixed(2)} Lots` : "0.50 Lots";
 
       return (
         `<b>${num}. ${pName}</b> · ${t.timeframe || (isGold ? "1H" : "15M")} · ${statusBadge}\n` +
         `${entryLabel} <code>${t.entry.toFixed(asset.digits)}</code> (${openDate} ${openTime} UTC)\n` +
         floatText +
-        `• Targets: SL <code>${t.stop_loss.toFixed(asset.digits)}</code> | TP <code>${t.take_profit.toFixed(asset.digits)}</code>\n` +
-        `• Plan: <b>${planDetail}</b>`
+        `• Targets: SL <code>${t.stop_loss.toFixed(asset.digits)}</code> | TP <code>${t.take_profit.toFixed(asset.digits)}</code> (1:${t.rr || "1.50"}R)\n` +
+        `• Sizing: <b>${lotDisplay}</b>\n` +
+        `⚡ /close_${baseSym} · 🚫 /cancel_${baseSym}`
       );
     })
   );
@@ -2307,7 +2298,7 @@ async function sendStatusMessage(chatId, env) {
 ` +
     `• <b>Economic News Filter:</b> <code>ACTIVE (30m High-Impact Buffer)</code>
 ` +
-    `• <b>Monitored Universe:</b> <code>6 Major Forex Pairs + Gold Satellite (XAUUSD)</code>
+    `• <b>Monitored Universe:</b> <code>4 Active Institutional Pairs (EURUSD, USDCAD, USDCHF, AUDUSD) + Gold Satellite (XAUUSD)</code>
 
 ` +
     `<b>🛡 EXECUTION ENGINE</b>
@@ -2524,20 +2515,18 @@ async function handleIncomingSignal(payload, env) {
     alertMessage = 
       `🟡 <b>NEW TRADE SIGNAL · GOLD SATELLITE (XAUUSD)</b>\n` +
       `━━━━━━━━━━━━━━━━━━\n` +
-      `🧭 <b>Direction:</b> <b>${actionText}</b>\n` +
-      `⏱ <b>Timeframe:</b> <b>1H (CCRS Macro Flow)</b>\n` +
+      `🧭 <b>Action:</b> <b>${actionText}</b>\n` +
+      `⏱ <b>Timeframe:</b> <b>1-HOUR (1H) · CCRS USD Macro Flow</b>\n` +
       `━━━━━━━━━━━━━━━━━━\n\n` +
-      `<b>📋 TRADE PARAMETERS (100 oz / Std Lot)</b>\n` +
+      `<b>📋 TRADE PARAMETERS</b>\n` +
       `• <b>Live Entry:</b> <code>$${entryPrice.toFixed(2)}</code>\n` +
-      `• <b>Stop Loss:</b> <code>$${slPrice.toFixed(2)}</code> (${slPts.toFixed(1)} pts)\n` +
-      `• <b>Take Profit:</b> <code>$${tpPrice.toFixed(2)}</code> (${tpPts.toFixed(1)} pts · 1:1.50)\n` +
+      `• <b>Stop Loss:</b> <code>$${slPrice.toFixed(2)}</code> <i>(${slPts.toFixed(1)} pts · -1.00R)</i>\n` +
+      `• <b>Take Profit:</b> <code>$${tpPrice.toFixed(2)}</code> <i>(${tpPts.toFixed(1)} pts · +1.50R)</i>\n` +
       `• <b>Position Size:</b> <b>${lots.toFixed(2)} Lots</b> (${(lots * 100).toFixed(0)} oz)\n` +
-      `• <b>Risk Model:</b> Dynamic 2.0× ATR + Volatility Cushion\n\n` +
-      `<b>🔬 CONFLUENCE MODEL</b>\n` +
-      `• <b>Setup:</b> ${payload.strategy || "CCRS USD Macro Flow + Donchian Reclaim"}\n` +
-      `• <b>Interlock:</b> Max 2 Net USD Exposure Enforced\n\n` +
+      `• <b>Risk / Reward:</b> <b>1 : 1.50</b>\n\n` +
       `━━━━━━━━━━━━━━━━━━\n` +
-      `🕒 <b>Confirmed Bar:</b> <code>${barTime}</code>`;
+      `🕒 <b>Confirmed Bar:</b> <code>${barTime}</code>\n` +
+      `🤖 <i>Trailing stops, profit lock, and broker execution are fully managed by the bot.</i>`;
 
     const goldTradeEntry = {
       trade_id: payload.id || `GOLD_${Date.now()}`,
@@ -2616,23 +2605,18 @@ async function handleIncomingSignal(payload, env) {
       marketWarning +
       `${icon} <b>NEW TRADE SIGNAL · ${displayPair}</b>\n` +
       `━━━━━━━━━━━━━━━━━━\n` +
-      `🧭 <b>Direction:</b> <b>${actionText}</b>\n` +
+      `🧭 <b>Action:</b> <b>${actionText}</b>\n` +
       `⏱ <b>Timeframe:</b> <b>${timeframe}</b>\n` +
       `━━━━━━━━━━━━━━━━━━\n\n` +
-      `<b>📋 TRADE PARAMETERS (PURE 1:1.50 R:R)</b>\n` +
-      `• <b>${entryLabel}</b> <code>${entryPrice}</code> <i>(${isPending ? "Limit Order" : "Live Executable Price"})</i>\n` +
-      `• <b>Order State:</b> ${orderStateText}\n` +
-      `• <b>Stop Loss:</b> <code>${slPrice}</code> (${slPipDist.toFixed(1)} pips · -1.00R)\n` +
-      `• <b>Take Profit:</b> <code>${tpPrice}</code> (${tpPipDist.toFixed(1)} pips · +1.50R)\n` +
-      `• <b>Risk / Reward:</b> <b>1 : ${(tpPipDist / slPipDist).toFixed(2)}</b> (Pure Binary Target · 100% Runner)\n` +
-      `• <b>Suggested Risk:</b> <b>1.00% Equity ($50 on $5k Reference Account)</b>\n\n` +
-      `<b>🔬 CONFLUENCE MODEL</b>\n` +
-      `• <b>Setup:</b> ${payload.strategy || "ICT Killzone Liquidity Sweep (Turtle Soup)"}\n` +
-      `• <b>Phase:</b> ${payload.phase || "Liquidity Sweep Reclaim & Rejection"}\n` +
-      `• <b>Signal Score:</b> <b>${payload.score || payload.signal_score || 96} / 100</b>\n\n` +
+      `<b>📋 TRADE PARAMETERS</b>\n` +
+      `• <b>${entryLabel}</b> <code>${entryPrice}</code>\n` +
+      `• <b>Stop Loss:</b> <code>${slPrice}</code> <i>(${slPipDist.toFixed(1)} pips · -1.00R)</i>\n` +
+      `• <b>Take Profit:</b> <code>${tpPrice}</code> <i>(${tpPipDist.toFixed(1)} pips · +1.50R)</i>\n` +
+      `• <b>Risk / Reward:</b> <b>1 : ${(tpPipDist / slPipDist).toFixed(2)}</b>\n` +
+      `• <b>Position Size:</b> <b>0.50 Lots</b> (0.50% Equity Risk)\n\n` +
       `━━━━━━━━━━━━━━━━━━\n` +
       `🕒 <b>Confirmed Bar:</b> <code>${barTime}</code>\n` +
-      `${executionNote}`;
+      `🤖 <i>Trailing stops, profit lock, and broker execution are fully managed by the bot.</i>`;
 
     // Persist to active trade ledger in KV & in-memory cache
     const newTradeEntry = {

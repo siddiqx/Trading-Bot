@@ -3452,8 +3452,6 @@ def format_alert_message(sig: dict) -> str:
     is_long = sig["direction"] == "LONG"
     icon = "🟢" if is_long else "🔴"
     action_text = "BUY / LONG" if is_long else "SELL / SHORT"
-    structure_text = "Origin Order Block Support" if is_long else "Origin Order Block Resistance"
-    trend_text = "Bullish (EMA 20 above EMA 50)" if is_long else "Bearish (EMA 20 below EMA 50)"
     sl_sign = "-"
     tp_sign = "+"
 
@@ -3464,39 +3462,22 @@ def format_alert_message(sig: dict) -> str:
         tf_label = "1-HOUR (1H)"
     else:
         tf_label = "15-MINUTE (15M)"
-    setup_len = sig.get("donchian_len", 20)
 
-    # --- Institutional CCRS Factor Block ---
-    ccrs_block = ""
+    # Macro flow line (clean, single line if available)
+    macro_line = ""
     if sig.get("strategy_type") in ("CCRS_MACRO_FLOW", "CCRS_DUAL_TF"):
         base_c = sig.get("base_currency", pair[:3] if len(pair) == 6 else "")
         quote_c = sig.get("quote_currency", pair[3:] if len(pair) == 6 else "")
         div_val = sig.get("divergence", 0.0)
-        base_z = sig.get("base_z", 0.0)
-        quote_z = sig.get("quote_z", 0.0)
         setup_txt = sig.get("setup_name", "15M Precision Retest / Sweep")
-        ccrs_block = (
-            f"🌐 <b>INSTITUTIONAL CCRS FACTOR MATRIX</b>\n"
-            f"• <b>Pairwise Divergence:</b> <b>{div_val:+.2f}σ</b> <i>(Active Flow: |D| ≥ {CCRS_Z_THRESHOLD:.2f}σ)</i>\n"
-            f"• <b>Base ({base_c}) Relative Flow:</b> <code>{base_z:+.2f}σ</code>\n"
-            f"• <b>Quote ({quote_c}) Relative Flow:</b> <code>{quote_z:+.2f}σ</code>\n"
-            f"• <b>Factor Horizon:</b> <code>120h Momentum · 200h Normalization</code>\n"
-            f"• <b>Execution Trigger:</b> <code>{setup_txt}</code>\n\n"
+        macro_line = (
+            f"• <b>Macro Flow:</b> <b>{div_val:+.2f}σ Divergence</b> ({base_c} vs {quote_c})\n"
+            f"• <b>Setup Trigger:</b> <code>{setup_txt}</code>\n"
         )
+    elif sig.get("strategy"):
+        macro_line = f"• <b>Strategy:</b> <code>{sig.get('strategy')}</code>\n"
 
-    # --- Lower-Timeframe Confluence Block ---
-    lf = sig.get("lf_trigger")  # May be None if no 5M trigger found
-    if lf:
-        lf_block = (
-            f"<b>⚡ 5M CONFLUENCE CONFIRMATION</b>\n"
-            f"• <b>Structure:</b> <b>{lf['trigger_type']}</b> (Confidence: {lf['confidence']}%)\n"
-            f"• <b>Trigger Bar:</b> <code>{lf.get('bar_close_time', 'Confirmed')}</code>\n"
-            f"• <b>Confluence:</b> Lower-timeframe confirms 15M momentum conviction\n\n"
-        )
-    else:
-        lf_block = ""
-
-    # Dynamic Position Sizing & Risk Block
+    # Dynamic Position Sizing & Risk Line
     equity = float(sig.get("account_equity", DEFAULT_ACCOUNT_EQUITY))
     pct = float(sig.get("risk_pct", DEFAULT_RISK_PCT))
     budget_usd = float(sig.get("risk_budget_usd", equity * (pct / 100.0) if pct > 0.10 else equity * pct))
@@ -3507,20 +3488,16 @@ def format_alert_message(sig: dict) -> str:
     if lots is not None and risk_usd is not None:
         lots = float(lots)
         risk_usd = float(risk_usd)
-        risk_block = (
-            f"• <b>Account Equity:</b> <code>${equity:,.2f} USD</code>\n"
-            f"• <b>Risk Budget:</b> <code>${budget_usd:.2f} USD</code> ({pct:.2f}% of Equity)\n"
-            f"• <b>Position Size:</b> <b>{lots:.2f} Lots</b>\n"
-            f"• <b>Estimated Risk:</b> <b>${risk_usd:.2f} USD</b> (Max Risk ≤ Budget)\n\n"
-        )
+        risk_line = f"• <b>Position Size:</b> <b>{lots:.2f} Lots</b> (<code>${risk_usd:.2f} USD</code> · ${equity:,.2f} Equity · {pct:.2f}% Risk)\n"
     else:
-        risk_block = (
-            f"• <b>Account Equity:</b> <code>${equity:,.2f} USD</code>\n"
-            f"• <b>Risk Budget:</b> <code>${budget_usd:.2f} USD</code> ({pct:.2f}% of Equity)\n"
-            f"• <b>Position Size:</b> <b>0.50 Lots</b>\n"
-            f"• <b>Estimated Risk:</b> <b>${budget_usd:.2f} USD</b>\n\n"
-        )
-    risk_line = risk_block
+        risk_line = f"• <b>Position Size:</b> <b>0.50 Lots</b> (<code>${budget_usd:.2f} USD</code> · ${equity:,.2f} Equity · {pct:.2f}% Risk)\n"
+
+    # Broker Execution Status
+    ctrader_line = ""
+    if sig.get("ctrader_receipt"):
+        st = "🟢 Live Demo Executed" if sig.get("ctrader_receipt", {}).get("status") == "EXECUTED" else "📝 Simulated Demo Fill"
+        acc = str(sig.get("ctrader_receipt", {}).get("account_id", "Demo/Simulated"))
+        ctrader_line = f"• <b>Broker Client:</b> <code>{st}</code> (Account: {acc})\n"
 
     is_test = sig.get("is_test") or "TEST" in str(sig.get("id", "")).upper()
     test_banner = (
@@ -3532,42 +3509,20 @@ def format_alert_message(sig: dict) -> str:
         f"{test_banner}"
         f"{icon} <b>NEW TRADE SIGNAL · {display_pair}</b>\n"
         f"━━━━━━━━━━━━━━━━━━\n"
-        f"🧭 <b>Direction:</b> <b>{action_text}</b>\n"
+        f"🧭 <b>Action:</b> <b>{action_text}</b>\n"
         f"⏱ <b>Timeframe:</b> <b>{tf_label}</b>\n"
         f"━━━━━━━━━━━━━━━━━━\n\n"
-        f"<b>⚡ MARKET EXECUTION (LIVE FILL)</b>\n"
-        f"• <b>Live Entry:</b> <code>{sig['entry']}</code> <i>(Real-Time Executable Price)</i>\n"
-        f"• <b>Trigger Bar Close:</b> <code>{sig.get('bar_close_price', sig['entry'])}</code>\n"
-        f"• <b>Max Chase Cutoff:</b> <code>{sig.get('max_chase_price', sig['entry'])}</code> <i>(Hard Limit · ±{sig.get('max_chase_pips', 1.5)} pips)</i>\n\n"
-        f"{ccrs_block}"
-        f"{lf_block}"
-        f"<b>🎯 TARGETS & RISK (1:1.50 TO 1:2.00 R:R)</b>\n"
+        f"<b>📋 TRADE PARAMETERS</b>\n"
+        f"• <b>Live Entry:</b> <code>{sig['entry']}</code>\n"
         f"• <b>Stop Loss:</b> <code>{sig['stop_loss']}</code> <i>({sl_sign}{sig['sl_pips']} pips · -1.00R)</i>\n"
-        f"• <b>Take Profit:</b> <code>{sig['take_profit']}</code> <i>({tp_sign}{sig['tp_pips']} pips · +1.50R · {sig.get('target_type', 'Target')})</i>\n"
-        f"• <b>Extended Runner TP:</b> <code>{sig.get('runner_tp', 'Dynamic')}</code> <i>(+{VOLATILITY_CUSHION_RUNNER_TP_PIPS:.1f} pips · +2.00R)</i>\n"
-        f"• <b>Risk / Reward:</b> <b>1 : {sig['rr']}</b> (Pure Binary Target · 100% Runner)\n"
-        f"• <b>Trade Management:</b> <b>Pure Binary 1:1.50 Target (100% Runner to TP / SL, Zero Partials)</b>\n"
-        f"• <b>Volatility Cushion Trailing:</b> <b>Tier 1 @ +26.4p (SL -10p) · Tier 2 @ +33p (+11p lock & +44p runner)</b>\n"
-        f"{f'• <b>cTrader Execution:</b> <code>' + ('🟢 Live Demo Executed' if sig.get('ctrader_receipt', {}).get('status') == 'EXECUTED' else '📝 Simulated Demo Fill') + '</code> <i>(Account: ' + str(sig.get('ctrader_receipt', {}).get('account_id', 'Demo/Simulated')) + ')</i>' + chr(10) if sig.get('ctrader_receipt') else ''}"
+        f"• <b>Take Profit:</b> <code>{sig['take_profit']}</code> <i>({tp_sign}{sig['tp_pips']} pips · +1.50R)</i>\n"
+        f"• <b>Risk / Reward:</b> <b>1 : {sig.get('rr', 1.50)}</b>\n"
         f"{risk_line}"
-        f"<b>🔬 CONFLUENCE MODEL</b>\n"
-        f"• <b>Engine:</b> <b>{sig.get('strategy', 'ICT Killzone Liquidity Sweep (Turtle Soup)')}</b>\n"
-        f"• <b>Phase:</b> {sig.get('phase', 'Liquidity Pool Swept & Reclaimed')}\n"
-        f"{f'• <b>Swept Level:</b> <code>' + str(sig['swept_level']) + '</code> (+' + str(sig.get('sweep_depth_pips', 0.0)) + 'p depth)' + chr(10) if sig.get('swept_level') is not None else ''}"
-        f"• <b>Structure:</b> {structure_text}\n"
-        f"• <b>Liquidity Target:</b> {sig.get('target_type', 'BSL/SSL Pool')}\n"
-        f"• <b>Trend Alignment:</b> {trend_text}\n"
-        f"• <b>Momentum RSI:</b> <code>{sig.get('rsi', 'N/A')}</code> (Optimal Zone)\n"
-        f"• <b>Volatility ATR:</b> <code>{sig.get('atr', 'N/A')}</code> pips\n"
-        f"• <b>ADX Regime:</b> <code>{sig.get('adx', 'N/A')}</code> — {sig.get('adx_regime', 'N/A')}\n"
-        f"• <b>Session:</b> {sig.get('session_icon', '')} {sig.get('session', 'Active Session')}\n"
-        f"• <b>Signal Score:</b> <b>{sig.get('score', 90)} / 100</b>\n\n"
+        f"{macro_line}"
+        f"{ctrader_line}\n"
         f"━━━━━━━━━━━━━━━━━━\n"
-        f"🕒 <b>Confirmed Bar:</b> <code>{sig['time']}</code>\n"
-        f"💡 <b>Execution Rules:</b>\n"
-        f"1️⃣ <b>Market Execution:</b> Enter at market <code>{sig['entry']}</code> within 3 min of this alert.\n"
-        f"2️⃣ <b>Pullback Limit (Optional):</b> Place pending limit at OTE <code>{sig.get('ote_entry', sig['entry'])}</code>.\n"
-        f"3️⃣ <b>Slippage Gate:</b> Never chase if live price has already exceeded <code>{sig.get('max_chase_price', sig['entry'])}</code>."
+        f"🕒 <b>Confirmed Bar:</b> <code>{sig.get('time', '')}</code>\n"
+        f"🤖 <i>Trailing stops, profit lock, and broker execution are fully managed by the bot.</i>"
     )
 
 
