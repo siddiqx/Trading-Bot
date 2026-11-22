@@ -410,6 +410,70 @@ def check_active_gold_trades(records: Dict[str, Any], cur_bar: pd.Series, record
             send_exit_alert(tr, "WEEKEND FLAT CUTOFF")
             continue
 
+        # Check if trade was marked pending exit by edge gateway or Telegram command
+        is_pending_cancelled = tr.get("pending_close") in ("CANCELLED", "CANCEL")
+        is_pending_manual = tr.get("pending_close") in ("MANUAL_CLOSE", "MANUAL", "CLOSE")
+
+        if is_pending_cancelled:
+            exit_p = float(tr.get("pending_exit_price") or cur_close)
+            pos_id = tr.get("ctrader_position_id") or (tr.get("ctrader_receipt") or {}).get("position_id")
+            c_res = None
+            if pos_id:
+                try:
+                    from core.ctrader_executor import close_ctrader_position
+                    c_res = close_ctrader_position(position_id=int(pos_id), lots=float(lots), pair=tr.get("symbol", "XAUUSD"))
+                    logger.info(f"[cTrader Gold Cancel] Position #{pos_id} close response: {c_res.get('status')}")
+                except Exception as ex:
+                    logger.error(f"[cTrader Gold Cancel] Error closing #{pos_id}: {ex}")
+            tr.update({
+                "exit_price": exit_p,
+                "exit_time": now_utc.isoformat(),
+                "gross_pnl": 0.0,
+                "friction": 0.0,
+                "net_pnl": 0.0,
+                "r": 0.0,
+                "outcome": "CANCELLED",
+                "status": "CANCELLED",
+                "reason": "MANUAL_CANCEL",
+                "ctrader_close_receipt": c_res,
+            })
+            completed.append(tr)
+            closed_any = True
+            send_exit_alert(tr, "TRADE CANCELLED (MANUAL)")
+            continue
+
+        if is_pending_manual:
+            exit_p = float(tr.get("pending_exit_price") or cur_close)
+            raw_diff = (exit_p - entry) if direction == "LONG" else (entry - exit_p)
+            friction = oz * TRANSACTION_COSTS["total_points"]
+            net_pnl = (raw_diff * oz) - friction
+            r_val = net_pnl / tr["monetary_risk_usd"]
+            pos_id = tr.get("ctrader_position_id") or (tr.get("ctrader_receipt") or {}).get("position_id")
+            c_res = None
+            if pos_id:
+                try:
+                    from core.ctrader_executor import close_ctrader_position
+                    c_res = close_ctrader_position(position_id=int(pos_id), lots=float(lots), pair=tr.get("symbol", "XAUUSD"))
+                    logger.info(f"[cTrader Gold Manual Close] Position #{pos_id} close response: {c_res.get('status')}")
+                except Exception as ex:
+                    logger.error(f"[cTrader Gold Manual Close] Error closing #{pos_id}: {ex}")
+            tr.update({
+                "exit_price": exit_p,
+                "exit_time": now_utc.isoformat(),
+                "gross_pnl": raw_diff * oz,
+                "friction": friction,
+                "net_pnl": net_pnl,
+                "r": r_val,
+                "outcome": "MANUAL_CLOSE",
+                "status": "CLOSED",
+                "reason": "MANUAL_CLOSE",
+                "ctrader_close_receipt": c_res,
+            })
+            completed.append(tr)
+            closed_any = True
+            send_exit_alert(tr, "MANUAL MARKET CLOSE")
+            continue
+
         # Volatility Cushion Trailing Stop Update
         if VOLATILITY_CUSHION_ENABLED:
             if direction == "LONG":

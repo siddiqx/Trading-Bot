@@ -4,7 +4,13 @@ import pytest
 import pandas as pd
 import numpy as np
 from datetime import datetime, timezone, timedelta
-from market_scanner import compute_indicators, format_alert_message, scan_pair_timeframe
+from market_scanner import (
+    compute_indicators,
+    format_alert_message,
+    scan_pair_timeframe,
+    check_active_trades,
+    format_exit_message,
+)
 
 
 def generate_mock_df(n_bars=60, start_price=1.0800, trend="up"):
@@ -2271,3 +2277,146 @@ def test_v330_volatility_cushion_trailing(monkeypatch):
     assert trade["cushion_tier"] == 2
     assert trade["stop_loss"] == 1.08110  # Locked +11 pips
     assert trade["take_profit"] == 1.08440  # Extended +44 pips
+
+
+def test_check_active_trades_pending_cancel(monkeypatch):
+    """Verifies /cancel immediately closes cTrader position and marks trade CANCELLED with 0.0 PnL."""
+    t_entry = datetime.now(timezone.utc) - timedelta(hours=1)
+    mock_df = pd.DataFrame({
+        "time": [t_entry],
+        "open": [1.08500],
+        "high": [1.08600],
+        "low": [1.08400],
+        "close": [1.08550],
+        "volume": [100]
+    })
+
+    closed_positions = []
+    def mock_close_ctrader_position(position_id, volume_units=None, lots=None, pair=None):
+        closed_positions.append(position_id)
+        return {"status": "CLOSED", "position_id": position_id}
+
+    monkeypatch.setattr("market_scanner.is_forex_market_open", lambda *args, **kwargs: True)
+    monkeypatch.setattr("market_scanner.fetch_candles", lambda *args, **kwargs: mock_df)
+    monkeypatch.setattr("market_scanner.send_telegram_alert", lambda *args, **kwargs: None)
+    monkeypatch.setattr("market_scanner.sync_worker", lambda *args, **kwargs: None)
+    monkeypatch.setattr("market_scanner.save_trade_records", lambda *args, **kwargs: None)
+    monkeypatch.setattr("market_scanner.close_ctrader_position", mock_close_ctrader_position)
+    monkeypatch.setattr("market_scanner.record_trade_post_mortem", lambda *args, **kwargs: None)
+
+    records = {
+        "active_trades": {
+            "EURUSD": {
+                "trade_id": "EURUSD_CANCEL_TEST",
+                "pair": "EURUSD",
+                "symbol": "EURUSD",
+                "ticker": "EURUSD=X",
+                "direction": "LONG",
+                "entry": 1.08500,
+                "stop_loss": 1.08300,
+                "take_profit": 1.08800,
+                "sl_pips": 20.0,
+                "pip": 0.0001,
+                "pending_close": "CANCELLED",
+                "pending_exit_price": 1.08550,
+                "ctrader_position_id": 998877,
+                "status": "OPEN",
+                "opened_at": t_entry.strftime("%Y-%m-%dT%H:%M:%SZ")
+            }
+        },
+        "completed_trades": []
+    }
+
+    check_active_trades(records)
+    assert "EURUSD" not in records["active_trades"]
+    assert len(records["completed_trades"]) == 1
+    comp = records["completed_trades"][0]
+    assert comp["outcome"] == "CANCELLED"
+    assert comp["status"] == "CANCELLED"
+    assert comp["realized_pips"] == 0.0
+    assert comp["realized_r"] == 0.0
+    assert 998877 in closed_positions
+
+
+def test_check_active_trades_pending_manual_close(monkeypatch):
+    """Verifies /close records floating PnL, closes broker position, and flags MANUAL_CLOSE."""
+    t_entry = datetime.now(timezone.utc) - timedelta(hours=1)
+    mock_df = pd.DataFrame({
+        "time": [t_entry],
+        "open": [1.08500],
+        "high": [1.08700],
+        "low": [1.08450],
+        "close": [1.08650],  # +15.0 pips floating gain
+        "volume": [100]
+    })
+
+    closed_positions = []
+    def mock_close_ctrader_position(position_id, volume_units=None, lots=None, pair=None):
+        closed_positions.append(position_id)
+        return {"status": "CLOSED", "position_id": position_id}
+
+    monkeypatch.setattr("market_scanner.is_forex_market_open", lambda *args, **kwargs: True)
+    monkeypatch.setattr("market_scanner.fetch_candles", lambda *args, **kwargs: mock_df)
+    monkeypatch.setattr("market_scanner.send_telegram_alert", lambda *args, **kwargs: None)
+    monkeypatch.setattr("market_scanner.sync_worker", lambda *args, **kwargs: None)
+    monkeypatch.setattr("market_scanner.save_trade_records", lambda *args, **kwargs: None)
+    monkeypatch.setattr("market_scanner.close_ctrader_position", mock_close_ctrader_position)
+    monkeypatch.setattr("market_scanner.record_trade_post_mortem", lambda *args, **kwargs: None)
+
+    records = {
+        "active_trades": {
+            "EURUSD": {
+                "trade_id": "EURUSD_MANUAL_TEST",
+                "pair": "EURUSD",
+                "symbol": "EURUSD",
+                "ticker": "EURUSD=X",
+                "direction": "LONG",
+                "entry": 1.08500,
+                "stop_loss": 1.08300,  # 20 pips SL
+                "take_profit": 1.08800,
+                "sl_pips": 20.0,
+                "pip": 0.0001,
+                "pending_close": "MANUAL_CLOSE",
+                "pending_exit_price": 1.08650,
+                "ctrader_position_id": 445566,
+                "status": "OPEN",
+                "opened_at": t_entry.strftime("%Y-%m-%dT%H:%M:%SZ")
+            }
+        },
+        "completed_trades": []
+    }
+
+    check_active_trades(records)
+    assert "EURUSD" not in records["active_trades"]
+    assert len(records["completed_trades"]) == 1
+    comp = records["completed_trades"][0]
+    assert comp["outcome"] == "MANUAL_CLOSE"
+    assert comp["status"] == "CLOSED"
+    assert comp["realized_pips"] == 15.0
+    assert comp["realized_r"] == 0.75
+    assert 445566 in closed_positions
+
+
+def test_format_exit_message_manual_and_cancelled():
+    """Verifies format_exit_message appropriately formats MANUAL_CLOSE and CANCELLED."""
+    trade = {
+        "pair": "EURUSD",
+        "direction": "LONG",
+        "entry": 1.08500,
+        "timeframe": "15M"
+    }
+
+    # Manual Profit
+    msg_prof = format_exit_message(trade, "MANUAL_CLOSE", 1.08650, 15.0, 0.75)
+    assert "MANUAL EXIT: PROFIT SECURED (+0.75R)" in msg_prof
+    assert "⚡" in msg_prof
+
+    # Manual Loss Cut
+    msg_loss = format_exit_message(trade, "MANUAL_CLOSE", 1.08400, -10.0, -0.50)
+    assert "MANUAL EXIT: RISK MANAGED (-0.50R)" in msg_loss
+
+    # Cancelled
+    msg_cancel = format_exit_message(trade, "CANCELLED", 1.08500, 0.0, 0.0)
+    assert "TRADE CANCELLED (ZERO LOSS)" in msg_cancel
+    assert "🚫" in msg_cancel
+

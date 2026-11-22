@@ -540,6 +540,7 @@ async function autoResolveTrade(symbol, t, outcome, exitPrice, env, prefetchedLe
   }
 
   const isCancelled = outcome === "CANCELLED";
+  const isManual = outcome === "MANUAL_CLOSE" || outcome === "MANUAL";
   let resolvedOutcome = outcome;
   let pips = 0.0;
   let r = 0.0;
@@ -547,6 +548,22 @@ async function autoResolveTrade(symbol, t, outcome, exitPrice, env, prefetchedLe
   if (isCancelled) {
     pips = 0.0;
     r = 0.0;
+    resolvedOutcome = "CANCELLED";
+  } else if (isManual) {
+    resolvedOutcome = "MANUAL_CLOSE";
+    const asset = getAssetConfig(symbol, t);
+    const pip = t.pip || asset.pip || (symbol.includes("JPY") ? 0.01 : (symbol.includes("XAU") ? 0.10 : 0.0001));
+    const isLong = (t.direction || t.action || "").toUpperCase().includes("BUY") || (t.direction || "").toUpperCase() === "LONG";
+    const exitP = typeof exitPrice === "number" && !isNaN(exitPrice) ? exitPrice : t.entry;
+    pips = isLong ? ((exitP - t.entry) / pip) : ((t.entry - exitP) / pip);
+    const initSlPips = t.sl_pips || (Math.abs(t.entry - t.stop_loss) / pip);
+    r = initSlPips > 0 ? (pips / initSlPips) : 0.0;
+    if (t.partial_taken) {
+      const partialR = t.partial_banked_r || 0.50;
+      const partialPips = t.partial_banked_pips || 0.0;
+      r = partialR + (r * 0.50);
+      pips = partialPips + (pips * 0.50);
+    }
   } else {
     const isWin = outcome === "WIN";
     const pip = t.pip || 0.0001;
@@ -1089,7 +1106,17 @@ async function handleTelegramUpdate(update, env) {
 
     const parts = text.split(/\s+/);
     // Strip bot username if invoked as /command@BotName
-    const cmd = parts[0].toLowerCase().split("@")[0];
+    let cmd = parts[0].toLowerCase().split("@")[0];
+    let symbol = parts[1] ? parts[1].toUpperCase().replace("/", "") : null;
+    let outcomeArg = parts[2] ? parts[2].toUpperCase() : null;
+
+    if (cmd.startsWith("/close_")) {
+      symbol = cmd.replace("/close_", "").toUpperCase().replace("/", "");
+      cmd = "/close";
+    } else if (cmd.startsWith("/cancel_")) {
+      symbol = cmd.replace("/cancel_", "").toUpperCase().replace("/", "");
+      cmd = "/cancel";
+    }
 
     if (cmd === "/active" || cmd === "/open" || cmd === "/trades" || cmd === "/positions") {
       await sendActiveMessage(chatId, env);
@@ -1145,45 +1172,239 @@ async function handleTelegramUpdate(update, env) {
       STORED_ACTIVE_TRADES = {};
       STORED_COMPLETED_TRADES = [];
       await sendClearInstructions(chatId);
-    } else if (cmd === "/close" || cmd === "/resolve") {
+    } else if (cmd === "/close" || cmd === "/resolve" || cmd === "/exit") {
       const authorizedChatId = String(getTelegramChatId(env));
       const senderChatId = String(chatId);
       const senderUserId = String(update.message?.from?.id || "");
       if (senderChatId !== authorizedChatId && senderUserId !== authorizedChatId) {
-        await sendTelegramMessage(chatId, "⛔ <b>Access Denied:</b> Force-close is restricted to the bot owner.", null, env);
+        await sendTelegramMessage(chatId, "⛔ <b>Access Denied:</b> This administrative command is restricted to the bot owner.", null, env);
         return new Response("OK", { status: 200 });
       }
-      // Admin: force-resolve a stuck active trade
-      // Usage: /close EURUSD WIN | /close EURUSD LOSS | /close EURUSD CANCEL
-      const symbol = parts[1] ? parts[1].toUpperCase().replace("/", "") : null;
-      const outcomeArg = parts[2] ? parts[2].toUpperCase() : null;
-      if (symbol && outcomeArg) {
-        const outcome = outcomeArg === "WIN" ? "WIN" : outcomeArg === "LOSS" ? "LOSS" : "CANCELLED";
-        const closeLedger = await getLedger(env);
-        const matchedKey = Object.keys(closeLedger.active).find(k => k === symbol || getBaseSymbol(k, closeLedger.active[k]) === symbol);
-        const trade = matchedKey ? closeLedger.active[matchedKey] : null;
-        if (trade) {
-          const exitPrice = outcome === "WIN" ? trade.take_profit : outcome === "LOSS" ? trade.stop_loss : trade.entry;
-          await autoResolveTrade(matchedKey, trade, outcome, exitPrice, env, closeLedger);
+
+      const closeLedger = await getLedger(env);
+      const activeEntries = Object.entries(closeLedger.active || {});
+
+      // If no symbol specified, present interactive list of active trades
+      if (!symbol) {
+        if (activeEntries.length === 0) {
           await sendTelegramMessage(chatId,
-            `✅ <b>ADMIN FORCE-CLOSE · ${symbol} ${outcome}</b>\n` +
+            `ℹ️ <b>No Active Trades to Close</b>\n` +
             `━━━━━━━━━━━━━━━━━━\n` +
-            `• Trade ID: <code>${trade.trade_id}</code>\n` +
-            `• Closed at: <code>${exitPrice}</code>\n` +
-            `• Pair unlocked. Surveillance resumed.`
+            `There are currently no active trades in the portfolio.\n` +
+            `Use /radar to check market scanner surveillance.`
           );
-        } else {
-          await sendTelegramMessage(chatId, `⚠️ No active trade found for <code>${symbol}</code>. Use /active to see current positions.`);
+          return new Response("OK", { status: 200 });
         }
-      } else {
+        const lines = activeEntries.map(([k, t]) => {
+          const base = getBaseSymbol(k, t);
+          const dir = t.direction || "TRADE";
+          const openPrice = t.entry;
+          return `• <b>${base}</b> (${dir} @ <code>${openPrice}</code>): Tap /close_${base} (or <code>/close ${base}</code>)`;
+        });
         await sendTelegramMessage(chatId,
-          `ℹ️ <b>Force-Close Usage:</b>\n` +
-          `<code>/close EURUSD WIN</code>\n` +
-          `<code>/close EURUSD LOSS</code>\n` +
-          `<code>/close EURUSD CANCEL</code>\n\n` +
-          `Available pairs: EURUSD · USDCAD · GBPUSD · USDJPY · USDCHF · AUDUSD · XAUUSD`
+          `⚡ <b>CLOSE TRADE · SELECT PAIR</b>\n` +
+          `━━━━━━━━━━━━━━━━━━\n` +
+          `Close an active trade at live market price with floating PnL:\n\n` +
+          lines.join("\n") + `\n\n` +
+          `━━━━━━━━━━━━━━━━━━\n` +
+          `💡 <i>Tap a pair command above or type <code>/close PAIR</code> to exit immediately.</i>`
         );
+        return new Response("OK", { status: 200 });
       }
+
+      // If user typed /close <PAIR> CANCEL, route to cancel flow
+      if (outcomeArg === "CANCEL" || outcomeArg === "CANCELLED") {
+        const matchedKey = Object.keys(closeLedger.active || {}).find(k => k === symbol || getBaseSymbol(k, closeLedger.active[k]) === symbol);
+        const trade = matchedKey ? closeLedger.active[matchedKey] : null;
+        if (!trade) {
+          await sendTelegramMessage(chatId, `⚠️ No active trade found for <code>${symbol}</code>. Use /active to see current positions.`);
+          return new Response("OK", { status: 200 });
+        }
+        const asset = getAssetConfig(matchedKey, trade);
+        let exitPrice = await getLivePriceFast(asset, 2500);
+        if (!exitPrice || isNaN(exitPrice)) exitPrice = trade.entry;
+        await autoResolveTrade(matchedKey, trade, "CANCELLED", exitPrice, env, closeLedger);
+        const hasBrokerPosition = !!(trade.ctrader_position_id || (trade.ctrader_receipt && trade.ctrader_receipt.position_id));
+        const brokerNote = hasBrokerPosition
+          ? "📡 <i>cTrader market close dispatched to broker via TLS client...</i>"
+          : "🔓 <i>Pair unlocked. Surveillance resumed immediately.</i>";
+        await sendTelegramMessage(chatId,
+          `🚫 <b>TRADE CANCELLED · ${symbol}</b>\n` +
+          `━━━━━━━━━━━━━━━━━━\n` +
+          `• <b>Trade ID:</b> <code>${trade.trade_id || symbol}</code>\n` +
+          `• <b>Direction:</b> <b>${trade.direction || "TRADE"}</b>\n` +
+          `• <b>Entry:</b> <code>${trade.entry}</code>\n` +
+          `• <b>Exit Price:</b> <code>${exitPrice}</code>\n` +
+          `• <b>Outcome:</b> <b>CANCELLED</b>\n` +
+          `• <b>Net Realized:</b> <b>0.0 pips / 0.00 R (PnL Excluded)</b>\n` +
+          `━━━━━━━━━━━━━━━━━━\n` +
+          brokerNote
+        );
+        return new Response("OK", { status: 200 });
+      }
+
+      // Legacy force-close support if WIN/LOSS explicitly specified
+      if (outcomeArg === "WIN" || outcomeArg === "LOSS") {
+        const matchedKey = Object.keys(closeLedger.active || {}).find(k => k === symbol || getBaseSymbol(k, closeLedger.active[k]) === symbol);
+        const trade = matchedKey ? closeLedger.active[matchedKey] : null;
+        if (!trade) {
+          await sendTelegramMessage(chatId, `⚠️ No active trade found for <code>${symbol}</code>. Use /active to see current positions.`);
+          return new Response("OK", { status: 200 });
+        }
+        const exitPrice = outcomeArg === "WIN" ? trade.take_profit : trade.stop_loss;
+        await autoResolveTrade(matchedKey, trade, outcomeArg, exitPrice, env, closeLedger);
+        await sendTelegramMessage(chatId,
+          `✅ <b>ADMIN FORCE-CLOSE · ${symbol} ${outcomeArg}</b>\n` +
+          `━━━━━━━━━━━━━━━━━━\n` +
+          `• <b>Trade ID:</b> <code>${trade.trade_id || symbol}</code>\n` +
+          `• <b>Exit Price:</b> <code>${exitPrice}</code>\n` +
+          `• <b>Outcome:</b> <b>${outcomeArg}</b>\n` +
+          `━━━━━━━━━━━━━━━━━━\n` +
+          `🔓 <i>Pair unlocked. Broker position reconciled.</i>`
+        );
+        return new Response("OK", { status: 200 });
+      }
+
+      // Standard /close <PAIR>: Close at live market price with floating PnL (No WIN/LOSS required)
+      const matchedKey = Object.keys(closeLedger.active || {}).find(k => k === symbol || getBaseSymbol(k, closeLedger.active[k]) === symbol);
+      const trade = matchedKey ? closeLedger.active[matchedKey] : null;
+      if (!trade) {
+        await sendTelegramMessage(chatId, `⚠️ No active trade found for <code>${symbol}</code>. Use /active to see current positions.`);
+        return new Response("OK", { status: 200 });
+      }
+
+      const asset = getAssetConfig(matchedKey, trade);
+      let livePrice = await getLivePriceFast(asset, 3500);
+      if (!livePrice || isNaN(livePrice)) {
+        livePrice = trade.entry;
+      }
+
+      const isLong = (trade.direction || trade.action || "").toUpperCase().includes("BUY") || (trade.direction || "").toUpperCase() === "LONG";
+      const pip = trade.pip || asset.pip || (asset.symbol.includes("JPY") ? 0.01 : (asset.symbol === "XAUUSD" ? 0.10 : 0.0001));
+      const digits = trade.digits || asset.digits || (asset.symbol === "XAUUSD" ? 2 : (asset.symbol.includes("JPY") ? 3 : 5));
+      const rawDiff = isLong ? (livePrice - trade.entry) : (trade.entry - livePrice);
+      const floatPips = rawDiff / pip;
+      const initSlPips = trade.sl_pips || (Math.abs(trade.entry - trade.stop_loss) / pip);
+      const floatR = initSlPips > 0 ? (floatPips / initSlPips) : 0.0;
+      const pipsSign = floatPips >= 0 ? "+" : "";
+      const rSign = floatR >= 0 ? "+" : "";
+
+      let usdText = "";
+      if (asset.symbol === "XAUUSD") {
+        const lots = trade.lots ? parseFloat(trade.lots) : 0.01;
+        const floatUsd = rawDiff * lots * 100.0;
+        const usdSign = floatUsd >= 0 ? "+" : "-";
+        usdText = `• <b>Floating USD:</b> <b>${usdSign}$${Math.abs(floatUsd).toFixed(2)} USD</b>\n`;
+      } else if (trade.lots || trade.units) {
+        const lots = trade.lots ? parseFloat(trade.lots) : (trade.units ? trade.units / 100000.0 : 0.0);
+        if (lots > 0) {
+          let pipValUsd = 10.0;
+          if (asset.symbol === "USDCAD" || asset.symbol === "USDCHF") {
+            pipValUsd = 10.0 / livePrice;
+          } else if (asset.symbol === "USDJPY") {
+            pipValUsd = 1000.0 / livePrice;
+          }
+          const floatUsd = floatPips * pipValUsd * lots;
+          const usdSign = floatUsd >= 0 ? "+" : "-";
+          usdText = `• <b>Floating USD:</b> <b>${usdSign}$${Math.abs(floatUsd).toFixed(2)} USD</b>\n`;
+        }
+      }
+
+      await autoResolveTrade(matchedKey, trade, "MANUAL_CLOSE", livePrice, env, closeLedger);
+      const hasBrokerPosition = !!(trade.ctrader_position_id || (trade.ctrader_receipt && trade.ctrader_receipt.position_id));
+      const brokerNote = hasBrokerPosition
+        ? "📡 <i>cTrader market close dispatched to broker via TLS client...</i>"
+        : "🔓 <i>Pair unlocked. Surveillance resumed immediately.</i>";
+
+      const outcomeEmoji = floatR > 0.05 ? "🟢" : (floatR < -0.05 ? "🔴" : "⚪");
+      const outcomeTag = floatR > 0.05 ? "MANUAL PROFIT" : (floatR < -0.05 ? "MANUAL LOSS CUT" : "MANUAL BREAK-EVEN");
+      await sendTelegramMessage(chatId,
+        `⚡ <b>MANUAL TRADE CLOSE · ${symbol}</b>\n` +
+        `━━━━━━━━━━━━━━━━━━\n` +
+        `• <b>Trade ID:</b> <code>${trade.trade_id || symbol}</code>\n` +
+        `• <b>Direction:</b> <b>${trade.direction || "TRADE"}</b>\n` +
+        `• <b>Entry:</b> <code>${trade.entry.toFixed(digits)}</code>\n` +
+        `• <b>Exit Price:</b> <code>${livePrice.toFixed(digits)}</code>\n` +
+        `• <b>Net Realized:</b> <b>${pipsSign}${floatPips.toFixed(1)} pips</b> | <b>${rSign}${floatR.toFixed(2)} R</b>\n` +
+        usdText +
+        `• <b>Outcome:</b> ${outcomeEmoji} <b>${outcomeTag}</b>\n` +
+        `━━━━━━━━━━━━━━━━━━\n` +
+        brokerNote
+      );
+      return new Response("OK", { status: 200 });
+
+    } else if (cmd === "/cancel" || cmd === "/abort" || cmd === "/cancel_trade") {
+      const authorizedChatId = String(getTelegramChatId(env));
+      const senderChatId = String(chatId);
+      const senderUserId = String(update.message?.from?.id || "");
+      if (senderChatId !== authorizedChatId && senderUserId !== authorizedChatId) {
+        await sendTelegramMessage(chatId, "⛔ <b>Access Denied:</b> This administrative command is restricted to the bot owner.", null, env);
+        return new Response("OK", { status: 200 });
+      }
+
+      const cancelLedger = await getLedger(env);
+      const activeEntries = Object.entries(cancelLedger.active || {});
+
+      // If no symbol specified, present interactive list of active trades
+      if (!symbol) {
+        if (activeEntries.length === 0) {
+          await sendTelegramMessage(chatId,
+            `ℹ️ <b>No Active Trades to Cancel</b>\n` +
+            `━━━━━━━━━━━━━━━━━━\n` +
+            `There are currently no active or pending trades to cancel.\n` +
+            `Use /active to view portfolio status.`
+          );
+          return new Response("OK", { status: 200 });
+        }
+        const lines = activeEntries.map(([k, t]) => {
+          const base = getBaseSymbol(k, t);
+          const dir = t.direction || "TRADE";
+          const st = t.status === "PENDING" ? "PENDING" : "ACTIVE";
+          return `• <b>${base}</b> (${st} ${dir}): Tap /cancel_${base} (or <code>/cancel ${base}</code>)`;
+        });
+        await sendTelegramMessage(chatId,
+          `🚫 <b>CANCEL TRADE · SELECT PAIR</b>\n` +
+          `━━━━━━━━━━━━━━━━━━\n` +
+          `Cancel a trade immediately with zero PnL:\n\n` +
+          lines.join("\n") + `\n\n` +
+          `━━━━━━━━━━━━━━━━━━\n` +
+          `⚠️ <i>Cancelling closes any broker position immediately and records 0.0 pips / 0.00 R (excluded from win rate & performance stats).</i>`
+        );
+        return new Response("OK", { status: 200 });
+      }
+
+      const matchedKey = Object.keys(cancelLedger.active || {}).find(k => k === symbol || getBaseSymbol(k, cancelLedger.active[k]) === symbol);
+      const trade = matchedKey ? cancelLedger.active[matchedKey] : null;
+      if (!trade) {
+        await sendTelegramMessage(chatId, `⚠️ No active trade found for <code>${symbol}</code>. Use /active to see current positions.`);
+        return new Response("OK", { status: 200 });
+      }
+
+      const asset = getAssetConfig(matchedKey, trade);
+      let exitPrice = await getLivePriceFast(asset, 2500);
+      if (!exitPrice || isNaN(exitPrice)) {
+        exitPrice = trade.entry;
+      }
+
+      await autoResolveTrade(matchedKey, trade, "CANCELLED", exitPrice, env, cancelLedger);
+      const hasBrokerPosition = !!(trade.ctrader_position_id || (trade.ctrader_receipt && trade.ctrader_receipt.position_id));
+      const brokerNote = hasBrokerPosition
+        ? "📡 <i>cTrader market close dispatched to broker via TLS client...</i>"
+        : "🔓 <i>Pair unlocked. Surveillance resumed immediately.</i>";
+
+      await sendTelegramMessage(chatId,
+        `🚫 <b>TRADE CANCELLED · ${symbol}</b>\n` +
+        `━━━━━━━━━━━━━━━━━━\n` +
+        `• <b>Trade ID:</b> <code>${trade.trade_id || symbol}</code>\n` +
+        `• <b>Direction:</b> <b>${trade.direction || "TRADE"}</b>\n` +
+        `• <b>Entry:</b> <code>${trade.entry}</code>\n` +
+        `• <b>Exit Price:</b> <code>${exitPrice}</code>\n` +
+        `• <b>Outcome:</b> <b>CANCELLED</b>\n` +
+        `• <b>Net Realized:</b> <b>0.0 pips / 0.00 R (PnL Excluded)</b>\n` +
+        `━━━━━━━━━━━━━━━━━━\n` +
+        brokerNote
+      );
+      return new Response("OK", { status: 200 });
     } else {
       await sendMenuMessage(chatId, env);
     }
@@ -1704,12 +1925,21 @@ async function sendHistoryMessage(chatId, filterPair = "ALL", filterRange = "ALL
     const isCancelled = t.outcome === "CANCELLED";
     const isWin = t.outcome === "WIN";
     const isBE = t.outcome === "BREAK_EVEN";
-    const outcomeBadge = isCancelled ? "⚠️ <b>CANCELLED</b>" : (isWin ? "🎯 <b>WIN</b>" : (isBE ? "🛡️ <b>BREAK-EVEN</b>" : "🛑 <b>LOSS</b>"));
+    const isManual = t.outcome === "MANUAL_CLOSE" || t.outcome === "MANUAL";
     const pipsVal = typeof t.realized_pips === "number" ? t.realized_pips : parseFloat(t.realized_pips || 0);
     const rVal = typeof t.realized_r === "number" ? t.realized_r : parseFloat(t.realized_r || 0);
+    let outcomeBadge = "🛑 <b>LOSS</b>";
+    if (isCancelled) outcomeBadge = "🚫 <b>CANCELLED</b>";
+    else if (isWin) outcomeBadge = "🎯 <b>WIN</b>";
+    else if (isBE) outcomeBadge = "🛡️ <b>BREAK-EVEN</b>";
+    else if (isManual) {
+      if (rVal > 0.05) outcomeBadge = "⚡ <b>MANUAL WIN</b>";
+      else if (rVal < -0.05) outcomeBadge = "⚡ <b>MANUAL LOSS</b>";
+      else outcomeBadge = "🛡️ <b>MANUAL BE</b>";
+    }
     const sign = pipsVal >= 0 ? "+" : "";
     const rSign = rVal >= 0 ? "+" : "";
-    const outcomeDetail = isCancelled ? "(Unfilled · 0.0p / 0.00R)" : `(${sign}${pipsVal.toFixed(1)}p / ${rSign}${rVal.toFixed(2)}R)`;
+    const outcomeDetail = isCancelled ? "(Zero PnL · Cancelled)" : `(${sign}${pipsVal.toFixed(1)}p / ${rSign}${rVal.toFixed(2)}R)`;
 
     closedRows.push(
       `<b>${num}. ${pName}</b> · ${t.timeframe || "15M"} · <b>${t.direction}</b>\n` +
@@ -1785,8 +2015,9 @@ async function sendPerformanceMessage(chatId, filterPair = "ALL", env) {
   }
 
   const totalClosed = closed.length;
-  const wins = closed.filter(t => t.outcome === "WIN").length;
-  const losses = closed.filter(t => t.outcome === "LOSS").length;
+  const wins = closed.filter(t => t.outcome === "WIN" || (t.outcome === "MANUAL_CLOSE" && (t.realized_r || 0) > 0.05)).length;
+  const losses = closed.filter(t => t.outcome === "LOSS" || (t.outcome === "MANUAL_CLOSE" && (t.realized_r || 0) < -0.05)).length;
+  const breakEvenCount = closed.filter(t => t.outcome === "BREAK_EVEN" || (t.outcome === "MANUAL_CLOSE" && Math.abs(t.realized_r || 0) <= 0.05)).length;
   const cancelled = closed.filter(t => t.outcome === "CANCELLED").length;
   const decided = wins + losses;
   const winRate = decided > 0 ? ((wins / decided) * 100).toFixed(1) : "N/A";
@@ -1797,6 +2028,7 @@ async function sendPerformanceMessage(chatId, filterPair = "ALL", env) {
   let grossLosses = 0;
 
   for (const t of closed) {
+    if (t.outcome === "CANCELLED") continue;
     const pips = t.realized_pips || 0;
     const r = t.realized_r || 0;
     netPips += pips;
@@ -1817,7 +2049,6 @@ async function sendPerformanceMessage(chatId, filterPair = "ALL", env) {
   const rSign = netR >= 0 ? "+" : "";
   const scopeLabel = filterPair === "ALL" ? "PORTFOLIO (ALL PAIRS)" : filterPair;
 
-  const breakEvenCount = closed.filter(t => t.outcome === "BREAK_EVEN").length;
   const beLabel = breakEvenCount > 0 ? ` · <b>${breakEvenCount} BE</b>` : "";
   const expectancy = decided > 0 ? (netR / (decided + breakEvenCount)).toFixed(3) : "N/A";
   const expSign = parseFloat(expectancy) >= 0 ? "+" : "";
@@ -1828,7 +2059,7 @@ async function sendPerformanceMessage(chatId, filterPair = "ALL", env) {
     `Scope: <b>${scopeLabel}</b> · Dual-Timeframe CCRS Engine\n` +
     `━━━━━━━━━━━━━━━━━━\n\n` +
     `<b>1. EXECUTION METRICS</b>\n` +
-    `• Decided Trades: <b>${decided}</b> (${wins}W · ${losses}L${beLabel})\n` +
+    `• Decided Trades: <b>${decided}</b> (${wins}W · ${losses}L${beLabel}${cancelled > 0 ? ` · ${cancelled} Cancelled` : ""})\n` +
     `• Win Rate: <b>${winRate}${decided > 0 ? "%" : ""}</b>\n` +
     `• Active Positions: <b>${active.length} / 2 Max Concurrent</b>\n\n` +
     `<b>2. RETURNS & PROFITABILITY</b>\n` +
@@ -2241,7 +2472,8 @@ async function sendMenuMessage(chatId, env) {
     `6. /patterns ── Volume post-mortems &amp; failure analysis\n` +
     `7. /strategy ── Institutional Dual-Timeframe CCRS Engine (v3.3.0)\n` +
     `8. /status ── 24/7 serverless engine health\n` +
-    `9. /close PAIR WIN|LOSS ── Admin force-close\n\n` +
+    `9. /close [PAIR] ── Close trade at live floating PnL\n` +
+    `10. /cancel [PAIR] ── Cancel trade (zero PnL & liquidates broker)\n\n` +
     `Select a dashboard module below:`;
 
 

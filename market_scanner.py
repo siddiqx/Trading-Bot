@@ -513,9 +513,28 @@ def format_exit_message(
 ) -> str:
     is_win = outcome == "WIN"
     is_be = outcome == "BREAK_EVEN"
-    icon = "🎯" if is_win else ("🛡️" if is_be else "🛑")
-    header = f"TARGET REACHED: FULL TAKE PROFIT HIT (+{realized_r:.2f}R)" if is_win else ("CAPITAL PRESERVED: BREAK-EVEN EXIT" if is_be else "STRUCTURAL EXIT: STOP LOSS HIT (-1.00R)")
-    status_text = f"WIN (Liquidity Pool Swept · +{realized_r:.2f}R)" if is_win else ("BREAK-EVEN (Capital Protected)" if is_be else "LOSS (Order Block Invalidation)")
+    is_manual = outcome in ("MANUAL_CLOSE", "MANUAL")
+    is_cancelled = outcome in ("CANCELLED", "CANCEL")
+
+    if is_manual:
+        icon = "⚡"
+        if realized_r > 0.05:
+            header = f"MANUAL EXIT: PROFIT SECURED (+{realized_r:.2f}R)"
+            status_text = f"MANUAL CLOSE (Profit Secured · +{realized_r:.2f}R)"
+        elif realized_r < -0.05:
+            header = f"MANUAL EXIT: RISK MANAGED ({realized_r:.2f}R)"
+            status_text = f"MANUAL CLOSE (Risk Managed · {realized_r:.2f}R)"
+        else:
+            header = "MANUAL EXIT: BREAK-EVEN (0.00R)"
+            status_text = "MANUAL CLOSE (Scratch / Break-Even)"
+    elif is_cancelled:
+        icon = "🚫"
+        header = "TRADE CANCELLED (ZERO LOSS)"
+        status_text = "CANCELLED (PnL Excluded · 0.00R)"
+    else:
+        icon = "🎯" if is_win else ("🛡️" if is_be else "🛑")
+        header = f"TARGET REACHED: FULL TAKE PROFIT HIT (+{realized_r:.2f}R)" if is_win else ("CAPITAL PRESERVED: BREAK-EVEN EXIT" if is_be else "STRUCTURAL EXIT: STOP LOSS HIT (-1.00R)")
+        status_text = f"WIN (Liquidity Pool Swept · +{realized_r:.2f}R)" if is_win else ("BREAK-EVEN (Capital Protected)" if is_be else "LOSS (Order Block Invalidation)")
     sign = "+" if realized_pips >= 0 else ""
     r_sign = "+" if realized_r >= 0 else ""
     pair_name = trade.get('pair') or trade.get('symbol') or 'ASSET'
@@ -967,6 +986,9 @@ def check_active_trades(records: dict):
                 logger.error(f"Error checking pending timeout for {pair}: {e}")
 
         # Check if trade was marked pending exit by edge gateway or external resolver
+        is_pending_cancelled = trade.get("pending_close") in ("CANCELLED", "CANCEL")
+        is_pending_manual = trade.get("pending_close") in ("MANUAL_CLOSE", "MANUAL", "CLOSE")
+
         if trade.get("pending_close") == "WIN":
             hit_tp = True
             hit_sl = False
@@ -1027,6 +1049,126 @@ def check_active_trades(records: dict):
                 f"🔓 <i>Pair unlocked. Surveillance resumed immediately.</i>"
             )
             send_telegram_alert(msg)
+            records.setdefault("completed_trades", []).append(completed_record)
+            records.get("active_trades", {}).pop(trade_key, None)
+            records.get("active_trades", {}).pop(pair, None)
+            resolved_pairs.append(pair)
+
+        elif is_pending_cancelled:
+            logger.info(f"==> TRADE CANCELLED VIA TELEGRAM COMMAND: {pair} {trade.get('direction')}")
+            exit_price = float(trade.get("pending_exit_price") or cur_price or entry)
+
+            # Dispatch Market Close to cTrader to liquidate any open position
+            pos_id = trade.get("ctrader_position_id") or trade.get("ctrader_receipt", {}).get("position_id")
+            ctrader_close_res = None
+            if pos_id:
+                try:
+                    vol_units = trade.get("units") or trade.get("ctrader_receipt", {}).get("units")
+                    lots_val = trade.get("lots") or trade.get("ctrader_receipt", {}).get("lots")
+                    ctrader_close_res = close_ctrader_position(
+                        position_id=int(pos_id),
+                        volume_units=int(vol_units) if vol_units else None,
+                        lots=float(lots_val) if lots_val else None,
+                        pair=pair
+                    )
+                    logger.info(f"[cTrader Auto-Close] Position #{pos_id} cancelled response: {ctrader_close_res.get('status')}")
+                except Exception as ex:
+                    logger.error(f"[cTrader Auto-Close] Error cancelling position #{pos_id}: {ex}")
+
+            completed_record = {
+                **trade,
+                "exit_price": float(exit_price),
+                "outcome": "CANCELLED",
+                "realized_pips": 0.0,
+                "realized_r": 0.0,
+                "closed_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "status": "CANCELLED",
+                "ctrader_close_receipt": ctrader_close_res
+            }
+
+            trade_id = trade.get("trade_id", "")
+            alerted_exits = records.setdefault("alerted_exits", [])
+            if trade_id not in alerted_exits:
+                msg = (
+                    f"🚫 <b>TRADE CANCELLED · {pair} {trade.get('direction')}</b>\n"
+                    f"━━━━━━━━━━━━━━━━━━\n"
+                    f"• <b>Entry:</b> <code>{entry}</code> | <b>Exit Price:</b> <code>{exit_price}</code>\n"
+                    f"• <b>Status:</b> Cancelled by user command (Zero PnL)\n"
+                    f"• <b>Net Realized:</b> <b>0.0 pips / 0.00 R (PnL Excluded)</b>\n"
+                    f"━━━━━━━━━━━━━━━━━━\n"
+                    f"🔓 <i>Position liquidated on broker. Surveillance resumed.</i>"
+                )
+                send_telegram_alert(msg)
+                alerted_exits.append(trade_id)
+
+            records.setdefault("completed_trades", []).append(completed_record)
+            records.get("active_trades", {}).pop(trade_key, None)
+            records.get("active_trades", {}).pop(pair, None)
+            resolved_pairs.append(pair)
+
+        elif is_pending_manual:
+            exit_price = float(trade.get("pending_exit_price") or cur_price or entry)
+            pip = float(trade.get("pip", 0.01 if "JPY" in pair else (0.10 if "XAU" in pair else 0.0001)))
+            init_sl_pips = float(trade.get("sl_pips", 20.0))
+            partial_taken = trade.get("partial_taken", False)
+            if is_long:
+                rem_pips = (exit_price - entry) / pip
+            else:
+                rem_pips = (entry - exit_price) / pip
+            rem_r = rem_pips / (init_sl_pips + 1e-9)
+
+            if partial_taken:
+                realized_r = float(round(trade.get("partial_banked_r", 0.50) + (rem_r * 0.50), 2))
+                realized_pips = float(round(trade.get("partial_banked_pips", 0.0) + (rem_pips * 0.50), 1))
+            else:
+                realized_r = float(round(rem_r, 2))
+                realized_pips = float(round(rem_pips, 1))
+
+            outcome = "MANUAL_CLOSE"
+            logger.info(f"==> TRADE RESOLVED (MANUAL CLOSE): {pair} {trade.get('direction')} ({realized_pips:+.1f} pips, {realized_r:+.2f} R)")
+
+            pos_id = trade.get("ctrader_position_id") or trade.get("ctrader_receipt", {}).get("position_id")
+            ctrader_close_res = None
+            if pos_id:
+                try:
+                    vol_units = trade.get("units") or trade.get("ctrader_receipt", {}).get("units")
+                    lots_val = trade.get("lots") or trade.get("ctrader_receipt", {}).get("lots")
+                    ctrader_close_res = close_ctrader_position(
+                        position_id=int(pos_id),
+                        volume_units=int(vol_units) if vol_units else None,
+                        lots=float(lots_val) if lots_val else None,
+                        pair=pair
+                    )
+                    logger.info(f"[cTrader Auto-Close] Position #{pos_id} manual close response: {ctrader_close_res.get('status')}")
+                except Exception as ex:
+                    logger.error(f"[cTrader Auto-Close] Error closing position #{pos_id} on manual close: {ex}")
+
+            completed_record = {
+                **trade,
+                "exit_price": float(exit_price),
+                "outcome": outcome,
+                "realized_pips": float(round(realized_pips, 1)),
+                "realized_r": float(round(realized_r, 2)),
+                "closed_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "status": "CLOSED",
+                "ctrader_close_receipt": ctrader_close_res
+            }
+
+            pm_record = None
+            try:
+                pm_record = record_trade_post_mortem(completed_record, df_trade)
+            except Exception as e:
+                logger.error(f"Error recording post-mortem for {pair}: {e}")
+
+            trade_id = trade.get("trade_id", "")
+            alerted_exits = records.setdefault("alerted_exits", [])
+            if trade_id not in alerted_exits:
+                msg = format_exit_message(trade, outcome, exit_price, realized_pips, realized_r, pm_record)
+                send_telegram_alert(msg)
+                alerted_exits.append(trade_id)
+            else:
+                logger.info(f"Exit alert already dispatched for {trade_id}. Suppressing duplicate.")
+
             records.setdefault("completed_trades", []).append(completed_record)
             records.get("active_trades", {}).pop(trade_key, None)
             records.get("active_trades", {}).pop(pair, None)
