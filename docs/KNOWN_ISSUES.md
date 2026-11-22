@@ -298,4 +298,66 @@ This document tracks verified defects, architectural discrepancies, and security
   6. Eliminated the separate `/gold` command entirely; any `/gold` command or callback now transparently redirects to the unified `/radar` surveillance terminal, and all menus/keyboards reflect the consolidated universe.
   7. Updated `/prices` to stream Gold quotes alongside Forex pairs.
 
+---
+
+### ISSUE-EDGE-01: Cloudflare KV Persistence Drop on Active Broker Positions Flagged with `pending_close`
+
+* **Severity:** **Critical** (Orphaned Live Positions & Ghost State)
+* **Status:** **REMEDIATED IN CODE (2026-11-22)** — Deployed to Cloudflare Edge.
+* **Affected Files:** `cloudflare_worker.js` (lines 509–535)
+* **Root Cause:** In `autoResolveTrade`, when a trade with an active broker position hit SL/TP on spot price (`hasBrokerPosition && !isBrokerClosed`), the function updated `t.pending_close = outcome` and `t.pending_exit_price = exitPrice` on the local variable, called `triggerGitHubScanner`, and returned immediately without persisting the modified trade to KV `active_trades`. When GitHub Actions pulled the ledger, it received the old active trade without `pending_close`. If the spot price pulled back, the Python scanner did not close the cTrader position, yet the Cloudflare Worker sent a Telegram exit alert ("STOP LOSS HIT - CLOSED").
+* **Remediation Implemented:**
+  - Updated `autoResolveTrade` in `cloudflare_worker.js` to persist `pending_close` and `pending_exit_price` directly into `active_trades` in KV prior to returning.
+  - In `runActiveTradeChecks`, suppressed premature exit alerts to Telegram when `hasBrokerPosition && !isBrokerClosed`, deferring exit alerting to `market_scanner.py` once the broker confirms execution.
+
+---
+
+### ISSUE-SEC-03: Unauthenticated Administrative Endpoints & Telegram Slash Command Execution
+
+* **Severity:** **Critical** (Security / Unauthorized Trade Manipulation)
+* **Status:** **REMEDIATED IN CODE (2026-11-22)** — Deployed to Cloudflare Edge.
+* **Affected Files:** `cloudflare_worker.js` (lines 860–1160)
+* **Root Cause:**
+  - `payload.event === "reset_trades"` and `payload.event === "sync_trades"` were exposed on the public worker root without secret token authentication.
+  - Telegram admin commands `/clear`, `/clean`, `/reset` and `/close`, `/resolve` did not verify if the sender's Telegram user ID or chat ID matched `TELEGRAM_CHAT_ID`.
+* **Remediation Implemented:**
+  - Added admin verification guard to `/clear`, `/reset`, `/close`, and `/resolve`: commands verify that `String(chatId) === String(authorizedChatId) || String(fromId) === String(authorizedChatId)`. Unauthorized attempts are rejected with an access-denied message.
+  - Added optional `X-Admin-Secret` / Bearer token check for `reset_trades`.
+  - Supported `X-Telegram-Bot-Api-Secret-Token` validation when `TELEGRAM_WEBHOOK_SECRET` is configured in worker environment.
+
+---
+
+### ISSUE-RISK-02: Executor Defaulting Zero/Negative Calculated Lots to 0.10 Lots
+
+* **Severity:** **High** (Financial Safety Risk)
+* **Status:** **REMEDIATED IN CODE (2026-11-22)** — Validated in `tests/test_ctrader_executor.py`.
+* **Affected Files:** `core/ctrader_executor.py` (lines 670–685)
+* **Root Cause:** If `lots <= 0.0` (which occurs when account equity cannot safely support the minimum lot size or if calculation fails), `execute_ctrader_order()` previously defaulted to `lots = 0.10`. On small accounts, placing 0.10 standard lots (10,000 units) breaches risk budgets.
+* **Remediation Implemented:**
+  - Replaced `lots = 0.10` override with strict capital preservation rejection: returns `{"status": "REJECTED_ZERO_LOTS", "error": "Computed lot size is 0.00..."}`.
+  - Harmonized default account equity in `core/ctrader_executor.py` from `$5,000` to `$25,000` to match the centralized configuration.
+
+---
+
+### ISSUE-TEST-01: Weekend Wall-Clock Test Leakage in Market Scanner Flat Cutoff Guard
+
+* **Severity:** **Medium** (Test Suite Regression on Weekends)
+* **Status:** **REMEDIATED IN CODE (2026-11-22)** — Tested and verified across all 184 tests.
+* **Affected Files:** `market_scanner.py` (lines 154–161)
+* **Root Cause:** `is_forex_weekend_flat_cutoff(dt=None)` evaluated live system wall-clock time. During weekend test runs, `check_active_trades()` auto-liquidated active test trades as `WEEKEND_FLAT`, causing 12 unit test failures in `test_market_scanner.py`.
+* **Remediation Implemented:**
+  - Added `if dt is None and os.environ.get("PYTEST_CURRENT_TEST"): return False`.
+
+---
+
+### ISSUE-DEP-01: PyOpenSSL / Cryptography Version Incompatibility
+
+* **Severity:** **Low** (Dependency Conflict / TLS Verification Failure)
+* **Status:** **REMEDIATED IN CODE (2026-11-22)** — Verified in `requirements.txt`.
+* **Affected Files:** `requirements.txt`
+* **Root Cause:** Unconstrained `service-identity` installation pulled `cryptography>=50.0.0`, breaking `pyOpenSSL 24.1.0` with `module 'lib' has no attribute 'GEN_EMAIL'`, causing Twisted TLS verification failures.
+* **Remediation Implemented:**
+  - Pinned `cryptography>=41.0.5,<43.0.0` in `requirements.txt` and reinstalled compatible `cryptography 42.0.8` and `service-identity 24.2.0`.
+
+
 

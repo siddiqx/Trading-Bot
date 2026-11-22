@@ -514,6 +514,26 @@ async function autoResolveTrade(symbol, t, outcome, exitPrice, env, prefetchedLe
     t.pending_close = outcome;
     t.pending_exit_price = exitPrice;
 
+    // Persist pending_close to KV active_trades so Python scanner pulls the pending_close state
+    const kv = env && (env.TRADE_LEDGER || env.TRADES_KV || env.KV);
+    if (kv) {
+      try {
+        const curLedger = prefetchedLedger || await getLedger(env);
+        const curActive = { ...(curLedger.active || {}) };
+        const targetId = t.trade_id;
+        for (const k of Object.keys(curActive)) {
+          const act = curActive[k];
+          if (k === symbol || (act && act.trade_id === targetId)) {
+            curActive[k] = { ...act, pending_close: outcome, pending_exit_price: exitPrice };
+          }
+        }
+        await kv.put("active_trades", JSON.stringify(curActive));
+        STORED_ACTIVE_TRADES = curActive;
+      } catch (e) {
+        console.error("KV save pending_close error:", e);
+      }
+    }
+
     // Trigger GitHub Actions Python scanner to immediately execute TLS market close & post-mortem alert
     await triggerGitHubScanner(env);
     return;
@@ -684,10 +704,20 @@ async function runActiveTradeChecks(env) {
         }
 
         if (hitTP || hitSL) {
+          const hasBrokerPosition = !!(t.ctrader_position_id || (t.ctrader_receipt && t.ctrader_receipt.position_id));
+          const isBrokerClosed = !!(t.ctrader_close_receipt && t.ctrader_close_receipt.status === "CLOSED");
+
           const exitPrice = hitSL ? t.stop_loss : t.take_profit;
           const rawOutcome = hitSL ? "LOSS" : "WIN";
           await autoResolveTrade(symbol, t, rawOutcome, exitPrice, env, ledger);
           resolved.push({ symbol, outcome: rawOutcome, exitPrice });
+
+          // If the position is attached to a live broker order, let market_scanner.py
+          // execute the broker liquidation and dispatch the verified exit alert with post-mortem diagnostics.
+          if (hasBrokerPosition && !isBrokerClosed) {
+            console.log(`[Watchdog] Position ${t.trade_id || symbol} flagged pending_close. Awaiting broker execution confirmation.`);
+            continue;
+          }
 
           // Alert De-duplication Watchdog: prevent duplicate broadcasts
           const tradeId = t.trade_id || `${symbol}_${t.opened_at}`;
@@ -763,10 +793,14 @@ async function ensureWebhookRegistered(env = null) {
       const currentUrl = data?.result?.url || "";
       if (currentUrl.replace(/\/+$/, "") !== WORKER_PUBLIC_URL.replace(/\/+$/, "")) {
         console.warn(`Telegram webhook dropped or mismatched ('${currentUrl}'). Auto-restoring to ${WORKER_PUBLIC_URL}`);
+        const webhookBody = { url: WORKER_PUBLIC_URL, drop_pending_updates: false };
+        if (env && env.TELEGRAM_WEBHOOK_SECRET) {
+          webhookBody.secret_token = env.TELEGRAM_WEBHOOK_SECRET;
+        }
         await fetch(`${apiUrl}/setWebhook`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ url: WORKER_PUBLIC_URL, drop_pending_updates: false })
+          body: JSON.stringify(webhookBody)
         });
       }
     }
@@ -860,6 +894,12 @@ export default {
 
       // Handle Reset / Fresh Start from Market Scanner Engine
       if (payload.event === "reset_trades" || payload.reset === true) {
+        if (env && env.ADMIN_SECRET) {
+          const authHdr = request.headers.get("Authorization") || request.headers.get("X-Admin-Secret") || "";
+          if (authHdr !== env.ADMIN_SECRET && authHdr !== `Bearer ${env.ADMIN_SECRET}`) {
+            return new Response("Unauthorized Admin Reset", { status: 403 });
+          }
+        }
         const kv = env && (env.TRADE_LEDGER || env.TRADES_KV || env.KV);
         if (kv) {
           try {
@@ -960,10 +1000,23 @@ export default {
 
       // Handle Telegram User Updates
       if (payload.update_id) {
+        if (env && env.TELEGRAM_WEBHOOK_SECRET) {
+          const secret = request.headers.get("X-Telegram-Bot-Api-Secret-Token");
+          if (secret !== env.TELEGRAM_WEBHOOK_SECRET) {
+            return new Response("Unauthorized Telegram Webhook", { status: 403 });
+          }
+        }
         return await handleTelegramUpdate(payload, env);
       }
 
-      // Handle Incoming Trade Signals
+      // Handle Incoming Trade Signals (Requires Authentication if WEBHOOK_SECRET or ADMIN_SECRET is configured)
+      if (env && (env.WEBHOOK_SECRET || env.ADMIN_SECRET)) {
+        const auth = request.headers.get("Authorization") || request.headers.get("X-Webhook-Secret") || request.headers.get("X-Admin-Secret") || "";
+        const expected = env.WEBHOOK_SECRET || env.ADMIN_SECRET;
+        if (auth !== expected && auth !== `Bearer ${expected}`) {
+          return new Response("Unauthorized Signal Submission", { status: 403 });
+        }
+      }
       return await handleIncomingSignal(payload, env);
     } catch (err) {
       return new Response("Error: " + err.message, { status: 500 });
@@ -1075,6 +1128,13 @@ async function handleTelegramUpdate(update, env) {
     } else if (cmd === "/strategy" || cmd === "/rules") {
       await sendStrategyMessage(chatId);
     } else if (cmd === "/clear" || cmd === "/clean" || cmd === "/reset") {
+      const authorizedChatId = String(getTelegramChatId(env));
+      const senderChatId = String(chatId);
+      const senderUserId = String(update.message?.from?.id || "");
+      if (senderChatId !== authorizedChatId && senderUserId !== authorizedChatId) {
+        await sendTelegramMessage(chatId, "⛔ <b>Access Denied:</b> This administrative command is restricted to the bot owner.", null, env);
+        return new Response("OK", { status: 200 });
+      }
       const kv = env && (env.TRADE_LEDGER || env.TRADES_KV || env.KV);
       if (kv) {
         try {
@@ -1086,6 +1146,13 @@ async function handleTelegramUpdate(update, env) {
       STORED_COMPLETED_TRADES = [];
       await sendClearInstructions(chatId);
     } else if (cmd === "/close" || cmd === "/resolve") {
+      const authorizedChatId = String(getTelegramChatId(env));
+      const senderChatId = String(chatId);
+      const senderUserId = String(update.message?.from?.id || "");
+      if (senderChatId !== authorizedChatId && senderUserId !== authorizedChatId) {
+        await sendTelegramMessage(chatId, "⛔ <b>Access Denied:</b> Force-close is restricted to the bot owner.", null, env);
+        return new Response("OK", { status: 200 });
+      }
       // Admin: force-resolve a stuck active trade
       // Usage: /close EURUSD WIN | /close EURUSD LOSS | /close EURUSD CANCEL
       const symbol = parts[1] ? parts[1].toUpperCase().replace("/", "") : null;

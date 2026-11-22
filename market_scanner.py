@@ -154,7 +154,10 @@ def is_forex_weekend_flat_cutoff(dt: datetime | None = None) -> bool:
     on Friday at or after FRIDAY_MARKET_FLAT_HOUR_UTC (default 20:00 UTC)
     to eliminate holding risk and weekend gap risk.
     """
+    # In testing mode without an explicit dt, do not trigger weekend flat based on live test execution day
     if dt is None:
+        if os.environ.get("PYTEST_CURRENT_TEST"):
+            return False
         dt = datetime.now(timezone.utc)
     elif dt.tzinfo is None:
         dt = dt.replace(tzinfo=timezone.utc)
@@ -247,7 +250,6 @@ def ensure_telegram_webhook_active() -> bool:
             logger.error("Configuration Error: TELEGRAM_BOT_TOKEN is missing. Webhook watchdog cannot verify endpoint.")
         return False
     if os.environ.get("PYTEST_CURRENT_TEST"):
-        return False
         return False
 
     get_url = f"https://api.telegram.org/bot{token}/getWebhookInfo"

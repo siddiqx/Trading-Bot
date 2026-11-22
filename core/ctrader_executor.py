@@ -668,7 +668,18 @@ def execute_ctrader_order(sig: Dict[str, Any]) -> Dict[str, Any]:
             logger.warning(f"cTrader dynamic lot recalculation notice: {recalc_err}. Using original lots: {lots}")
 
     if lots <= 0.0:
-        lots = 0.10  # Fallback micro-lot
+        logger.error(
+            f"[cTrader Execution] Invalid or zero position size calculated ({lots} lots) for {pair}. "
+            f"Rejecting order execution to preserve capital."
+        )
+        return {
+            "status": "REJECTED_ZERO_LOTS",
+            "error": "Computed lot size is 0.00 (risk budget insufficient or position sizing rejected)",
+            "pair": pair,
+            "lots": lots,
+            "account_equity": env_equity,
+            "risk_pct": env_risk_pct,
+        }
 
     if is_gold:
         contract_size = 100.0  # 100 Troy Ounces per standard lot
@@ -1326,7 +1337,7 @@ def get_ctrader_account_equity(
     """
     env_name = (env or CTRADER_ENV).lower()
     acc_id = account_id or (int(CTRADER_ACCOUNT_ID) if CTRADER_ACCOUNT_ID and CTRADER_ACCOUNT_ID.isdigit() else 0)
-    fallback_equity = float(os.environ.get("ACCOUNT_EQUITY", "5000.0"))
+    fallback_equity = float(os.environ.get("ACCOUNT_EQUITY", "25000.0"))
 
     # Return simulated payload if cTrader execution disabled or missing credentials
     if not ENABLE_CTRADER_EXECUTION or not has_valid_credentials() or not acc_id:

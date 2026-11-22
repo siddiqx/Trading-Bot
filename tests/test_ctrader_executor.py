@@ -913,6 +913,34 @@ def test_close_position_other_error_rejected():
     assert res["error"] == "Market is currently closed"
 
 
+def test_rejected_zero_lots_safety(monkeypatch):
+    """Verify execute_ctrader_order safely aborts with REJECTED_ZERO_LOTS when lots <= 0.0."""
+    monkeypatch.setenv("ACCOUNT_EQUITY", "5.0")
+    monkeypatch.setenv("RISK_PCT", "1.00")
+    import core.ctrader_executor as ce
+    monkeypatch.setattr(ce, "ENABLE_CTRADER_EXECUTION", True)
+    monkeypatch.setattr(ce, "CTRADER_CLIENT_ID", "mock_client_id")
+    monkeypatch.setattr(ce, "CTRADER_CLIENT_SECRET", "mock_client_secret")
+    monkeypatch.setattr(ce, "CTRADER_ACCESS_TOKEN", "mock_access_token")
+    monkeypatch.setattr(ce, "CTRADER_ACCOUNT_ID", "12345678")
+
+    sig = {
+        "pair": "EURUSD",
+        "direction": "LONG",
+        "entry": 1.08500,
+        "stop_loss": 1.08280,
+        "take_profit": 1.08850,
+        "suggested_lots": 0.0,
+        "equity": 5.0,  # Insufficient equity for even 0.01 lot ($0.05 budget)
+        "risk_pct": 1.00
+    }
+
+    res = ce.execute_ctrader_order(sig)
+    assert res["status"] == "REJECTED_ZERO_LOTS"
+    assert "Computed lot size is 0.00" in res["error"]
+
+
+
 
 
 

@@ -53,6 +53,7 @@ htmlcov/
 
 # State files
 market_scanner_state.json
+live_equity_cache.json
 Thumbs.db
 
 # Executables & Binaries
