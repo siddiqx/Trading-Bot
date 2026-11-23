@@ -288,8 +288,7 @@ class TelegramService:
                 "<b>5. Portfolio Risk &amp; Capital Protection</b>\n"
                 "• <b>Position Risk:</b> <code>0.50% Equity</code> ($25 risk on a $5,000 account)\n"
                 "• <b>Correlation Guard:</b> Max 2 concurrent positions across the entire currency basket.\n"
-                "• <b>Universe:</b> 6 Forex Pairs (<code>EURUSD · USDCAD · GBPUSD · USDJPY · USDCHF · AUDUSD</code>).\n"
-                "• <b>Exclusions:</b> Zero Gold (XAUUSD permanently disabled due to unbacked spread spikes).\n"
+                "• <b>Universe:</b> 4 Institutional Forex Pairs (<code>EURUSD · USDCAD · USDCHF · AUDUSD</code>).\n"
                 "━━━━━━━━━━━━━━━━━━\n"
                 "🛡 <i>Systematic, rule-based algorithmic execution engineered for prop firm compliance.</i>"
             )
@@ -300,8 +299,8 @@ class TelegramService:
                     "⚡ <b>ACTIVE LIVE TRADES (0)</b>\n"
                     "━━━━━━━━━━━━━━━━━━\n"
                     "<i>No active positions currently running.</i>\n\n"
-                    "Institutional 6-Asset Universe under active surveillance:\n"
-                    "<code>EURUSD · USDCAD · GBPUSD · USDJPY · USDCHF · AUDUSD</code>\n\n"
+                    "Institutional Universe under active surveillance:\n"
+                    "<code>EURUSD · USDCAD · USDCHF · AUDUSD</code>\n\n"
                     "Signals trigger strictly on confirmed candle closes."
                 )
 
@@ -351,8 +350,7 @@ class TelegramService:
                 "<b>📊 PORTFOLIO &amp; RISK STATE</b>\n"
                 f"• <b>Active Positions:</b> <code>{active_count} / 2 Max Concurrent</code>\n"
                 f"• <b>Capital Exposure:</b> <code>{exposure_pct}% Equity (0.50% / Trade)</code>\n"
-                "• <b>Monitored Universe:</b> <code>6 Major Forex Pairs</code>\n"
-                "• <b>Gold (XAUUSD):</b> <code>PERMANENTLY EXCLUDED</code>\n\n"
+                "• <b>Monitored Universe:</b> <code>4 Institutional Forex Pairs (EURUSD, USDCAD, USDCHF, AUDUSD)</code>\n\n"
                 "<b>🛡 EXECUTION ARCHITECTURE</b>\n"
                 "• <b>Target Model:</b> <code>Pure Binary 1:1.50 R:R</code>\n"
                 "• <b>Position Management:</b> <code>100% Runner (Zero Partials)</code>\n"

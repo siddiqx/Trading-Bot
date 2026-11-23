@@ -69,11 +69,19 @@ async def restore_cloudflare_webhook() -> bool:
 ASSETS = [
     {"name": "EUR/USD", "symbol": "EURUSD", "ticker": "EURUSD=X", "pip": 0.0001, "digits": 5, "donchian_len": 20},
     {"name": "USD/CAD", "symbol": "USDCAD", "ticker": "USDCAD=X", "pip": 0.0001, "digits": 5, "donchian_len": 20},
-    {"name": "GBP/USD", "symbol": "GBPUSD", "ticker": "GBPUSD=X", "pip": 0.0001, "digits": 5, "donchian_len": 20},
-    {"name": "USD/JPY", "symbol": "USDJPY", "ticker": "USDJPY=X", "pip": 0.01,   "digits": 3, "donchian_len": 20},
     {"name": "USD/CHF", "symbol": "USDCHF", "ticker": "USDCHF=X", "pip": 0.0001, "digits": 5, "donchian_len": 20},
     {"name": "AUD/USD", "symbol": "AUDUSD", "ticker": "AUDUSD=X", "pip": 0.0001, "digits": 5, "donchian_len": 20}
 ]
+
+ALL_KNOWN_CONFIGS = {
+    "EURUSD": {"name": "EUR/USD", "ticker": "EURUSD=X", "pip": 0.0001, "digits": 5, "donchian_len": 20},
+    "USDCAD": {"name": "USD/CAD", "ticker": "USDCAD=X", "pip": 0.0001, "digits": 5, "donchian_len": 20},
+    "GBPUSD": {"name": "GBP/USD", "ticker": "GBPUSD=X", "pip": 0.0001, "digits": 5, "donchian_len": 20},
+    "USDJPY": {"name": "USD/JPY", "ticker": "USDJPY=X", "pip": 0.01,   "digits": 3, "donchian_len": 20},
+    "USDCHF": {"name": "USD/CHF", "ticker": "USDCHF=X", "pip": 0.0001, "digits": 5, "donchian_len": 20},
+    "AUDUSD": {"name": "AUD/USD", "ticker": "AUDUSD=X", "pip": 0.0001, "digits": 5, "donchian_len": 20},
+    "XAUUSD": {"name": "XAU/USD (Gold)", "ticker": "GC=F", "pip": 0.1, "digits": 2, "donchian_len": 10}
+}
 
 PAIR_CONFIGS = {a["symbol"]: a for a in ASSETS}
 
@@ -104,7 +112,7 @@ def get_base_symbol(key, trade=None):
 def get_asset_config(symbol_or_key, trade=None):
     sym = get_base_symbol(symbol_or_key, trade)
     sched = PAIR_SCHEDULES.get(sym, {})
-    base = PAIR_CONFIGS.get(sym, {
+    base = ALL_KNOWN_CONFIGS.get(sym) or PAIR_CONFIGS.get(sym, {
         "name": (trade.get("pair") if trade else None) or sym,
         "ticker": (trade.get("ticker") if trade else None) or f"{sym}=X",
         "pip": trade.get("pip") if trade else (0.01 if "JPY" in sym else 0.0001),
@@ -405,8 +413,8 @@ async def get_active_payload():
             "⚡ <b>ACTIVE LIVE TRADES (0)</b>\n"
             "━━━━━━━━━━━━━━━━━━\n"
             "<i>No active positions currently running.</i>\n\n"
-            "Institutional 6-Asset Universe under active surveillance:\n"
-            "<code>EURUSD · USDCAD · GBPUSD · USDJPY · USDCHF · AUDUSD</code>\n\n"
+            "Institutional Universe under active surveillance:\n"
+            "<code>EURUSD · USDCAD · USDCHF · AUDUSD</code>\n\n"
             "Signals trigger strictly on confirmed candle closes.\n"
             "━━━━━━━━━━━━━━━━━━\n"
             f"🕒 <code>{utc_now}</code>"
@@ -722,11 +730,9 @@ def get_history_payload(filter_pair: str = "ALL", filter_range: str = "ALL"):
             ],
             [
                 {"text": "EUR/USD", "callback_data": "hist_pair_EURUSD"},
-                {"text": "USD/CAD", "callback_data": "hist_pair_USDCAD"},
-                {"text": "GBP/USD", "callback_data": "hist_pair_GBPUSD"}
+                {"text": "USD/CAD", "callback_data": "hist_pair_USDCAD"}
             ],
             [
-                {"text": "USD/JPY", "callback_data": "hist_pair_USDJPY"},
                 {"text": "USD/CHF", "callback_data": "hist_pair_USDCHF"},
                 {"text": "AUD/USD", "callback_data": "hist_pair_AUDUSD"}
             ],
@@ -808,11 +814,7 @@ def get_performance_payload(filter_pair: str = "ALL"):
                 {"text": "USD/CAD", "callback_data": "perf_pair_USDCAD"}
             ],
             [
-                {"text": "GBP/USD", "callback_data": "perf_pair_GBPUSD"},
-                {"text": "USD/JPY", "callback_data": "perf_pair_USDJPY"},
-                {"text": "USD/CHF", "callback_data": "perf_pair_USDCHF"}
-            ],
-            [
+                {"text": "USD/CHF", "callback_data": "perf_pair_USDCHF"},
                 {"text": "AUD/USD", "callback_data": "perf_pair_AUDUSD"}
             ],
             [
@@ -971,8 +973,7 @@ def get_strategy_payload():
         "<b>5. Portfolio Risk &amp; Capital Protection</b>\n"
         "• <b>Position Risk:</b> <code>0.50% Equity</code> ($25 risk on a $5,000 account)\n"
         "• <b>Correlation Guard:</b> Max 2 concurrent positions across the entire currency basket.\n"
-        "• <b>Universe:</b> 6 Forex Pairs (<code>EURUSD · USDCAD · GBPUSD · USDJPY · USDCHF · AUDUSD</code>).\n"
-        "• <b>Exclusions:</b> Zero Gold (XAUUSD permanently disabled due to unbacked spread spikes).\n"
+        "• <b>Universe:</b> 4 Institutional Forex Pairs (<code>EURUSD · USDCAD · USDCHF · AUDUSD</code>).\n"
         "━━━━━━━━━━━━━━━━━━\n"
         "🛡 <i>Systematic, rule-based algorithmic execution engineered for prop firm compliance.</i>"
     )
@@ -1006,8 +1007,7 @@ def get_status_payload():
         "<b>📊 PORTFOLIO &amp; RISK STATE</b>\n"
         f"• <b>Active Positions:</b> <code>{active_count} / 2 Max Concurrent</code>\n"
         f"• <b>Capital Exposure:</b> <code>{exposure_pct}% Equity (0.50% / Trade)</code>\n"
-        "• <b>Monitored Universe:</b> <code>6 Major Forex Pairs</code>\n"
-        "• <b>Gold (XAUUSD):</b> <code>PERMANENTLY EXCLUDED</code>\n\n"
+        "• <b>Monitored Universe:</b> <code>4 Institutional Forex Pairs (EURUSD, USDCAD, USDCHF, AUDUSD)</code>\n\n"
         "<b>🛡 EXECUTION ARCHITECTURE</b>\n"
         "• <b>Target Model:</b> <code>Pure Binary 1:1.50 R:R</code>\n"
         "• <b>Position Management:</b> <code>100% Runner (Zero Partials)</code>\n"

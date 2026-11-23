@@ -41,11 +41,8 @@ const DEFAULT_CHAT_ID = "8142877259"; // Canonical fallback for authorized user 
 const ASSETS = [
   { name: "EUR/USD", symbol: "EURUSD", ticker: "EURUSD=X", pip: 0.0001, digits: 5, donchian_len: 20 },
   { name: "USD/CAD", symbol: "USDCAD", ticker: "USDCAD=X", pip: 0.0001, digits: 5, donchian_len: 20 },
-  { name: "GBP/USD", symbol: "GBPUSD", ticker: "GBPUSD=X", pip: 0.0001, digits: 5, donchian_len: 20 },
-  { name: "USD/JPY", symbol: "USDJPY", ticker: "USDJPY=X", pip: 0.01,   digits: 3, donchian_len: 20 },
   { name: "USD/CHF", symbol: "USDCHF", ticker: "USDCHF=X", pip: 0.0001, digits: 5, donchian_len: 20 },
-  { name: "AUD/USD", symbol: "AUDUSD", ticker: "AUDUSD=X", pip: 0.0001, digits: 5, donchian_len: 20 },
-  { name: "XAU/USD (Gold)", symbol: "XAUUSD", ticker: "GC=F", pip: 0.1, digits: 2, donchian_len: 10 }
+  { name: "AUD/USD", symbol: "AUDUSD", ticker: "AUDUSD=X", pip: 0.0001, digits: 5, donchian_len: 20 }
 ];
 
 const ALL_KNOWN_CONFIGS = {
@@ -1641,7 +1638,6 @@ async function sendRadarMessage(chatId, env) {
         const breakDistance = isGold ? 15.0 : 3.0;
 
         const formatDist = (valPips) => `${valPips.toFixed(1)}p`;
-        const isDeWhitelisted = (asset.symbol === "USDJPY" || asset.symbol === "GBPUSD" || asset.symbol === "XAUUSD");
         const formatChannel = (valPips) => `${valPips.toFixed(0)}p`;
 
         let badge = "", status = "", detail = "";
@@ -1658,22 +1654,22 @@ async function sendRadarMessage(chatId, env) {
           status = "Tight Squeeze (Low Volatility)";
           detail = `${formatChannel(channelPips)} Band · Awaiting Volume`;
         } else if (distHigh <= 0.0 && isBullish && rsi >= 40.0 && rsi <= 80.0) {
-          if (!isDeWhitelisted) hasImminentBreakout = true;
+          hasImminentBreakout = true;
           badge = "⚡";
           status = "Testing Breakout (Live Bar at High)";
           detail = `Awaiting Close · Trend Bullish`;
         } else if (distHigh <= breakDistance && isBullish && rsi >= 40.0 && rsi <= 80.0) {
-          if (!isDeWhitelisted) hasImminentBreakout = true;
+          hasImminentBreakout = true;
           badge = "⚡";
           status = "Imminent Breakout Setup";
           detail = `${formatDist(distHigh)} to Break · Trend Bullish`;
         } else if (distLow <= 0.0 && isBearish && rsi >= 20.0 && rsi <= 60.0) {
-          if (!isDeWhitelisted) hasImminentBreakout = true;
+          hasImminentBreakout = true;
           badge = "⚡";
           status = "Testing Breakdown (Live Bar at Low)";
           detail = `Awaiting Close · Trend Bearish`;
         } else if (distLow <= breakDistance && isBearish && rsi >= 20.0 && rsi <= 60.0) {
-          if (!isDeWhitelisted) hasImminentBreakout = true;
+          hasImminentBreakout = true;
           badge = "⚡";
           status = "Imminent Breakdown Setup";
           detail = `${formatDist(distLow)} to Break · Trend Bearish`;
@@ -1691,8 +1687,7 @@ async function sendRadarMessage(chatId, env) {
           detail = `${formatChannel(channelPips)} Channel · Mid-Range (${posPct.toFixed(0)}%)`;
         }
 
-        const tag = isDeWhitelisted ? ` (🛡 <i>De-whitelisted</i>)` : "";
-        return `<b>${num}. ${asset.name}</b> · <code>${price.toFixed(asset.digits)}</code>${tag}\n${badge} <b>${status}</b> (${detail})`;
+        return `<b>${num}. ${asset.name}</b> · <code>${price.toFixed(asset.digits)}</code>\n${badge} <b>${status}</b> (${detail})`;
       } catch (e) {
         return `<b>${num}. ${asset.name}</b> · <i>Feed Offline</i>`;
       }
@@ -1751,7 +1746,7 @@ async function sendActiveMessage(chatId, env) {
       `━━━━━━━━━━━━━━━━━━\n` +
       `<i>No active positions currently running.</i>\n\n` +
       `Institutional Universe under active surveillance:\n` +
-      `<code>EURUSD · USDCAD · USDCHF · AUDUSD</code> (USDJPY, GBPUSD & XAUUSD de-whitelisted)\n\n` +
+      `<code>EURUSD · USDCAD · USDCHF · AUDUSD</code>\n\n` +
       `Signals trigger strictly on confirmed candle closes.\n` +
       `━━━━━━━━━━━━━━━━━━\n` +
       `🕒 <code>${utcNow}</code>`;
@@ -1968,16 +1963,11 @@ async function sendHistoryMessage(chatId, filterPair = "ALL", filterRange = "ALL
       ],
       [
         { text: "EUR/USD", callback_data: "hist_pair_EURUSD" },
-        { text: "USD/CAD", callback_data: "hist_pair_USDCAD" },
-        { text: "GBP/USD", callback_data: "hist_pair_GBPUSD" }
+        { text: "USD/CAD", callback_data: "hist_pair_USDCAD" }
       ],
       [
-        { text: "USD/JPY", callback_data: "hist_pair_USDJPY" },
         { text: "USD/CHF", callback_data: "hist_pair_USDCHF" },
         { text: "AUD/USD", callback_data: "hist_pair_AUDUSD" }
-      ],
-      [
-        { text: "XAU/USD (Gold)", callback_data: "hist_pair_XAUUSD" }
       ],
       [
         { text: "⚡ Active Trades", callback_data: "cmd_active" },
@@ -2071,13 +2061,8 @@ async function sendPerformanceMessage(chatId, filterPair = "ALL", env) {
         { text: "USD/CAD", callback_data: "perf_pair_USDCAD" }
       ],
       [
-        { text: "GBP/USD", callback_data: "perf_pair_GBPUSD" },
-        { text: "USD/JPY", callback_data: "perf_pair_USDJPY" },
-        { text: "USD/CHF", callback_data: "perf_pair_USDCHF" }
-      ],
-      [
-        { text: "AUD/USD", callback_data: "perf_pair_AUDUSD" },
-        { text: "XAU/USD (Gold)", callback_data: "perf_pair_XAUUSD" }
+        { text: "USD/CHF", callback_data: "perf_pair_USDCHF" },
+        { text: "AUD/USD", callback_data: "perf_pair_AUDUSD" }
       ],
       [
         { text: "⚡ Active", callback_data: "cmd_active" },
@@ -2298,7 +2283,7 @@ async function sendStatusMessage(chatId, env) {
 ` +
     `• <b>Economic News Filter:</b> <code>ACTIVE (30m High-Impact Buffer)</code>
 ` +
-    `• <b>Monitored Universe:</b> <code>4 Active Institutional Pairs (EURUSD, USDCAD, USDCHF, AUDUSD) + Gold Satellite (XAUUSD)</code>
+    `• <b>Monitored Universe:</b> <code>4 Institutional Forex Pairs (EURUSD, USDCAD, USDCHF, AUDUSD)</code>
 
 ` +
     `<b>🛡 EXECUTION ENGINE</b>
@@ -2374,11 +2359,9 @@ async function sendStrategyMessage(chatId) {
 ` +
     `• <b>Daily Circuit Breaker:</b> 2-loss lockout (-1.00% daily loss cap)
 ` +
-    `• <b>Economic News Filter:</b> 30-min blackout around Red Folder releases
+    `• <b>Economic News Filter:</b> 30m High-Impact & 45m Flash PMI buffers
 ` +
-    `• <b>Active Trading Universe:</b> 4 Active Forex Pairs (<code>EURUSD · USDCAD · USDCHF · AUDUSD</code>) [<code>USDJPY, GBPUSD, XAUUSD</code> de-whitelisted: BoJ intervention chop, Cable whipsaw traps & Gold liquidity sweeps]
-` +
-    `• <b>Surveillance Mode:</b> Spot Gold (<code>XAUUSD</code>) retained strictly for reference radar quotes & synthetic macro basket calculations
+    `• <b>Active Trading Universe:</b> 4 Institutional Forex Pairs (<code>EURUSD · USDCAD · USDCHF · AUDUSD</code>)
 ` +
     `━━━━━━━━━━━━━━━━━━
 ` +
@@ -2450,10 +2433,10 @@ async function sendMenuMessage(chatId, env) {
   const activeLabel = activeCount > 0 ? ` (${activeCount} Active)` : "";
 
   const text = 
-    `🏛 <b>INSTITUTIONAL SIGNAL TERMINAL v3.0</b>\n` +
+    `🏛 <b>INSTITUTIONAL SIGNAL TERMINAL v3.3.0</b>\n` +
     `━━━━━━━━━━━━━━━━━━\n` +
     `Automated 24/7 Algorithmic Trading &amp; Forward Verification\n` +
-    `Coverage: <b>4 Active Forex Majors + Gold Satellite (XAUUSD)</b>\n\n` +
+    `Coverage: <b>4 Institutional Forex Pairs (EURUSD, USDCAD, USDCHF, AUDUSD)</b>\n\n` +
     `<b>SYSTEM MODULES</b>\n` +
     `1. /active ── Running trades &amp; live float pips\n` +
     `2. /radar ── Market surveillance &amp; imminent breakouts\n` +
