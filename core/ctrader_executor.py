@@ -64,10 +64,11 @@ else:
     SYMBOL_MAP = DEFAULT_SYMBOL_MAP
 
 try:
-    from core.config import MAX_SLIPPAGE_PIPS, MAX_GOLD_SLIPPAGE_POINTS
+    from core.config import MAX_SLIPPAGE_PIPS, MAX_GOLD_SLIPPAGE_POINTS, CTRADER_ORDER_TYPE
 except ImportError:
     MAX_SLIPPAGE_PIPS = float(os.environ.get("MAX_SLIPPAGE_PIPS", "3.0"))
     MAX_GOLD_SLIPPAGE_POINTS = float(os.getenv("MAX_GOLD_SLIPPAGE_POINTS", "50.0"))
+    CTRADER_ORDER_TYPE = os.getenv("CTRADER_ORDER_TYPE", "MARKET").strip().upper()
 
 
 
@@ -689,6 +690,10 @@ def execute_ctrader_order(sig: Dict[str, Any]) -> Dict[str, Any]:
         units = int(round(lots * 100_000))
         volume_cents = units * 100  # cTrader Protocol expects subunits (units * 100)
 
+    order_type_str = sig.get("order_type") or CTRADER_ORDER_TYPE or "MARKET"
+    order_type_str = str(order_type_str).strip().upper()
+    is_market_range = (order_type_str == "MARKET_RANGE")
+
     # 1. Fallback to Simulated Demo / Dry-Run Mode if unconfigured
     if not ENABLE_CTRADER_EXECUTION or not has_valid_credentials():
         reason = "ENABLE_CTRADER_EXECUTION is disabled" if not ENABLE_CTRADER_EXECUTION else "Missing cTrader credentials"
@@ -707,8 +712,9 @@ def execute_ctrader_order(sig: Dict[str, Any]) -> Dict[str, Any]:
             "entry": entry,
             "stop_loss": stop_loss,
             "take_profit": take_profit,
-            "base_slippage_price": entry if entry > 0 else None,
-            "slippage_in_points": int(round(float(sig.get("max_gold_slippage_points", MAX_GOLD_SLIPPAGE_POINTS)))) if is_gold else int(round(float(sig.get("max_slippage_pips", MAX_SLIPPAGE_PIPS)) * 10)),
+            "order_type": "MARKET_RANGE" if is_market_range else "MARKET",
+            "base_slippage_price": (entry if entry > 0 else None) if is_market_range else None,
+            "slippage_in_points": (int(round(float(sig.get("max_gold_slippage_points", MAX_GOLD_SLIPPAGE_POINTS)))) if is_gold else int(round(float(sig.get("max_slippage_pips", MAX_SLIPPAGE_PIPS)) * 10))) if is_market_range else None,
             "order_id": 9990001,
             "position_id": 9990001,
             "environment": CTRADER_ENV
@@ -726,14 +732,15 @@ def execute_ctrader_order(sig: Dict[str, Any]) -> Dict[str, Any]:
         req = ProtoOANewOrderReq()
         req.ctidTraderAccountId = int(CTRADER_ACCOUNT_ID)
         req.symbolId = symbol_id if symbol_id is not None else 1
-        req.orderType = ProtoOAOrderType.MARKET
+        req.orderType = ProtoOAOrderType.MARKET_RANGE if is_market_range else ProtoOAOrderType.MARKET
         req.tradeSide = ProtoOATradeSide.BUY if direction == "LONG" else ProtoOATradeSide.SELL
         req.volume = volume_cents
         # Relative SL/TP Calculation (ROP-01) & Slippage Defense (Anti-Ban)
         # Scaled to 10^-5 (1/100,000 unit of price) as mandated by cTrader Open API Protobuf specification.
-        # MARKET orders use relativeStopLoss & relativeTakeProfit to guarantee atomic server-side attachment upon fill.
-        if req.orderType == ProtoOAOrderType.MARKET:
-            # Slippage Protection: Enforce baseSlippagePrice and slippageInPoints to prevent catastrophic fills
+        # MARKET & MARKET_RANGE orders use relativeStopLoss & relativeTakeProfit to guarantee atomic server-side attachment upon fill.
+        if req.orderType == ProtoOAOrderType.MARKET_RANGE:
+            # Slippage Protection: Enforce baseSlippagePrice and slippageInPoints on MARKET_RANGE orders ONLY.
+            # In cTrader Open API Protobuf, passing baseSlippagePrice to a MARKET order causes broker INVALID_REQUEST rejection.
             if entry > 0:
                 req.baseSlippagePrice = float(entry)
                 if is_gold:
@@ -743,6 +750,7 @@ def execute_ctrader_order(sig: Dict[str, Any]) -> Dict[str, Any]:
                     forex_slip = float(sig.get("max_slippage_pips", MAX_SLIPPAGE_PIPS))
                     req.slippageInPoints = int(round(forex_slip * 10))
 
+        if req.orderType in (ProtoOAOrderType.MARKET, ProtoOAOrderType.MARKET_RANGE):
             if stop_loss > 0 and entry > 0:
                 sl_distance = abs(entry - stop_loss)
                 req.relativeStopLoss = int(round(sl_distance * 100_000))
@@ -819,11 +827,14 @@ def execute_ctrader_order(sig: Dict[str, Any]) -> Dict[str, Any]:
                 "mode": f"LIVE_{CTRADER_ENV.upper()}",
                 "pair": pair,
                 "direction": direction,
+                "order_type": "MARKET_RANGE" if req.orderType == ProtoOAOrderType.MARKET_RANGE else "MARKET",
                 "lots": lots,
                 "units": units,
                 "entry": entry,
                 "stop_loss": stop_loss,
                 "take_profit": take_profit,
+                "base_slippage_price": req.baseSlippagePrice if req.HasField("baseSlippagePrice") else None,
+                "slippage_in_points": req.slippageInPoints if req.HasField("slippageInPoints") else None,
                 "order_id": order_id,
                 "position_id": position_id,
                 "account_id": CTRADER_ACCOUNT_ID,
@@ -841,6 +852,7 @@ def execute_ctrader_order(sig: Dict[str, Any]) -> Dict[str, Any]:
             "mode": f"LIVE_{CTRADER_ENV.upper()}",
             "pair": pair,
             "direction": direction,
+            "order_type": "MARKET_RANGE" if req.orderType == ProtoOAOrderType.MARKET_RANGE else "MARKET",
             "lots": lots,
             "units": units,
             "entry": entry,

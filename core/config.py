@@ -233,4 +233,9 @@ CLOSE_FOREX_BEFORE_WEEKEND: bool = os.getenv("CLOSE_FOREX_BEFORE_WEEKEND", "true
 MAX_SLIPPAGE_PIPS: float = float(os.getenv("MAX_SLIPPAGE_PIPS", "3.0"))  # Max tolerated slippage for Forex in pips (3.0 pips = 30 points)
 MAX_GOLD_SLIPPAGE_POINTS: float = float(os.getenv("MAX_GOLD_SLIPPAGE_POINTS", "50.0"))  # Max tolerated slippage for Gold in points ($0.50/oz)
 
+# cTrader Order Execution Mode:
+# "MARKET": Standard unconditional market execution with atomic relative SL/TP (recommended; immune to broker range rejection)
+# "MARKET_RANGE": Enforces baseSlippagePrice and slippageInPoints boundary (broker rejects if price drifts beyond tolerance)
+CTRADER_ORDER_TYPE: str = os.getenv("CTRADER_ORDER_TYPE", "MARKET").strip().upper()
+
 

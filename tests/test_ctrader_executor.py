@@ -297,8 +297,10 @@ def test_rop01_relative_sltp_market_framing(monkeypatch):
 
 
 def test_market_order_slippage_parameters(monkeypatch):
-    """Verify market orders enforce baseSlippagePrice and slippageInPoints to prevent spikes."""
+    """Verify market orders omit baseSlippagePrice for MARKET type, and enforce them for MARKET_RANGE."""
     import core.ctrader_executor as ce
+    from ctrader_open_api.messages.OpenApiModelMessages_pb2 import ProtoOAOrderType
+
     monkeypatch.setattr(ce, "ENABLE_CTRADER_EXECUTION", True)
     monkeypatch.setattr(ce, "CTRADER_CLIENT_ID", "real_client_id")
     monkeypatch.setattr(ce, "CTRADER_CLIENT_SECRET", "real_client_secret")
@@ -313,7 +315,7 @@ def test_market_order_slippage_parameters(monkeypatch):
 
     monkeypatch.setattr(ce, "dispatch_ctrader_tls_order", mock_dispatch)
 
-    # 1. Default Forex: 3.0 pips -> 30 points
+    # 1. Default standard MARKET order: Omits baseSlippagePrice to prevent cTrader INVALID_REQUEST rejection
     sig_eur = {
         "pair": "EURUSD",
         "direction": "LONG",
@@ -324,15 +326,39 @@ def test_market_order_slippage_parameters(monkeypatch):
     }
     res_eur = ce.execute_ctrader_order(sig_eur)
     req_eur = captured_req["req"]
-    assert req_eur.baseSlippagePrice == 1.08500
-    assert req_eur.slippageInPoints == 30
-    assert res_eur["base_slippage_price"] == 1.08500
-    assert res_eur["slippage_in_points"] == 30
+    assert req_eur.orderType == ProtoOAOrderType.MARKET
+    assert not req_eur.HasField("baseSlippagePrice")
+    assert not req_eur.HasField("slippageInPoints")
+    assert req_eur.relativeStopLoss == 220
+    assert req_eur.relativeTakeProfit == 330
+    assert res_eur["order_type"] == "MARKET"
+    assert res_eur["base_slippage_price"] is None
+    assert res_eur["slippage_in_points"] is None
 
-    # 2. Custom Forex slippage override: 1.5 pips -> 15 points
+    # 2. MARKET_RANGE order: Correctly sets orderType=MARKET_RANGE and attaches baseSlippagePrice and slippageInPoints
+    sig_eur_range = {
+        "pair": "EURUSD",
+        "direction": "LONG",
+        "order_type": "MARKET_RANGE",
+        "entry": 1.08500,
+        "stop_loss": 1.08280,
+        "take_profit": 1.08830,
+        "suggested_lots": 0.10
+    }
+    res_range = ce.execute_ctrader_order(sig_eur_range)
+    req_range = captured_req["req"]
+    assert req_range.orderType == ProtoOAOrderType.MARKET_RANGE
+    assert req_range.baseSlippagePrice == 1.08500
+    assert req_range.slippageInPoints == 30
+    assert res_range["order_type"] == "MARKET_RANGE"
+    assert res_range["base_slippage_price"] == 1.08500
+    assert res_range["slippage_in_points"] == 30
+
+    # 3. Custom Forex slippage override on MARKET_RANGE: 1.5 pips -> 15 points
     sig_custom_fx = {
         "pair": "USDCAD",
         "direction": "SHORT",
+        "order_type": "MARKET_RANGE",
         "entry": 1.35000,
         "stop_loss": 1.35200,
         "take_profit": 1.34700,
@@ -341,13 +367,15 @@ def test_market_order_slippage_parameters(monkeypatch):
     }
     res_custom = ce.execute_ctrader_order(sig_custom_fx)
     req_custom = captured_req["req"]
+    assert req_custom.orderType == ProtoOAOrderType.MARKET_RANGE
     assert req_custom.baseSlippagePrice == 1.35000
     assert req_custom.slippageInPoints == 15
 
-    # 3. Default Gold: 50 points ($0.50)
+    # 4. Gold on MARKET_RANGE: 50 points ($0.50)
     sig_gold = {
         "pair": "XAUUSD",
         "direction": "LONG",
+        "order_type": "MARKET_RANGE",
         "entry": 2750.00,
         "stop_loss": 2725.00,
         "take_profit": 2787.50,
@@ -355,17 +383,24 @@ def test_market_order_slippage_parameters(monkeypatch):
     }
     res_gold = ce.execute_ctrader_order(sig_gold)
     req_gold = captured_req["req"]
+    assert req_gold.orderType == ProtoOAOrderType.MARKET_RANGE
     assert req_gold.baseSlippagePrice == 2750.00
     assert req_gold.slippageInPoints == 50
     assert res_gold["base_slippage_price"] == 2750.00
     assert res_gold["slippage_in_points"] == 50
 
-    # 4. Dry-Run / Paper simulator reflects slippage parameters
+    # 5. Dry-Run / Paper simulator reflects configured order types
     monkeypatch.setattr(ce, "ENABLE_CTRADER_EXECUTION", False)
-    res_dry = ce.execute_ctrader_order(sig_eur)
-    assert res_dry["status"] == "SIMULATED_DEMO_FILL"
-    assert res_dry["base_slippage_price"] == 1.08500
-    assert res_dry["slippage_in_points"] == 30
+    res_dry_market = ce.execute_ctrader_order(sig_eur)
+    assert res_dry_market["status"] == "SIMULATED_DEMO_FILL"
+    assert res_dry_market["order_type"] == "MARKET"
+    assert res_dry_market["base_slippage_price"] is None
+
+    res_dry_range = ce.execute_ctrader_order(sig_eur_range)
+    assert res_dry_range["status"] == "SIMULATED_DEMO_FILL"
+    assert res_dry_range["order_type"] == "MARKET_RANGE"
+    assert res_dry_range["base_slippage_price"] == 1.08500
+    assert res_dry_range["slippage_in_points"] == 30
 
 
 
