@@ -133,7 +133,7 @@ Until explicitly authorized by the user:
 
 ### Current Production Status
 - **System Status:** **COMPLETED & IN PRODUCTION (v3.3.0)**.
-- **Test Suite Integrity:** **183 automated unit tests passing** (100% pass rate with zero regressions).
+- **Test Suite Integrity:** **193 automated unit tests passing** (100% pass rate with zero regressions).
 - **24/7 Cloud Surveillance:** Actively executing every 15 minutes during market hours via GitHub Actions (`.github/workflows/scanner.yml`).
-- **Interactive Mobile Terminal:** Telegram slash commands routed through Cloudflare Global Edge V8 Worker (`cloudflare_worker.js`), with unified multi-asset reporting across Forex and Gold, eliminating separate `/gold` commands, formatting Gold floating PnL directly in USD and pips (zero `/oz` display), and syncing cleanly with KV.
+- **Interactive Mobile Terminal:** Telegram slash commands routed through Cloudflare Global Edge V8 Worker (`cloudflare_worker.js`, deployed via `npx wrangler deploy`), providing real-time `/radar`, `/prices`, `/active`, `/history`, `/performance`, `/close`, and `/cancel` commands for the 4 institutional Forex pairs.
 - **Execution & Safety Gate:** Signal generation and paper tracking fully active; automated broker execution (`core/ctrader_executor.py`) hardened with Protobuf length-prefixed TLS framing, atomic relative SL/TP, live equity polling, 10s timeout reconciliation, Friday weekend flat auto-close, server SL close resolution, and slippage ceilings.
