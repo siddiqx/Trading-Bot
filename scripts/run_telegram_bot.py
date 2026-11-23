@@ -365,7 +365,7 @@ def get_menu_payload(active_count: int = 0):
         "🏛 <b>INSTITUTIONAL SIGNAL TERMINAL v3.3.0</b>\n"
         "━━━━━━━━━━━━━━━━━━\n"
         "Automated 24/7 Algorithmic Trading &amp; Forward Verification\n"
-        "Coverage: <b>4 Active Forex Majors + Gold Satellite (XAUUSD)</b>\n\n"
+        "Coverage: <b>4 Institutional Forex Pairs (EURUSD, USDCAD, USDCHF, AUDUSD)</b>\n\n"
         "<b>SYSTEM MODULES</b>\n"
         "1. /active ── Running trades &amp; live float pips\n"
         "2. /radar ── Market surveillance &amp; imminent breakouts\n"
@@ -483,7 +483,7 @@ async def get_active_payload():
         "━━━━━━━━━━━━━━━━━━\n"
         "Currently floating in institutional market:\n"
         "━━━━━━━━━━━━━━━━━━\n\n" +
-        "\n\n".join(rows) + "\n\n" +
+        "\n\n──────────────────\n\n".join(rows) + "\n\n" +
         "━━━━━━━━━━━━━━━━━━\n"
         "🔄 <i>Float updates automatically with live quotes.</i>\n"
         f"🕒 <code>{utc_now}</code>"
@@ -542,10 +542,9 @@ async def get_radar_payload():
                     dist_pips = abs(price - active_trade.get("entry", 0.0)) / asset["pip"]
                     results.append(
                         f"<b>{idx}. {asset['name']}</b> · <code>{price:.{asset['digits']}f}</code>\n"
-                        f"⏳ <b>PENDING {active_trade.get('direction')}</b> ({active_trade.get('timeframe')})\n"
-                        f"• Entry Target: <code>{active_trade.get('entry')}</code> (⏳ {dist_pips:.1f}p away)\n"
-                        "• Float: <code>0.0 pips (Awaiting Fill)</code>\n"
-                        f"• SL: <code>{active_trade.get('stop_loss')}</code> | TP: <code>{active_trade.get('take_profit')}</code>"
+                        f"• <b>Status:</b> ⏳ <b>PENDING {active_trade.get('direction')}</b> ({active_trade.get('timeframe')})\n"
+                        f"• <b>Target:</b> Entry <code>{active_trade.get('entry')}</code> (⏳ {dist_pips:.1f}p away)\n"
+                        f"• <b>Stops:</b> SL <code>{active_trade.get('stop_loss')}</code> | TP <code>{active_trade.get('take_profit')}</code>"
                     )
                     continue
 
@@ -555,10 +554,10 @@ async def get_radar_payload():
                 icon = "🟢" if is_long else "🔴"
                 results.append(
                     f"<b>{idx}. {asset['name']}</b> · <code>{price:.{asset['digits']}f}</code>\n"
-                    f"{icon} <b>LIVE {active_trade.get('direction')}</b> ({active_trade.get('timeframe')})\n"
-                    f"• Float: <code>{pnl_sign}{pnl_pips:.1f} pips</code>\n"
-                    f"• Entry: <code>{active_trade.get('entry')}</code>\n"
-                    f"• SL: <code>{active_trade.get('stop_loss')}</code> | TP: <code>{active_trade.get('take_profit')}</code> (1:{active_trade.get('rr', '1.50')}R)"
+                    f"• <b>Status:</b> {icon} <b>LIVE {active_trade.get('direction')}</b> ({active_trade.get('timeframe')})\n"
+                    f"• <b>Float:</b> <code>{pnl_sign}{pnl_pips:.1f} pips</code>\n"
+                    f"• <b>Execution:</b> Entry <code>{active_trade.get('entry')}</code>\n"
+                    f"• <b>Stops:</b> SL <code>{active_trade.get('stop_loss')}</code> | TP <code>{active_trade.get('take_profit')}</code> (1:{active_trade.get('rr', '1.50')}R)"
                 )
                 continue
 
@@ -628,18 +627,25 @@ async def get_radar_payload():
                 status = "Range Consolidation"
                 detail = f"{channel_pips:.0f}p Channel · Mid-Range ({pos_pct:.0f}%)"
 
-            results.append(f"<b>{idx}. {asset['name']}</b> · <code>{price:.{asset['digits']}f}</code>\n{badge} <b>{status}</b> ({detail})")
+            results.append(
+                f"<b>{idx}. {asset['name']}</b> · <code>{price:.{asset['digits']}f}</code>\n"
+                f"• <b>Regime:</b> {badge} <b>{status}</b>\n"
+                f"• <b>Surveillance:</b> <code>{detail}</code>"
+            )
 
         except Exception as e:
-            results.append(f"<b>{idx}. {asset['name']}</b> · <i>Feed Offline</i>")
+            results.append(
+                f"<b>{idx}. {asset['name']}</b> · <i>Feed Offline</i>\n"
+                "• <b>Status:</b> ⚠️ <b>Awaiting Interbank Tick</b>"
+            )
 
-    market_status_banner = "" if is_market_open() else "⚠️ <b>MARKETS CLOSED (Weekend)</b>\n<i>Surveillance paused · Reopens Sun 17:00 NY / 21:00 UTC</i>\n\n"
+    market_status_banner = "" if is_market_open() else "⚠️ <b>MARKETS CLOSED (Weekend)</b>\n<i>Surveillance paused · Reopens Sun 17:00 NY / 21:00 UTC</i>\n\n──────────────────\n\n"
 
     text = (
         "📡 <b>MARKET SURVEILLANCE RADAR</b>\n"
         "━━━━━━━━━━━━━━━━━━\n\n" +
         market_status_banner +
-        "\n\n".join(results) + "\n\n" +
+        "\n\n──────────────────\n\n".join(results) + "\n\n" +
         "━━━━━━━━━━━━━━━━━━\n"
         f"🟢 <b>Live Positions:</b> <code>{active_count} Active</code>\n"
         f"🕒 <code>{utc_now}</code> · <i>Real-time Engine</i>"
@@ -708,7 +714,7 @@ def get_history_payload(filter_pair: str = "ALL", filter_range: str = "ALL"):
             f"• Outcome: {outcome_badge} {outcome_detail}"
         )
 
-    body_text = "\n\n".join(closed_rows) + "\n\n" if closed_rows else f"<i>No completed trades found. System is tracking fresh from 2026-10-15 baseline.</i>\n\n"
+    body_text = "\n\n──────────────────\n\n".join(closed_rows) + "\n\n" if closed_rows else f"<i>No completed trades found. System is tracking fresh from 2026-10-15 baseline.</i>\n\n"
 
     text = (
         "📜 <b>COMPLETED TRADE HISTORY</b>\n"
@@ -809,7 +815,9 @@ def get_performance_payload(filter_pair: str = "ALL"):
     keyboard = {
         "inline_keyboard": [
             [
-                {"text": "📊 Overall", "callback_data": "perf_pair_ALL"},
+                {"text": "📊 Overall", "callback_data": "perf_pair_ALL"}
+            ],
+            [
                 {"text": "EUR/USD", "callback_data": "perf_pair_EURUSD"},
                 {"text": "USD/CAD", "callback_data": "perf_pair_USDCAD"}
             ],
@@ -922,17 +930,17 @@ async def get_prices_payload():
     for idx, asset in enumerate(ASSETS, 1):
         p = await get_live_price(asset, 4.0)
         if p is not None:
-            rows.append(f"<b>{idx}. {asset['name']}</b> · <code>{p:.{asset['digits']}f}</code>")
+            rows.append(f"• <b>{asset['name']}:</b> <code>{p:.{asset['digits']}f}</code>")
         else:
-            rows.append(f"<b>{idx}. {asset['name']}</b> · <i>Awaiting Tick</i>")
+            rows.append(f"• <b>{asset['name']}:</b> <i>Awaiting Tick</i>")
 
     text = (
         "📊 <b>LIVE MARKET QUOTES</b>\n"
         "━━━━━━━━━━━━━━━━━━\n" +
         market_status + "\n\n" +
-        "\n".join(rows) + "\n" +
+        "\n".join(rows) + "\n\n" +
         "━━━━━━━━━━━━━━━━━━\n"
-        f"🕒 <code>{utc_now}</code> · <i>MT5 Spot Feed</i>"
+        f"🕒 <code>{utc_now}</code> · <i>Live Interbank Feed</i>"
     )
 
     keyboard = {

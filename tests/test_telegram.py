@@ -263,3 +263,42 @@ async def test_telegram_supervisor_close_and_cancel_payloads(monkeypatch, tmp_pa
     assert saved_records[0]["completed_trades"][0]["outcome"] == "CANCELLED"
     assert saved_records[0]["completed_trades"][0]["realized_pips"] == 0.0
     assert 999456 in closed_pos
+
+
+@pytest.mark.asyncio
+async def test_telegram_radar_and_prices_structure(monkeypatch):
+    """Verify /radar and /prices output structure ensures distinct pair separation with dividers."""
+    import scripts.run_telegram_bot as rtb
+
+    async def mock_candles(asset):
+        return {
+            "price": 1.08500 if asset["symbol"] == "EURUSD" else 1.43200,
+            "closes": [1.0850] * 30,
+            "highs": [1.0870] * 30,
+            "lows": [1.0830] * 30,
+            "indicators": {"ema20": 1.0840, "ema50": 1.0820, "rsi": 55.0, "high": 1.0870, "low": 1.0830}
+        }
+
+    monkeypatch.setattr(rtb, "fetch_asset_candles", mock_candles)
+    monkeypatch.setattr(rtb, "load_trade_records", lambda: {"active_trades": {}, "completed_trades": []})
+
+    radar_text, _ = await rtb.get_radar_payload()
+    assert "MARKET SURVEILLANCE RADAR" in radar_text
+    assert "<b>1. EUR/USD</b>" in radar_text
+    assert "<b>2. USD/CAD</b>" in radar_text
+    assert "──────────────────" in radar_text
+    # Verify EUR/USD and USD/CAD are separated by horizontal card divider
+    parts = radar_text.split("──────────────────")
+    assert len(parts) >= 4  # 4 separated sections
+    assert "1. EUR/USD" in parts[0]
+    assert "2. USD/CAD" in parts[1]
+
+    async def mock_price(asset, timeout):
+        return 1.08500
+
+    monkeypatch.setattr(rtb, "get_live_price", mock_price)
+    prices_text, _ = await rtb.get_prices_payload()
+    assert "LIVE MARKET QUOTES" in prices_text
+    assert "• <b>EUR/USD:</b>" in prices_text
+    assert "• <b>USD/CAD:</b>" in prices_text
+

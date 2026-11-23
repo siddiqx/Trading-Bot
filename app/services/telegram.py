@@ -252,7 +252,7 @@ class TelegramService:
                 "🤖 <b>Institutional Forex Live Signal Bot v5.0</b>\n\n"
                 "<b>Available Commands:</b>\n"
                 "• /active - Currently running trades & floating positions\n"
-                "• /radar - 6-Asset institutional surveillance radar\n"
+                "• /radar - 4-Pair institutional surveillance radar\n"
                 "• /prices - Live market quotes table\n"
                 "• /history - Completed trade ledger history\n"
                 "• /performance - Live forward-testing performance metrics\n"
@@ -261,7 +261,7 @@ class TelegramService:
                 "• /patterns - Volume trade analytics & failure analysis\n"
                 "• /last - Most recent confirmed signal\n"
                 "• /help - Display this command overview\n\n"
-                "<i>ICT Killzone Liquidity Sweep Model with pure binary 1:1.50 R:R execution. Evidence-based execution across 6 institutional Forex pairs. Zero Gold.</i>"
+                "<i>ICT Killzone Liquidity Sweep Model with pure binary 1:1.50 R:R execution. Evidence-based execution across 4 institutional Forex pairs. Zero Gold.</i>"
             )
 
         elif cmd in ["/strategy", "/rules"]:

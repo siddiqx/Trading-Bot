@@ -1530,10 +1530,9 @@ async function sendRadarMessage(chatId, env) {
             const distPips = (Math.abs(liveP - activeTrade.entry) / asset.pip).toFixed(1);
             return (
               `<b>${num}. ${asset.name}</b> · <code>${liveP.toFixed(asset.digits)}</code>\n` +
-              `⏳ <b>PENDING ${activeTrade.direction}</b> (${activeTrade.timeframe || (isGold ? "1H" : "15M")})\n` +
-              `• Entry Target: <code>${activeTrade.entry.toFixed(asset.digits)}</code> (⏳ ${distPips}p away)\n` +
-              `• Float: <code>0.0 pips (Awaiting Fill)</code>\n` +
-              `• SL: <code>${activeTrade.stop_loss.toFixed(asset.digits)}</code> | TP: <code>${activeTrade.take_profit.toFixed(asset.digits)}</code>`
+              `• <b>Status:</b> ⏳ <b>PENDING ${activeTrade.direction}</b> (${activeTrade.timeframe || (isGold ? "1H" : "15M")})\n` +
+              `• <b>Target:</b> Entry <code>${activeTrade.entry.toFixed(asset.digits)}</code> (⏳ ${distPips}p away)\n` +
+              `• <b>Stops:</b> SL <code>${activeTrade.stop_loss.toFixed(asset.digits)}</code> | TP <code>${activeTrade.take_profit.toFixed(asset.digits)}</code>`
             );
           }
 
@@ -1561,15 +1560,18 @@ async function sendRadarMessage(chatId, env) {
 
           return (
             `<b>${num}. ${asset.name}</b> · <code>${liveP.toFixed(asset.digits)}</code>\n` +
-            `${icon} <b>LIVE ${activeTrade.direction}</b> (${activeTrade.timeframe || (isGold ? "1H" : "15M")})${beStatus}\n` +
-            `• Float: <code>${floatStr}</code>\n` +
-            `• Entry: <code>${activeTrade.entry.toFixed(asset.digits)}</code>\n` +
-            `• SL: <code>${activeTrade.stop_loss.toFixed(asset.digits)}</code> | TP: <code>${activeTrade.take_profit.toFixed(asset.digits)}</code> (1:${activeTrade.rr || "1.50"}R)`
+            `• <b>Status:</b> ${icon} <b>LIVE ${activeTrade.direction}</b> (${activeTrade.timeframe || (isGold ? "1H" : "15M")})${beStatus}\n` +
+            `• <b>Float:</b> <code>${floatStr}</code>\n` +
+            `• <b>Execution:</b> Entry <code>${activeTrade.entry.toFixed(asset.digits)}</code>\n` +
+            `• <b>Stops:</b> SL <code>${activeTrade.stop_loss.toFixed(asset.digits)}</code> | TP <code>${activeTrade.take_profit.toFixed(asset.digits)}</code> (1:${activeTrade.rr || "1.50"}R)`
           );
         }
 
         if (price === null) {
-          return `<b>${num}. ${asset.name}</b> · <i>Feed Initializing</i>`;
+          return (
+            `<b>${num}. ${asset.name}</b> · <i>Feed Initializing</i>\n` +
+            `• <b>Status:</b> ⏳ <b>Awaiting Interbank Feed</b>`
+          );
         }
 
         // Check Rollover Blackout for Gold (20:30 - 22:30 UTC)
@@ -1578,7 +1580,11 @@ async function sendRadarMessage(chatId, env) {
           const utcMins = d.getUTCHours() * 60 + d.getUTCMinutes();
           const isRollover = (utcMins >= 1230 && utcMins <= 1350);
           if (isRollover) {
-            return `<b>${num}. ${asset.name}</b> · <code>${price.toFixed(asset.digits)}</code>\n🛡 <b>Rollover Blackout Active</b> (20:30-22:30 UTC · Execution Paused)`;
+            return (
+              `<b>${num}. ${asset.name}</b> · <code>${price.toFixed(asset.digits)}</code>\n` +
+              `• <b>Status:</b> 🛡 <b>Rollover Blackout Active</b>\n` +
+              `• <b>Surveillance:</b> <code>20:30-22:30 UTC · Execution Paused</code>`
+            );
           }
         }
 
@@ -1687,9 +1693,16 @@ async function sendRadarMessage(chatId, env) {
           detail = `${formatChannel(channelPips)} Channel · Mid-Range (${posPct.toFixed(0)}%)`;
         }
 
-        return `<b>${num}. ${asset.name}</b> · <code>${price.toFixed(asset.digits)}</code>\n${badge} <b>${status}</b> (${detail})`;
+        return (
+          `<b>${num}. ${asset.name}</b> · <code>${price.toFixed(asset.digits)}</code>\n` +
+          `• <b>Regime:</b> ${badge} <b>${status}</b>\n` +
+          `• <b>Surveillance:</b> <code>${detail}</code>`
+        );
       } catch (e) {
-        return `<b>${num}. ${asset.name}</b> · <i>Feed Offline</i>`;
+        return (
+          `<b>${num}. ${asset.name}</b> · <i>Feed Offline</i>\n` +
+          `• <b>Status:</b> ⚠️ <b>Awaiting Interbank Tick</b>`
+        );
       }
     })
   );
@@ -1700,13 +1713,13 @@ async function sendRadarMessage(chatId, env) {
 
   const marketStatusBanner = isMarketOpen()
     ? ""
-    : "⚠️ <b>MARKETS CLOSED (Weekend)</b>\n<i>Surveillance paused · Reopens Sun 17:00 NY / 21:00 UTC</i>\n\n";
+    : "⚠️ <b>MARKETS CLOSED (Weekend)</b>\n<i>Surveillance paused · Reopens Sun 17:00 NY / 21:00 UTC</i>\n\n──────────────────\n\n";
 
   const text = 
     `📡 <b>MARKET SURVEILLANCE RADAR</b>\n` +
     `━━━━━━━━━━━━━━━━━━\n\n` +
     marketStatusBanner +
-    results.join("\n\n") + "\n\n" +
+    results.join("\n\n──────────────────\n\n") + "\n\n" +
     `━━━━━━━━━━━━━━━━━━\n` +
     `🟢 <b>Live Positions:</b> <code>${activeCount} Active</code>\n` +
     `🕒 <code>${utcNow}</code> · <i>Real-time Engine</i>`;
@@ -1844,7 +1857,7 @@ async function sendActiveMessage(chatId, env) {
     `━━━━━━━━━━━━━━━━━━\n` +
     `Currently floating in institutional market:\n` +
     `━━━━━━━━━━━━━━━━━━\n\n` +
-    rows.join("\n\n") + "\n\n" +
+    rows.join("\n\n──────────────────\n\n") + "\n\n" +
     `━━━━━━━━━━━━━━━━━━\n` +
     `🔄 <i>Float updates automatically with live quotes.</i>\n` +
     `🕒 <code>${utcNow}</code>`;
@@ -1939,7 +1952,7 @@ async function sendHistoryMessage(chatId, filterPair = "ALL", filterRange = "ALL
   if (closedRows.length > 0) {
     // Show maximum 5 most recent trades to keep chat clean and fast
     const recentRows = closedRows.slice(-5).reverse();
-    bodyText = recentRows.join("\n\n") + "\n\n";
+    bodyText = recentRows.join("\n\n──────────────────\n\n") + "\n\n";
   } else {
     bodyText = `<i>No completed trades recorded in current session. Live trades will log here automatically upon TP/SL resolution.</i>\n\n`;
   }
@@ -2056,7 +2069,9 @@ async function sendPerformanceMessage(chatId, filterPair = "ALL", env) {
   const keyboard = {
     inline_keyboard: [
       [
-        { text: "📊 Overall", callback_data: "perf_pair_ALL" },
+        { text: "📊 Overall", callback_data: "perf_pair_ALL" }
+      ],
+      [
         { text: "EUR/USD", callback_data: "perf_pair_EURUSD" },
         { text: "USD/CAD", callback_data: "perf_pair_USDCAD" }
       ],
@@ -2207,11 +2222,11 @@ async function sendPricesMessage(chatId, env = null) {
       try {
         const p = await getLivePriceFast(asset, 4000);
         if (p !== null) {
-          return `<b>${num}. ${asset.name}</b> · <code>${p.toFixed(asset.digits)}</code>`;
+          return `• <b>${asset.name}:</b> <code>${p.toFixed(asset.digits)}</code>`;
         }
-        return `<b>${num}. ${asset.name}</b> · <i>Awaiting Tick</i>`;
+        return `• <b>${asset.name}:</b> <i>Awaiting Tick</i>`;
       } catch (e) {
-        return `<b>${num}. ${asset.name}</b> · <i>Feed Offline</i>`;
+        return `• <b>${asset.name}:</b> <i>Feed Offline</i>`;
       }
     })
   );
@@ -2220,7 +2235,7 @@ async function sendPricesMessage(chatId, env = null) {
     `📊 <b>LIVE MARKET QUOTES</b>\n` +
     `━━━━━━━━━━━━━━━━━━\n` +
     marketStatus + "\n\n" +
-    rows.join("\n") + "\n" +
+    rows.join("\n") + "\n\n" +
     `━━━━━━━━━━━━━━━━━━\n` +
     `🕒 <code>${utcNow}</code> · <i>Live Interbank Feed</i>`;
 
