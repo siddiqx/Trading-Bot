@@ -80,7 +80,7 @@ Surveillance evaluates completed 15M candle bars during institutional volume hou
 2. **Technical Trigger:**
    - **20-EMA Pullback Retest:** Price touches 20-EMA and rejects with a closing candle in trend direction.
    - **10-Bar Donchian Liquidity Sweep:** Intra-bar wick sweeps the 10-bar Donchian extreme and closes back inside the channel (liquidity grab).
-3. **Forex Factory News Filter:** Trade is suppressed if high-impact (Red Folder) economic news occurs within $\pm 30$ minutes.
+3. **Forex Factory News Filter:** Trade is suppressed if high-impact (Red Folder) economic news occurs within $\pm 30$ minutes, or preliminary Flash PMI releases occur within $\pm 45$ minutes (protecting pre-London 07:30 UTC setups against 08:15 UTC European releases).
 4. **Monday Session Filter:** Monday entries restricted strictly to London volume window (06:00–12:00 UTC).
 
 ### Gold Signal Trigger Conditions (1H Closed Candle)

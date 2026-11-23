@@ -90,6 +90,7 @@ VOLATILITY_CUSHION_RUNNER_TP_PIPS: float = 44.0 # Extended runner TP (+2.0R)
 # Economic News Filter Parameters (Forex Factory Real-Time Calendar)
 NEWS_FILTER_ENABLED: bool = True
 NEWS_FILTER_BUFFER_MINUTES: int = 30
+FLASH_PMI_BUFFER_MINUTES: int = 45  # Extended buffer for preliminary Flash PMIs (protects 07:30 UTC London open setups)
 NEWS_CALENDAR_URL: str = "https://nfs.faireconomy.media/ff_calendar_thisweek.json"
 
 # Aliases for backwards compatibility with existing imports

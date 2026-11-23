@@ -11,7 +11,12 @@ import urllib.request
 from datetime import datetime, timezone, timedelta
 from typing import Dict, List, Optional, Tuple, Any
 
-from core.config import NEWS_FILTER_ENABLED, NEWS_FILTER_BUFFER_MINUTES, NEWS_CALENDAR_URL
+from core.config import (
+    NEWS_FILTER_ENABLED,
+    NEWS_FILTER_BUFFER_MINUTES,
+    FLASH_PMI_BUFFER_MINUTES,
+    NEWS_CALENDAR_URL,
+)
 
 logger = logging.getLogger("NewsFilter")
 
@@ -66,7 +71,7 @@ def is_news_window_active(
     buffer_minutes: int = NEWS_FILTER_BUFFER_MINUTES,
     events: Optional[List[Dict[str, Any]]] = None
 ) -> Tuple[bool, str]:
-    """Check whether a High-Impact news event is within the buffer window.
+    """Check whether a High-Impact news event or Flash PMI release is within the buffer window.
 
     Args:
         pair: 6-character Forex pair symbol (e.g. 'EURUSD', 'USDJPY').
@@ -94,13 +99,22 @@ def is_news_window_active(
     target_currencies = {base_curr, quote_curr}
 
     calendar_events = events if events is not None else fetch_economic_calendar()
-    buffer_delta = timedelta(minutes=buffer_minutes)
 
     for ev in calendar_events:
-        if ev.get("impact") != "High":
+        impact = str(ev.get("impact") or "")
+        title = str(ev.get("title") or "")
+        title_lower = title.lower()
+
+        is_high = (impact == "High")
+        is_flash_pmi = ("flash" in title_lower and "pmi" in title_lower)
+
+        # Suppress trading for High-Impact macro events and high-volatility preliminary Flash PMIs.
+        # Regular Medium/Low events (consumer sentiment, wholesale trade, PPI sub-indices, etc.)
+        # are intentionally ignored to guarantee zero impact on trade frequency during regular market days.
+        if not (is_high or is_flash_pmi):
             continue
 
-        country = ev.get("country", "").upper()
+        country = str(ev.get("country") or "").upper()
         if country not in target_currencies:
             continue
 
@@ -112,19 +126,24 @@ def is_news_window_active(
         if not ev_time:
             continue
 
+        # Flash PMIs often spark institutional positioning up to 45 minutes prior to release
+        # (e.g., French Flash PMI at 08:15 UTC affecting the 07:30 UTC London open candle).
+        effective_buffer = max(buffer_minutes, FLASH_PMI_BUFFER_MINUTES) if is_flash_pmi else buffer_minutes
+        buffer_delta = timedelta(minutes=effective_buffer)
+
         # Check window: [ev_time - buffer, ev_time + buffer]
         start_win = ev_time - buffer_delta
         end_win = ev_time + buffer_delta
 
         if start_win <= now_utc <= end_win:
             diff_min = int((ev_time - now_utc).total_seconds() / 60)
-            title = ev.get("title", "High-Impact Economic Release")
+            event_type = "Flash PMI Release" if (is_flash_pmi and not is_high) else "High-Impact News"
             if diff_min > 0:
-                reason = f"High-Impact News '{title}' ({country}) in {diff_min}m"
+                reason = f"{event_type} '{title}' ({country}) in {diff_min}m"
             elif diff_min < 0:
-                reason = f"High-Impact News '{title}' ({country}) occurred {abs(diff_min)}m ago"
+                reason = f"{event_type} '{title}' ({country}) occurred {abs(diff_min)}m ago"
             else:
-                reason = f"High-Impact News '{title}' ({country}) releasing right now"
+                reason = f"{event_type} '{title}' ({country}) releasing right now"
             return True, reason
 
     return False, ""
