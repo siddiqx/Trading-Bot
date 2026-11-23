@@ -1546,10 +1546,9 @@ def fetch_candles(ticker: str, interval: str, range_days: str = "7d") -> pd.Data
             })
             
             # Clean missing data (weekends / empty ticks)
-            df.dropna(subset=["open", "high", "low", "close"], inplace=True)
+            df = df.dropna(subset=["open", "high", "low", "close"]).copy()
             df["time"] = pd.to_datetime(df["timestamp"], unit="s", utc=True)
-            df.sort_values("time", inplace=True)
-            df.reset_index(drop=True, inplace=True)
+            df = df.sort_values("time").reset_index(drop=True)
             return df
     except Exception as e:
         logger.error(f"Error fetching {ticker} ({interval}): {e}")

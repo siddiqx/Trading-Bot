@@ -7,6 +7,7 @@ to protect proprietary trading firm accounts from spread blowouts and slippage s
 
 import json
 import logging
+import os
 import urllib.request
 from datetime import datetime, timezone, timedelta
 from typing import Dict, List, Optional, Tuple, Any
@@ -27,7 +28,7 @@ _CACHE_TTL_SECONDS = 900  # 15 minutes
 
 
 def fetch_economic_calendar(calendar_url: str = NEWS_CALENDAR_URL, force_refresh: bool = False) -> List[Dict[str, Any]]:
-    """Fetch high-impact calendar events with in-memory caching."""
+    """Fetch high-impact calendar events with in-memory and disk fallback caching."""
     global _CALENDAR_CACHE, _CACHE_TIMESTAMP
     now = datetime.now(timezone.utc)
 
@@ -45,11 +46,29 @@ def fetch_economic_calendar(calendar_url: str = NEWS_CALENDAR_URL, force_refresh
                 _CALENDAR_CACHE = data
                 _CACHE_TIMESTAMP = now
                 logger.info(f"Updated economic calendar cache with {len(data)} events.")
+                try:
+                    os.makedirs("data", exist_ok=True)
+                    with open("data/ff_calendar_cache.json", "w", encoding="utf-8") as f:
+                        json.dump(data, f)
+                except Exception:
+                    pass
                 return _CALENDAR_CACHE
     except Exception as ex:
         logger.warning(f"Could not refresh economic calendar from {calendar_url}: {ex}. Using cached data if available.")
         if _CALENDAR_CACHE:
             return _CALENDAR_CACHE
+        # Secondary fallback: restore from persistent disk cache
+        try:
+            if os.path.exists("data/ff_calendar_cache.json"):
+                with open("data/ff_calendar_cache.json", "r", encoding="utf-8") as f:
+                    disk_data = json.load(f)
+                    if isinstance(disk_data, list) and disk_data:
+                        _CALENDAR_CACHE = disk_data
+                        _CACHE_TIMESTAMP = now
+                        logger.info(f"Loaded {len(disk_data)} calendar events from disk fallback cache.")
+                        return _CALENDAR_CACHE
+        except Exception:
+            pass
 
     return []
 

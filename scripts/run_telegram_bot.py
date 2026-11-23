@@ -354,10 +354,10 @@ async def send_telegram(client: httpx.AsyncClient, chat_id: int | str, text: str
 def get_menu_payload(active_count: int = 0):
     active_label = f" ({active_count} Active)" if active_count > 0 else ""
     text = (
-        "🏛 <b>INSTITUTIONAL SIGNAL TERMINAL v5.0</b>\n"
+        "🏛 <b>INSTITUTIONAL SIGNAL TERMINAL v3.3.0</b>\n"
         "━━━━━━━━━━━━━━━━━━\n"
         "Automated 24/7 Algorithmic Trading &amp; Forward Verification\n"
-        "Coverage: <b>6 Major Forex Pairs (Zero Gold)</b>\n\n"
+        "Coverage: <b>4 Active Forex Majors + Gold Satellite (XAUUSD)</b>\n\n"
         "<b>SYSTEM MODULES</b>\n"
         "1. /active ── Running trades &amp; live float pips\n"
         "2. /radar ── Market surveillance &amp; imminent breakouts\n"
@@ -365,9 +365,10 @@ def get_menu_payload(active_count: int = 0):
         "4. /history ── Completed trade history ledger\n"
         "5. /performance ── Win rate &amp; net return metrics\n"
         "6. /patterns ── Volume post-mortems &amp; failure analysis\n"
-        "7. /strategy ── ICT Liquidity Sweep &amp; Binary 1:1.50 Model\n"
+        "7. /strategy ── Institutional Dual-Timeframe CCRS Engine (v3.3.0)\n"
         "8. /status ── 24/7 serverless engine health\n"
-        "9. /close PAIR WIN|LOSS ── Admin force-close\n\n"
+        "9. /close [PAIR] ── Close trade at live floating PnL\n"
+        "10. /cancel [PAIR] ── Cancel trade (zero PnL & liquidates broker)\n\n"
         "Select a dashboard module below:"
     )
     keyboard = {
@@ -1059,6 +1060,189 @@ def get_clear_payload():
     return text, keyboard
 
 
+def save_trade_records(records: dict):
+    try:
+        with open(TRADE_RECORDS_FILE, "w", encoding="utf-8") as f:
+            json.dump(records, f, indent=2)
+    except Exception as e:
+        logger.error(f"Error saving trade records: {e}")
+
+
+async def get_close_payload(symbol: Optional[str] = None) -> tuple[str, Optional[dict]]:
+    records = load_trade_records()
+    active_map = records.get("active_trades", {})
+    if not active_map:
+        text = (
+            "ℹ️ <b>No Active Trades to Close</b>\n"
+            "━━━━━━━━━━━━━━━━━━\n"
+            "There are currently no active trades in the portfolio.\n"
+            "Use /radar to check market scanner surveillance."
+        )
+        return text, None
+
+    if not symbol:
+        lines = []
+        for k, t in active_map.items():
+            base = get_base_symbol(k, t)
+            dir_str = t.get("direction", "TRADE")
+            entry_p = t.get("entry", 0.0)
+            lines.append(f"• <b>{base}</b> ({dir_str} @ <code>{entry_p}</code>): Tap /close_{base} (or <code>/close {base}</code>)")
+        text = (
+            "⚡ <b>CLOSE TRADE · SELECT PAIR</b>\n"
+            "━━━━━━━━━━━━━━━━━━\n"
+            "Close an active trade at live market price with floating PnL:\n\n" +
+            "\n".join(lines) + "\n\n" +
+            "━━━━━━━━━━━━━━━━━━\n"
+            "💡 <i>Tap a pair command above or type <code>/close PAIR</code> to exit immediately.</i>"
+        )
+        return text, None
+
+    sym_clean = symbol.upper().replace("/", "").replace("=X", "")
+    matched_key = None
+    for k, t in active_map.items():
+        if k == sym_clean or get_base_symbol(k, t) == sym_clean:
+            matched_key = k
+            break
+
+    if not matched_key:
+        return f"⚠️ No active trade found for <code>{symbol}</code>. Use /active to see current positions.", None
+
+    trade = active_map.pop(matched_key)
+    asset = get_asset_config(matched_key, trade)
+    live_price = await get_live_price(asset, 4.0)
+    if live_price is None or math.isnan(live_price):
+        live_price = float(trade.get("entry", 0.0))
+
+    is_long = (trade.get("direction") or trade.get("action") or "").upper() in ("LONG", "BUY")
+    pip = trade.get("pip") or asset.get("pip") or (0.01 if "JPY" in sym_clean else (0.10 if "XAU" in sym_clean else 0.0001))
+    digits = trade.get("digits") or asset.get("digits") or (2 if "XAU" in sym_clean else (3 if "JPY" in sym_clean else 5))
+    raw_diff = (live_price - trade["entry"]) if is_long else (trade["entry"] - live_price)
+    float_pips = raw_diff / pip
+    init_sl = trade.get("sl_pips") or (abs(trade["entry"] - trade.get("stop_loss", trade["entry"])) / pip)
+    float_r = (float_pips / init_sl) if init_sl > 0 else 0.0
+
+    pos_id = trade.get("ctrader_position_id") or (trade.get("ctrader_receipt") or {}).get("position_id")
+    has_broker = bool(pos_id)
+    if has_broker:
+        try:
+            from core.ctrader_executor import close_ctrader_position
+            close_ctrader_position(position_id=int(pos_id), pair=sym_clean)
+        except Exception as ex:
+            logger.warning(f"cTrader close dispatch notice: {ex}")
+
+    trade["exit_price"] = live_price
+    trade["outcome"] = "MANUAL_CLOSE"
+    trade["realized_pips"] = round(float_pips, 1)
+    trade["realized_r"] = round(float_r, 2)
+    trade["status"] = "CLOSED"
+    trade["closed_at"] = datetime.now(timezone.utc).isoformat()
+    records.setdefault("completed_trades", []).append(trade)
+    save_trade_records(records)
+
+    pips_sign = "+" if float_pips >= 0 else ""
+    r_sign = "+" if float_r >= 0 else ""
+    outcome_emoji = "🟢" if float_r > 0.05 else ("🔴" if float_r < -0.05 else "⚪")
+    outcome_tag = "MANUAL PROFIT" if float_r > 0.05 else ("MANUAL LOSS CUT" if float_r < -0.05 else "MANUAL BREAK-EVEN")
+    broker_note = (
+        "📡 <i>cTrader market close dispatched to broker via TLS client...</i>"
+        if has_broker else
+        "🔓 <i>Pair unlocked. Surveillance resumed immediately.</i>"
+    )
+
+    text = (
+        f"⚡ <b>MANUAL TRADE CLOSE · {sym_clean}</b>\n"
+        "━━━━━━━━━━━━━━━━━━\n"
+        f"• <b>Trade ID:</b> <code>{trade.get('trade_id', sym_clean)}</code>\n"
+        f"• <b>Direction:</b> <b>{trade.get('direction', 'TRADE')}</b>\n"
+        f"• <b>Entry:</b> <code>{trade['entry']:.{digits}f}</code>\n"
+        f"• <b>Exit Price:</b> <code>{live_price:.{digits}f}</code>\n"
+        f"• <b>Net Realized:</b> <b>{pips_sign}{float_pips:.1f} pips</b> | <b>{r_sign}{float_r:.2f} R</b>\n"
+        f"• <b>Outcome:</b> {outcome_emoji} <b>{outcome_tag}</b>\n"
+        "━━━━━━━━━━━━━━━━━━\n" +
+        broker_note
+    )
+    return text, None
+
+
+async def get_cancel_payload(symbol: Optional[str] = None) -> tuple[str, Optional[dict]]:
+    records = load_trade_records()
+    active_map = records.get("active_trades", {})
+    if not active_map:
+        text = (
+            "ℹ️ <b>No Active Trades to Cancel</b>\n"
+            "━━━━━━━━━━━━━━━━━━\n"
+            "There are currently no active or pending trades to cancel.\n"
+            "Use /active to view portfolio status."
+        )
+        return text, None
+
+    if not symbol:
+        lines = []
+        for k, t in active_map.items():
+            base = get_base_symbol(k, t)
+            dir_str = t.get("direction", "TRADE")
+            st = "PENDING" if t.get("status") == "PENDING" else "ACTIVE"
+            lines.append(f"• <b>{base}</b> ({st} {dir_str}): Tap /cancel_{base} (or <code>/cancel {base}</code>)")
+        text = (
+            "🚫 <b>CANCEL TRADE · SELECT PAIR</b>\n"
+            "━━━━━━━━━━━━━━━━━━\n"
+            "Cancel a trade immediately with zero PnL:\n\n" +
+            "\n".join(lines) + "\n\n" +
+            "━━━━━━━━━━━━━━━━━━\n"
+            "⚠️ <i>Cancelling closes any broker position immediately and records 0.0 pips / 0.00 R (excluded from win rate & performance stats).</i>"
+        )
+        return text, None
+
+    sym_clean = symbol.upper().replace("/", "").replace("=X", "")
+    matched_key = None
+    for k, t in active_map.items():
+        if k == sym_clean or get_base_symbol(k, t) == sym_clean:
+            matched_key = k
+            break
+
+    if not matched_key:
+        return f"⚠️ No active trade found for <code>{symbol}</code>. Use /active to see current positions.", None
+
+    trade = active_map.pop(matched_key)
+    pos_id = trade.get("ctrader_position_id") or (trade.get("ctrader_receipt") or {}).get("position_id")
+    has_broker = bool(pos_id)
+    if has_broker:
+        try:
+            from core.ctrader_executor import close_ctrader_position
+            close_ctrader_position(position_id=int(pos_id), pair=sym_clean)
+        except Exception as ex:
+            logger.warning(f"cTrader close dispatch notice: {ex}")
+
+    trade["exit_price"] = trade.get("entry", 0.0)
+    trade["outcome"] = "CANCELLED"
+    trade["realized_pips"] = 0.0
+    trade["realized_r"] = 0.0
+    trade["status"] = "CANCELLED"
+    trade["closed_at"] = datetime.now(timezone.utc).isoformat()
+    records.setdefault("completed_trades", []).append(trade)
+    save_trade_records(records)
+
+    broker_note = (
+        "📡 <i>cTrader market close dispatched to broker via TLS client...</i>"
+        if has_broker else
+        "🔓 <i>Pair unlocked. Surveillance resumed immediately.</i>"
+    )
+
+    text = (
+        f"🚫 <b>TRADE CANCELLED · {sym_clean}</b>\n"
+        "━━━━━━━━━━━━━━━━━━\n"
+        f"• <b>Trade ID:</b> <code>{trade.get('trade_id', sym_clean)}</code>\n"
+        f"• <b>Direction:</b> <b>{trade.get('direction', 'TRADE')}</b>\n"
+        f"• <b>Entry:</b> <code>{trade.get('entry')}</code>\n"
+        f"• <b>Exit Price:</b> <code>{trade.get('entry')}</code>\n"
+        "• <b>Outcome:</b> <b>CANCELLED</b>\n"
+        "• <b>Net Realized:</b> <b>0.0 pips / 0.00 R (PnL Excluded)</b>\n"
+        "━━━━━━━━━━━━━━━━━━\n" +
+        broker_note
+    )
+    return text, None
+
+
 # ==============================================================================
 # MAIN DISPATCHER ROUTING
 # ==============================================================================
@@ -1103,6 +1287,18 @@ async def dispatch_request(client: httpx.AsyncClient, chat_id: int | str, comman
         text, kb = get_status_payload()
     elif cmd in ["/clear", "/clean", "/reset"]:
         text, kb = get_clear_payload()
+    elif cmd.startswith("/close_"):
+        pair = cmd.replace("/close_", "").upper()
+        text, kb = await get_close_payload(pair)
+    elif cmd in ["/close", "/resolve", "/exit"]:
+        pair = parts[1].upper() if len(parts) > 1 else None
+        text, kb = await get_close_payload(pair)
+    elif cmd.startswith("/cancel_"):
+        pair = cmd.replace("/cancel_", "").upper()
+        text, kb = await get_cancel_payload(pair)
+    elif cmd in ["/cancel", "/abort"]:
+        pair = parts[1].upper() if len(parts) > 1 else None
+        text, kb = await get_cancel_payload(pair)
     elif cmd.startswith("hist_pair_"):
         pair = cmd.replace("hist_pair_", "")
         text, kb = get_history_payload(filter_pair=pair, filter_range="ALL")

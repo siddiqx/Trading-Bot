@@ -359,5 +359,41 @@ This document tracks verified defects, architectural discrepancies, and security
 * **Remediation Implemented:**
   - Pinned `cryptography>=41.0.5,<43.0.0` in `requirements.txt` and reinstalled compatible `cryptography 42.0.8` and `service-identity 24.2.0`.
 
+---
+
+### ISSUE-EXEC-01: cTrader MARKET Order Rejection on Invalid Slippage Parameters
+
+* **Severity:** **High** (Order Submission Failure)
+* **Status:** **REMEDIATED IN CODE (2026-11-23)** — Tested and validated in `tests/test_ctrader_executor.py`.
+* **Affected Files:** `core/config.py`, `core/ctrader_executor.py`
+* **Root Cause:** `execute_ctrader_order` populated `baseSlippagePrice` and `slippageInPoints` on `ProtoOANewOrderReq` even when `orderType` was standard unconditional `MARKET` (`orderType=1`). Under cTrader Open API Protobuf specification, slippage parameters are legally accepted strictly for `MARKET_RANGE` orders (`orderType=2`). The broker returned `INVALID_REQUEST` / `ORDER_CANCELLED`.
+* **Remediation Implemented:**
+  - Configured `CTRADER_ORDER_TYPE` in `core/config.py` defaulting to `"MARKET"`.
+  - Conditioned `baseSlippagePrice` and `slippageInPoints` strictly upon `CTRADER_ORDER_TYPE == "MARKET_RANGE"`. Standard unconditional `MARKET` orders cleanly omit slippage fields, executing instantaneously with atomic relative SL/TP.
+
+---
+
+### ISSUE-NEWS-01: Unprotected Pre-London Open Entries Against European Flash PMI Releases
+
+* **Severity:** **Medium** (Volatility Trap / Judas Swing)
+* **Status:** **REMEDIATED IN CODE (2026-11-23)** — Tested and validated in `tests/test_news_filter.py`.
+* **Affected Files:** `core/config.py`, `core/news_filter.py`
+* **Root Cause:** Forex Factory frequently categorizes preliminary French/Eurozone Flash PMIs as `Medium` impact rather than `High`. Because `core/news_filter.py` strictly checked `impact == "High"`, early 07:30 UTC London open setups were not shielded from the 08:15 UTC French Flash PMI release.
+* **Remediation Implemented:**
+  - Added targeted detection for preliminary Flash PMIs (`"flash" in title.lower() and "pmi" in title.lower()`) alongside `impact == "High"`.
+  - Added `FLASH_PMI_BUFFER_MINUTES = 45` protective window to insulate 07:30 UTC setups against 08:15 UTC releases while preserving 30-minute buffers for conventional High-Impact events and 100% trade frequency on regular days.
+
+---
+
+### ISSUE-UI-01: Local Supervisor Menu & Command Synchronization with Cloudflare Edge Relay
+
+* **Severity:** **Low** (Operational Parity / Command Handling)
+* **Status:** **REMEDIATED IN CODE (2026-11-23)** — Tested and validated in `tests/test_telegram.py`.
+* **Affected Files:** `scripts/run_telegram_bot.py`
+* **Root Cause:** Local desktop supervisor (`scripts/run_telegram_bot.py`) lacked `/close` and `/cancel` routing and displayed outdated menu references to legacy strategies and `WIN|LOSS` syntax, causing command drops when executed outside the Cloudflare Edge Worker.
+* **Remediation Implemented:**
+  - Synchronized `get_menu_payload`, `/close`, and `/cancel` handlers in `scripts/run_telegram_bot.py` with `cloudflare_worker.js`, providing unified terminal behavior across both local and edge deployments.
+
+
 
 

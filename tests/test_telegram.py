@@ -172,3 +172,94 @@ def test_telegram_command_responses():
 
     hist_reply = service.generate_command_response("/history")
     assert "COMPLETED TRADE HISTORY" in hist_reply
+
+
+@pytest.mark.asyncio
+async def test_telegram_supervisor_close_and_cancel_payloads(monkeypatch, tmp_path):
+    """Verify scripts.run_telegram_bot close and cancel commands handle active trades and empty states."""
+    import scripts.run_telegram_bot as rtb
+
+    # 1. Test when no active trades exist
+    empty_records = {"tracking_started": "2026-10-15", "active_trades": {}, "completed_trades": []}
+    monkeypatch.setattr(rtb, "load_trade_records", lambda: empty_records)
+
+    close_msg, _ = await rtb.get_close_payload()
+    assert "No Active Trades to Close" in close_msg
+
+    cancel_msg, _ = await rtb.get_cancel_payload()
+    assert "No Active Trades to Cancel" in cancel_msg
+
+    # 2. Test when active trade exists and is closed manually
+    active_records = {
+        "tracking_started": "2026-10-15",
+        "active_trades": {
+            "EURUSD": {
+                "trade_id": "TEST_EURUSD_01",
+                "pair": "EUR/USD",
+                "symbol": "EURUSD",
+                "direction": "LONG",
+                "entry": 1.08000,
+                "stop_loss": 1.07780,
+                "take_profit": 1.08330,
+                "sl_pips": 22.0,
+                "tp_pips": 33.0,
+                "pip": 0.0001,
+                "digits": 5,
+                "status": "OPEN",
+                "ctrader_position_id": 999123
+            }
+        },
+        "completed_trades": []
+    }
+    saved_records = []
+    closed_pos = []
+
+    async def mock_live_price(asset, timeout):
+        return 1.08110
+
+    monkeypatch.setattr(rtb, "load_trade_records", lambda: dict(active_records))
+    monkeypatch.setattr(rtb, "save_trade_records", lambda rec: saved_records.append(rec))
+    monkeypatch.setattr(rtb, "get_live_price", mock_live_price)
+    monkeypatch.setattr("core.ctrader_executor.close_ctrader_position", lambda position_id, pair=None: closed_pos.append(position_id))
+
+    close_text, _ = await rtb.get_close_payload("EURUSD")
+    assert "MANUAL TRADE CLOSE" in close_text
+    assert "EURUSD" in close_text
+    assert "+11.0 pips" in close_text
+    assert "+0.50 R" in close_text
+    assert len(saved_records) == 1
+    assert len(saved_records[0]["completed_trades"]) == 1
+    assert saved_records[0]["completed_trades"][0]["outcome"] == "MANUAL_CLOSE"
+    assert 999123 in closed_pos
+
+    # 3. Test when active trade is cancelled (zero PnL)
+    cancel_active = {
+        "tracking_started": "2026-10-15",
+        "active_trades": {
+            "USDCAD": {
+                "trade_id": "TEST_USDCAD_01",
+                "pair": "USD/CAD",
+                "symbol": "USDCAD",
+                "direction": "SHORT",
+                "entry": 1.38500,
+                "stop_loss": 1.38720,
+                "take_profit": 1.38170,
+                "sl_pips": 22.0,
+                "tp_pips": 33.0,
+                "status": "PENDING",
+                "ctrader_position_id": 999456
+            }
+        },
+        "completed_trades": []
+    }
+    saved_records.clear()
+    closed_pos.clear()
+    monkeypatch.setattr(rtb, "load_trade_records", lambda: dict(cancel_active))
+    cancel_text, _ = await rtb.get_cancel_payload("USDCAD")
+    assert "TRADE CANCELLED" in cancel_text
+    assert "USDCAD" in cancel_text
+    assert "0.0 pips / 0.00 R (PnL Excluded)" in cancel_text
+    assert len(saved_records) == 1
+    assert saved_records[0]["completed_trades"][0]["outcome"] == "CANCELLED"
+    assert saved_records[0]["completed_trades"][0]["realized_pips"] == 0.0
+    assert 999456 in closed_pos
