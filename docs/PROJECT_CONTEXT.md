@@ -78,6 +78,9 @@ python market_scanner.py --loop
 # Dispatch sample developer test alert to Telegram
 python market_scanner.py --test
 
+# Verify cTrader Open API credentials, token scopes, and broker permissions
+python scripts/check_ctrader_account.py
+
 # Run canonical look-ahead-free backtest with institutional costs (70/30 split)
 python scripts/run_canonical_backtest.py --markdown
 

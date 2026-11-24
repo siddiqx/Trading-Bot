@@ -394,6 +394,21 @@ This document tracks verified defects, architectural discrepancies, and security
 * **Remediation Implemented:**
   - Synchronized `get_menu_payload`, `/close`, and `/cancel` handlers in `scripts/run_telegram_bot.py` with `cloudflare_worker.js`, providing unified terminal behavior across both local and edge deployments.
 
+---
+
+### ISSUE-EXEC-02: cTrader TRADING_NOT_ALLOWED on Broker CLOSE_ONLY Account Restrictions
+
+* **Severity:** **High** (Broker Execution Rejection / Diagnostic Gap)
+* **Status:** **REMEDIATED IN CODE (2026-11-24)** — Tested and validated in `tests/test_ctrader_executor.py` and `scripts/check_ctrader_account.py`.
+* **Affected Files:** `core/ctrader_executor.py`, `market_scanner.py`, `satellite/market_scanner_gold.py`, `scripts/check_ctrader_account.py`
+* **Root Cause:** At 16:17 UTC on 2026-11-24, a confirmed 15M `USDCHF SHORT` triggered an automated order submission on FTMO cTrader account `49435680`. The broker rejected the order with `TRADING_NOT_ALLOWED: Trading is not allowed for trader id 241278`. Direct live TLS diagnostics with Spotware servers confirmed the token had valid trade scope (`SCOPE_TRADE = 1`), but the FTMO broker had set the account's access rights to `accessRights: CLOSE_ONLY (1)` (likely due to evaluation conclusion, weekend hold on non-swing accounts, or expired credentials). The bot lacked pre-flight permission checks, attempting orders blindly and outputting cryptic error codes without diagnostic context.
+* **Remediation Implemented:**
+  - **Permissions Parsing in Equity Guard:** `get_ctrader_account_equity()` parses `ProtoOATraderRes.accessRights` and surfaces `access_rights_name` and boolean flag `is_trading_allowed = (access_rights == 0)`.
+  - **Pre-Flight Execution Guard:** `execute_ctrader_order()` checks `sig["is_trading_allowed"]` before opening TLS sockets or constructing orders, cleanly rejecting blocked accounts with `TRADING_NOT_ALLOWED` and diagnostic guidance.
+  - **Error Event Enrichment:** `_dispatch_order_over_socket()` inspects `ProtoOAOrderErrorEvent` when `errorCode == "TRADING_NOT_ALLOWED"`, enriches the error with explanation of `CLOSE_ONLY`/broker-side restriction, and sets `trading_not_allowed = True`.
+  - **Telegram Rate-Limited Alerting:** `market_scanner.py` notifies Telegram immediately upon detecting `accessRights != FULL_ACCESS`, explaining probable causes (evaluation concluded, weekend rule breach) and remediation steps (checking FTMO MetriX/updating credentials), while de-duplicating notifications in `market_scanner_state.json` to prevent cycle spam.
+  - **Dedicated Diagnostic CLI:** Implemented `scripts/check_ctrader_account.py` to inspect cTrader Open API connection, token scope (`SCOPE_TRADE`), linked accounts list, and broker access rights (`FULL_ACCESS`, `CLOSE_ONLY`, `NO_TRADING`).
+
 
 
 

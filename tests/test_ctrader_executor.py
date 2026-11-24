@@ -975,6 +975,101 @@ def test_rejected_zero_lots_safety(monkeypatch):
     assert "Computed lot size is 0.00" in res["error"]
 
 
+def test_preflight_access_rights_close_only_blocked(monkeypatch):
+    """Verify execute_ctrader_order aborts immediately when is_trading_allowed is False."""
+    import core.ctrader_executor as ce
+    monkeypatch.setattr(ce, "ENABLE_CTRADER_EXECUTION", True)
+    monkeypatch.setattr(ce, "CTRADER_CLIENT_ID", "mock_client")
+    monkeypatch.setattr(ce, "CTRADER_CLIENT_SECRET", "mock_secret")
+    monkeypatch.setattr(ce, "CTRADER_ACCESS_TOKEN", "mock_token")
+    monkeypatch.setattr(ce, "CTRADER_ACCOUNT_ID", "49435680")
+
+    sig = {
+        "pair": "USDCHF",
+        "direction": "SHORT",
+        "entry": 0.88500,
+        "stop_loss": 0.88720,
+        "take_profit": 0.88170,
+        "suggested_lots": 0.50,
+        "is_trading_allowed": False,
+        "access_rights_name": "CLOSE_ONLY"
+    }
+
+    res = ce.execute_ctrader_order(sig)
+    assert res["status"] == "ORDER_REJECTED"
+    assert res["trading_not_allowed"] is True
+    assert res["error_code"] == "TRADING_NOT_ALLOWED"
+    assert "restricted to 'CLOSE_ONLY' mode" in res["error"]
+
+
+def test_order_error_event_trading_not_allowed_enriched():
+    """Verify _dispatch_order_over_socket enriches TRADING_NOT_ALLOWED error event."""
+    from ctrader_open_api.messages.OpenApiModelMessages_pb2 import ProtoOAPayloadType
+    from ctrader_open_api.messages.OpenApiMessages_pb2 import ProtoOAOrderErrorEvent
+    from core.ctrader_executor import _dispatch_order_over_socket
+
+    responses = _build_test_auth_responses()
+    err_event = ProtoOAOrderErrorEvent()
+    err_event.ctidTraderAccountId = 111
+    err_event.errorCode = "TRADING_NOT_ALLOWED"
+    err_event.description = "Trading is not allowed for trader id 241278"
+    responses.append((ProtoOAPayloadType.PROTO_OA_ORDER_ERROR_EVENT, err_event))
+
+    sock = _FakeSocket(responses)
+    req = _build_test_order_req()
+
+    res = _dispatch_order_over_socket(sock, "client_id", "secret", "token", 111, req)
+    assert res["status"] == "ORDER_REJECTED"
+    assert res["trading_not_allowed"] is True
+    assert res["error_code"] == "TRADING_NOT_ALLOWED"
+    assert "CLOSE_ONLY/Read-Only" in res["error"]
+
+
+def test_query_equity_over_socket_access_rights_parsing():
+    """Verify _query_equity_over_socket parses accessRights into access_rights_name and is_trading_allowed."""
+    from ctrader_open_api.messages.OpenApiModelMessages_pb2 import ProtoOAPayloadType
+    from ctrader_open_api.messages.OpenApiMessages_pb2 import (
+        ProtoOAApplicationAuthRes, ProtoOAAccountAuthRes, ProtoOATraderRes, ProtoOAGetPositionUnrealizedPnLRes
+    )
+    from core.ctrader_executor import _query_equity_over_socket
+
+    app_res = ProtoOAApplicationAuthRes()
+    acc_res = ProtoOAAccountAuthRes()
+    acc_res.ctidTraderAccountId = 111
+
+    # Mock Trader with CLOSE_ONLY (1)
+    t_res = ProtoOATraderRes()
+    t_res.ctidTraderAccountId = 111
+    t_res.trader.ctidTraderAccountId = 111
+    t_res.trader.balance = 2500000
+    t_res.trader.depositAssetId = 15
+    t_res.trader.moneyDigits = 2
+    t_res.trader.brokerName = "ftmo"
+    t_res.trader.traderLogin = 241278
+    t_res.trader.accessRights = 1  # CLOSE_ONLY
+
+    pnl_res = ProtoOAGetPositionUnrealizedPnLRes()
+    pnl_res.ctidTraderAccountId = 111
+    pnl_res.moneyDigits = 2
+
+    responses = [
+        (ProtoOAPayloadType.PROTO_OA_APPLICATION_AUTH_RES, app_res),
+        (ProtoOAPayloadType.PROTO_OA_ACCOUNT_AUTH_RES, acc_res),
+        (ProtoOAPayloadType.PROTO_OA_TRADER_RES, t_res),
+        (ProtoOAPayloadType.PROTO_OA_GET_POSITION_UNREALIZED_PNL_RES, pnl_res)
+    ]
+    sock = _FakeSocket(responses)
+
+    info = _query_equity_over_socket(sock, "client_id", "secret", "token", 111)
+    assert info["status"] == "OK"
+    assert info["broker_name"] == "ftmo"
+    assert info["trader_login"] == 241278
+    assert info["access_rights"] == 1
+    assert info["access_rights_name"] == "CLOSE_ONLY"
+    assert info["is_trading_allowed"] is False
+
+
+
 
 
 

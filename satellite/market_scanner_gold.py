@@ -806,12 +806,18 @@ def run_gold_scan_cycle() -> None:
     sl_points = min(max(cur_atr * ATR_MULTIPLIER, MIN_SL_POINTS), MAX_SL_POINTS)
     tp_points = sl_points * BASE_RISK_REWARD_RATIO
 
-    # Dynamic Account Equity Resolution (ROP-03)
+    # Dynamic Account Equity & Permission Resolution (ROP-03)
+    is_trading_allowed = True
+    access_rights_name = "FULL_ACCESS"
+    broker_name = "Broker"
     try:
         from core.ctrader_executor import get_ctrader_account_equity
         live_eq = get_ctrader_account_equity()
         if live_eq.get("status") in ("OK", "SIMULATED"):
             equity = float(live_eq.get("equity", REFERENCE_ACCOUNT_EQUITY))
+            is_trading_allowed = live_eq.get("is_trading_allowed", True)
+            access_rights_name = live_eq.get("access_rights_name", "FULL_ACCESS")
+            broker_name = live_eq.get("broker_name", "Broker")
         else:
             equity = REFERENCE_ACCOUNT_EQUITY
     except Exception:
@@ -868,6 +874,8 @@ def run_gold_scan_cycle() -> None:
             "take_profit": tp_price,
             "lots": lots,
             "suggested_lots": lots,
+            "is_trading_allowed": is_trading_allowed,
+            "access_rights_name": access_rights_name,
         })
         sig_payload["ctrader_receipt"] = c_receipt
         pos_id = c_receipt.get("position_id")
@@ -883,12 +891,20 @@ def run_gold_scan_cycle() -> None:
     if c_receipt and c_receipt.get("status") not in ("EXECUTED", "SIMULATED_DEMO_FILL"):
         err_msg = c_receipt.get("error", "cTrader order rejected by broker")
         logger.error(f"[Gold Scanner] Aborting trade recording: cTrader execution failed ({err_msg}).")
+        
+        diag_note = ""
+        if "TRADING_NOT_ALLOWED" in err_msg or c_receipt.get("trading_not_allowed"):
+            diag_note = (
+                f"\n• <b>Diagnostic:</b> Account restricted to <code>{access_rights_name}</code> by {broker_name.upper()}.\n"
+                f"• <b>Remediation:</b> Check {broker_name.upper()} client portal (challenge expired/concluded, or new account ID needed)."
+            )
+
         send_telegram_alert(
             f"⚠️ <b>[GOLD SATELLITE ENGINE] ORDER REJECTED BY BROKER</b>\n\n"
             f"• <b>Instrument:</b> {GOLD_SYMBOL}\n"
             f"• <b>Direction:</b> {direction}\n"
             f"• <b>Status:</b> {c_receipt.get('status')}\n"
-            f"• <b>Broker Reason:</b> <code>{err_msg}</code>\n"
+            f"• <b>Broker Reason:</b> <code>{err_msg}</code>{diag_note}\n"
             f"• <i>No active position recorded in trade journal.</i>"
         )
         return

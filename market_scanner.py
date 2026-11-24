@@ -188,6 +188,8 @@ from core.ctrader_executor import (
     modify_ctrader_position,
     close_ctrader_position,
     get_ctrader_account_equity,
+    CTRADER_ACCOUNT_ID,
+    ENABLE_CTRADER_EXECUTION,
 )
 
 DEFAULT_ACCOUNT_EQUITY: float = float(os.environ.get("ACCOUNT_EQUITY", "25000.0"))
@@ -3679,21 +3681,66 @@ def run_scan_cycle():
     active_trades_map = records.get("active_trades", {})
     telemetry["active_trades_count"] = len(active_trades_map)
 
-    # 1.5 Live Broker Equity Surveillance (ROP-03)
+    # 1.5 Live Broker Equity Surveillance & Permissions Guard (ROP-03)
     live_equity_info = None
     current_eq = DEFAULT_ACCOUNT_EQUITY
+    is_trading_allowed = True
+    access_rights_name = "FULL_ACCESS"
+    broker_name = "Broker"
+    trader_login = CTRADER_ACCOUNT_ID
     try:
         live_equity_info = get_ctrader_account_equity()
         if live_equity_info.get("status") in ("OK", "SIMULATED"):
             current_eq = float(live_equity_info.get("equity", DEFAULT_ACCOUNT_EQUITY))
+            is_trading_allowed = live_equity_info.get("is_trading_allowed", True)
+            access_rights_name = live_equity_info.get("access_rights_name", "FULL_ACCESS")
+            broker_name = live_equity_info.get("broker_name", "Broker")
+            trader_login = live_equity_info.get("trader_login", CTRADER_ACCOUNT_ID)
             logger.info(
-                f"[Prop Firm Equity Guard] Broker: {live_equity_info.get('broker_name', 'N/A')} | "
+                f"[Prop Firm Equity Guard] Broker: {broker_name} | "
                 f"Balance: ${live_equity_info.get('balance', 0.0):,.2f} | "
                 f"Floating PnL: ${live_equity_info.get('unrealized_pnl', 0.0):+,.2f} | "
-                f"Live Equity: ${current_eq:,.2f}"
+                f"Live Equity: ${current_eq:,.2f} | "
+                f"Access: {access_rights_name}"
             )
     except Exception as eq_err:
         logger.warning(f"Failed to query cTrader live equity: {eq_err}")
+
+    # Broker Permissions Guard: Alert if broker restricted account to CLOSE_ONLY/NO_TRADING
+    if ENABLE_CTRADER_EXECUTION and not is_trading_allowed:
+        logger.warning(
+            f"[Prop Firm Equity Guard] ⚠️ Account {CTRADER_ACCOUNT_ID} ({broker_name.upper()} Trader ID: {trader_login}) "
+            f"access rights is '{access_rights_name}'. New order execution is disabled by broker."
+        )
+        restriction_key = f"{CTRADER_ACCOUNT_ID}_{access_rights_name}"
+        if state.get("account_restriction_alerted") != restriction_key:
+            send_telegram_alert(
+                f"🚨 <b>[cTrader Broker Restriction Alert]</b>\n\n"
+                f"• <b>Broker:</b> {broker_name.upper()}\n"
+                f"• <b>Account ID:</b> <code>{CTRADER_ACCOUNT_ID}</code> (Trader ID: <code>{trader_login}</code>)\n"
+                f"• <b>Access Status:</b> <code>{access_rights_name}</code>\n"
+                f"• <b>Current Equity:</b> ${current_eq:,.2f}\n"
+                f"• <b>Issue:</b> Broker has restricted this account to <b>{access_rights_name}</b> mode. New trade execution is prohibited.\n\n"
+                f"• <b>Probable Causes:</b>\n"
+                f"  1. Prop firm evaluation ended (passed, failed, or expired).\n"
+                f"  2. Weekend hold rule breach on a non-Swing evaluation account.\n"
+                f"  3. Inactive demo credentials expired.\n\n"
+                f"• <b>Action Required:</b> Check your {broker_name.upper()} dashboard/MetriX. If you have new account credentials, update <code>CTRADER_ACCOUNT_ID</code> in GitHub Repository Secrets.\n"
+                f"• <i>Scanner will continue monitoring markets, but order placement is paused.</i>"
+            )
+            state["account_restriction_alerted"] = restriction_key
+            save_state(state)
+    elif ENABLE_CTRADER_EXECUTION and is_trading_allowed and state.get("account_restriction_alerted"):
+        logger.info(f"[Prop Firm Equity Guard] Broker access restored to FULL_ACCESS for account {CTRADER_ACCOUNT_ID}.")
+        send_telegram_alert(
+            f"✅ <b>[cTrader Broker Access Restored]</b>\n\n"
+            f"• <b>Broker:</b> {broker_name.upper()}\n"
+            f"• <b>Account ID:</b> <code>{CTRADER_ACCOUNT_ID}</code>\n"
+            f"• <b>Access Status:</b> <code>FULL_ACCESS</code>\n"
+            f"• <i>Automated order execution is fully operational.</i>"
+        )
+        del state["account_restriction_alerted"]
+        save_state(state)
 
     # 2. Check Prop Firm Daily Circuit Breakers
     is_tripped, cb_reason = check_daily_circuit_breaker(records, live_equity_info)
@@ -3786,6 +3833,8 @@ def run_scan_cycle():
                     # Dynamic Risk Sizing against Live Broker Equity (ROP-03)
                     sig["account_equity"] = current_eq
                     sig["risk_budget_usd"] = current_eq * (DEFAULT_RISK_PCT / 100.0)
+                    sig["is_trading_allowed"] = is_trading_allowed
+                    sig["access_rights_name"] = access_rights_name
 
                     # Stage 2 Automated Prop Execution (cTrader Demo / Dry-Run)
                     ctrader_receipt = None
@@ -3802,12 +3851,20 @@ def run_scan_cycle():
                     if ctrader_receipt and ctrader_receipt.get("status") not in ("EXECUTED", "SIMULATED_DEMO_FILL"):
                         err_msg = ctrader_receipt.get("error", "cTrader order rejected by broker")
                         logger.error(f"[Forex Scanner] Aborting trade recording for {sig['pair']}: cTrader execution failed ({err_msg}).")
+                        
+                        diag_note = ""
+                        if "TRADING_NOT_ALLOWED" in err_msg or ctrader_receipt.get("trading_not_allowed"):
+                            diag_note = (
+                                f"\n• <b>Diagnostic:</b> Account restricted to <code>{access_rights_name}</code> by {broker_name.upper()}.\n"
+                                f"• <b>Remediation:</b> Check {broker_name.upper()} client portal (challenge expired/concluded, or new account ID needed)."
+                            )
+
                         send_telegram_alert(
                             f"⚠️ <b>[{sig['pair']} EXECUTION REJECTED]</b>\n\n"
                             f"• <b>Instrument:</b> {sig['pair']}\n"
                             f"• <b>Direction:</b> {sig['direction']}\n"
                             f"• <b>Status:</b> {ctrader_receipt.get('status')}\n"
-                            f"• <b>Broker Reason:</b> <code>{err_msg}</code>\n"
+                            f"• <b>Broker Reason:</b> <code>{err_msg}</code>{diag_note}\n"
                             f"• <i>No active position recorded in trade journal.</i>"
                         )
                         continue

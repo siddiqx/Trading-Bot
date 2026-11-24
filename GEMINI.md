@@ -73,8 +73,11 @@ For every coding task:
 ## 6. Key Commands Quick Reference
 
 ```bash
-# Run complete test suite (183 unit tests)
+# Run complete test suite (197 unit tests)
 pytest
+
+# Verify cTrader Open API credentials, token scopes, and broker access permissions
+python scripts/check_ctrader_account.py
 
 # Execute manual Forex market scan cycle
 python market_scanner.py

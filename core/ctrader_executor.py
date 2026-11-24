@@ -183,21 +183,24 @@ def _dispatch_order_over_socket(
     account_id: int,
     order_req: Any,
     max_amend_retries: int = 3,
-    retry_delay_sec: float = 0.5
+    retry_delay_sec: float = 0.5,
+    validate_access_rights: bool = False
 ) -> Dict[str, Any]:
     """Internal implementation of cTrader order execution flow over an open socket.
 
-    Handles authentication, order dispatch with relative SL/TP, atomic SL/TP verification,
-    fallback amendment retry loop, and emergency market close if unprotected.
+    Handles authentication, optional access rights validation, order dispatch with relative SL/TP,
+    atomic SL/TP verification, fallback amendment retry loop, and emergency market close if unprotected.
     """
     from ctrader_open_api.messages.OpenApiModelMessages_pb2 import (
-        ProtoOAPayloadType, ProtoOAOrderType, ProtoOAExecutionType, ProtoOATradeSide
+        ProtoOAPayloadType, ProtoOAOrderType, ProtoOAExecutionType, ProtoOATradeSide,
+        ProtoOAAccessRights
     )
     from ctrader_open_api.messages.OpenApiMessages_pb2 import (
         ProtoOAApplicationAuthReq, ProtoOAAccountAuthReq,
         ProtoOAExecutionEvent, ProtoOAErrorRes, ProtoOAAmendPositionSLTPReq,
         ProtoOAClosePositionReq, ProtoOAOrderErrorEvent,
-        ProtoOAReconcileReq, ProtoOAReconcileRes
+        ProtoOAReconcileReq, ProtoOAReconcileRes,
+        ProtoOATraderReq, ProtoOATraderRes
     )
 
     # 1. Application Authentication
@@ -225,6 +228,36 @@ def _dispatch_order_over_socket(
         err.ParseFromString(acc_res[1])
         logger.warning(f"[cTrader Open API] Account Auth Error: {err.errorCode} - {err.description}")
         return {"status": "ACCOUNT_AUTH_ERROR", "error": err.description}
+
+    # 2.5 Optional Pre-flight Trader Access Rights Check
+    if validate_access_rights:
+        trader_req = ProtoOATraderReq()
+        trader_req.ctidTraderAccountId = account_id
+        trader_res = _send_tls_frame(s, ProtoOAPayloadType.PROTO_OA_TRADER_REQ, trader_req)
+        if trader_res and trader_res[0] == ProtoOAPayloadType.PROTO_OA_TRADER_RES:
+            t_msg = ProtoOATraderRes()
+            t_msg.ParseFromString(trader_res[1])
+            t = t_msg.trader
+            access_rights = t.accessRights if t.HasField("accessRights") else 0
+            if access_rights != ProtoOAAccessRights.FULL_ACCESS:
+                rights_name = ProtoOAAccessRights.Name(access_rights) if hasattr(ProtoOAAccessRights, "Name") else str(access_rights)
+                broker_str = t.brokerName if t.HasField("brokerName") else "broker"
+                trader_login = t.traderLogin if t.HasField("traderLogin") else account_id
+                err_msg = (
+                    f"TRADING_NOT_ALLOWED: {broker_str.upper()} account {account_id} "
+                    f"(Trader ID {trader_login}) is restricted to '{rights_name}' mode. "
+                    f"Opening new positions is prohibited by the broker."
+                )
+                logger.error(f"[cTrader Open API] Pre-flight Check Blocked: {err_msg}")
+                return {
+                    "status": "ORDER_REJECTED",
+                    "error_code": "TRADING_NOT_ALLOWED",
+                    "error": err_msg,
+                    "access_rights": rights_name,
+                    "trading_not_allowed": True,
+                    "broker": broker_str,
+                    "trader_login": trader_login
+                }
 
     # 3. New Order Dispatch
     # For MARKET orders, cTrader Open API rejects absolute stopLoss/takeProfit directly inside ProtoOANewOrderReq.
@@ -288,7 +321,16 @@ def _dispatch_order_over_socket(
         err = ProtoOAOrderErrorEvent()
         err.ParseFromString(order_res[1])
         logger.error(f"[cTrader Open API] Order Error Event: {err.errorCode} - {err.description}")
-        return {"status": "ORDER_REJECTED", "error": f"{err.errorCode}: {err.description}"}
+        err_msg = f"{err.errorCode}: {err.description}"
+        is_trading_not_allowed = (err.errorCode == "TRADING_NOT_ALLOWED")
+        if is_trading_not_allowed:
+            err_msg += " (Broker account restricted to CLOSE_ONLY/Read-Only; verify account status in broker portal)"
+        return {
+            "status": "ORDER_REJECTED",
+            "error_code": err.errorCode,
+            "error": err_msg,
+            "trading_not_allowed": is_trading_not_allowed
+        }
 
     # Handle PROTO_OA_ERROR_RES (2142)
     if order_res[0] == ProtoOAPayloadType.PROTO_OA_ERROR_RES:
@@ -314,7 +356,16 @@ def _dispatch_order_over_socket(
                         err = ProtoOAOrderErrorEvent()
                         err.ParseFromString(next_frame[1])
                         logger.error(f"[cTrader Open API] Post-Acceptance Order Error: {err.errorCode} - {err.description}")
-                        return {"status": "ORDER_REJECTED", "error": f"{err.errorCode}: {err.description}"}
+                        post_err_msg = f"{err.errorCode}: {err.description}"
+                        post_is_tna = (err.errorCode == "TRADING_NOT_ALLOWED")
+                        if post_is_tna:
+                            post_err_msg += " (Broker account restricted to CLOSE_ONLY/Read-Only; verify account status in broker portal)"
+                        return {
+                            "status": "ORDER_REJECTED",
+                            "error_code": err.errorCode,
+                            "error": post_err_msg,
+                            "trading_not_allowed": post_is_tna
+                        }
             except Exception as ex:
                 logger.warning(f"[cTrader Open API] Waiting for fill frame notice: {ex}")
 
@@ -486,7 +537,8 @@ def dispatch_ctrader_tls_order(
     order_req: Any,
     timeout: float = 10.0,
     max_amend_retries: int = 3,
-    retry_delay_sec: float = 0.5
+    retry_delay_sec: float = 0.5,
+    validate_access_rights: bool = False
 ) -> Dict[str, Any]:
     """Execute live order dispatch directly over TLS socket with cTrader Open API."""
     if os.environ.get("PYTEST_CURRENT_TEST") and not os.environ.get("TEST_REAL_SOCKET"):
@@ -505,7 +557,8 @@ def dispatch_ctrader_tls_order(
                 account_id=account_id,
                 order_req=order_req,
                 max_amend_retries=max_amend_retries,
-                retry_delay_sec=retry_delay_sec
+                retry_delay_sec=retry_delay_sec,
+                validate_access_rights=validate_access_rights
             )
         except (socket.timeout, TimeoutError) as ex:
             logger.warning(f"[cTrader Execution] Primary socket timed out ({ex}). Reconciling over clean TLS session...")
@@ -721,6 +774,35 @@ def execute_ctrader_order(sig: Dict[str, Any]) -> Dict[str, Any]:
         }
 
     # 2. Live / Stage 2 cTrader Demo Execution via Open API Protobuf
+    # Pre-Flight Permissions Guard: Check if broker trading is disabled
+    if sig.get("is_trading_allowed") is False:
+        access_name = sig.get("access_rights_name", "CLOSE_ONLY")
+        err_msg = (
+            f"TRADING_NOT_ALLOWED: cTrader account {CTRADER_ACCOUNT_ID} is restricted to "
+            f"'{access_name}' mode by the broker. New order placement is blocked."
+        )
+        logger.error(f"[cTrader Execution] Pre-flight Check Blocked: {err_msg}")
+        return {
+            "status": "ORDER_REJECTED",
+            "error": err_msg,
+            "error_code": "TRADING_NOT_ALLOWED",
+            "trading_not_allowed": True,
+            "access_rights": access_name,
+            "mode": f"LIVE_{CTRADER_ENV.upper()}",
+            "pair": pair,
+            "direction": direction,
+            "order_type": "MARKET_RANGE" if is_market_range else "MARKET",
+            "lots": lots,
+            "units": units,
+            "entry": entry,
+            "stop_loss": stop_loss,
+            "take_profit": take_profit,
+            "position_id": None,
+            "order_id": None,
+            "account_id": CTRADER_ACCOUNT_ID,
+            "environment": CTRADER_ENV
+        }
+
     try:
         from ctrader_open_api.messages.OpenApiMessages_pb2 import ProtoOANewOrderReq
         from ctrader_open_api.messages.OpenApiModelMessages_pb2 import ProtoOAOrderType, ProtoOATradeSide
@@ -795,6 +877,8 @@ def execute_ctrader_order(sig: Dict[str, Any]) -> Dict[str, Any]:
         tls_status = "EXECUTED" if is_mock else "PENDING"
         tls_error = None
 
+        error_code = None
+        trading_not_allowed = False
         if not is_mock:
             try:
                 tls_res = dispatch_ctrader_tls_order(
@@ -810,6 +894,8 @@ def execute_ctrader_order(sig: Dict[str, Any]) -> Dict[str, Any]:
                 order_id = tls_res.get("order_id")
                 position_id = tls_res.get("position_id")
                 tls_error = tls_res.get("error")
+                error_code = tls_res.get("error_code")
+                trading_not_allowed = tls_res.get("trading_not_allowed", False)
             except Exception as net_err:
                 tls_status = "ERROR"
                 tls_error = str(net_err)
@@ -824,6 +910,8 @@ def execute_ctrader_order(sig: Dict[str, Any]) -> Dict[str, Any]:
             return {
                 "status": tls_status if tls_status != "EXECUTED" else "ERROR",
                 "error": tls_error or "Broker did not return a valid position ID",
+                "error_code": error_code,
+                "trading_not_allowed": trading_not_allowed,
                 "mode": f"LIVE_{CTRADER_ENV.upper()}",
                 "pair": pair,
                 "direction": direction,
@@ -1274,6 +1362,11 @@ def _query_equity_over_socket(
     broker_name = trader.brokerName if trader.HasField("brokerName") else "unknown"
     trader_login = trader.traderLogin if trader.HasField("traderLogin") else 0
     access_rights = trader.accessRights if trader.HasField("accessRights") else 0
+    from ctrader_open_api.messages.OpenApiModelMessages_pb2 import ProtoOAAccessRights
+    try:
+        rights_name = ProtoOAAccessRights.Name(access_rights)
+    except Exception:
+        rights_name = str(access_rights)
 
     # 4. Query Unrealized Floating P&L
     pnl_req = ProtoOAGetPositionUnrealizedPnLReq()
@@ -1312,6 +1405,8 @@ def _query_equity_over_socket(
         "broker_name": broker_name,
         "trader_login": trader_login,
         "access_rights": access_rights,
+        "access_rights_name": rights_name,
+        "is_trading_allowed": (access_rights == ProtoOAAccessRights.FULL_ACCESS),
         "money_digits": money_digits
     }
 
