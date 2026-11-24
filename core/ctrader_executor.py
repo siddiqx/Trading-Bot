@@ -679,39 +679,79 @@ def execute_ctrader_order(sig: Dict[str, Any]) -> Dict[str, Any]:
     lots = float(sig.get("suggested_lots") or sig.get("calc_lots") or sig.get("lots") or 0.0)
 
     # Dynamic Account Equity & Risk Resolution for cTrader Execution
-    env_equity = float(os.environ.get("ACCOUNT_EQUITY", "25000.0"))
+    env_equity = float(os.environ.get("ACCOUNT_EQUITY", "5000.0"))
     env_risk_pct = float(os.environ.get("RISK_PCT", "1.00"))
     sig_equity = float(sig.get("account_equity") or sig.get("equity") or 0.0)
+    sig_risk_pct = float(sig.get("risk_pct") or 0.0)
+
+    # In live broker execution, query live broker equity if available
+    live_broker_equity = 0.0
+    if ENABLE_CTRADER_EXECUTION and not os.environ.get("PYTEST_CURRENT_TEST"):
+        try:
+            live_info = get_ctrader_account_equity()
+            if live_info and live_info.get("status") in ("OK", "SIMULATED"):
+                live_broker_equity = float(live_info.get("equity", 0.0))
+        except Exception as eq_err:
+            logger.warning(f"Failed to fetch live broker equity for order sizing: {eq_err}")
+
+    # Sizing equity resolution hierarchy:
+    # 1. Live broker equity (if connected & live execution enabled)
+    # 2. Explicit ACCOUNT_EQUITY environment override if set by user
+    # 3. Signal equity (embedded at scan time from scanner cycle)
+    # 4. Fallback default ($5,000 reference prop firm challenge)
+    if live_broker_equity > 0.0:
+        effective_equity = live_broker_equity
+    elif "ACCOUNT_EQUITY" in os.environ and float(os.environ["ACCOUNT_EQUITY"]) > 0:
+        effective_equity = env_equity
+    elif sig_equity > 0.0:
+        effective_equity = sig_equity
+    else:
+        effective_equity = env_equity
+
+    effective_risk_pct = sig_risk_pct if sig_risk_pct > 0.0 else env_risk_pct
+    target_budget = effective_equity * (effective_risk_pct / 100.0)
 
     symbol_id = get_symbol_id(pair)
     is_gold = "XAU" in pair.upper() or "GOLD" in pair.upper()
+    pip_size = 0.01 if "JPY" in pair.upper() else 0.0001
+    sl_pips = float(sig.get("sl_pips") or (abs(entry - stop_loss) / pip_size if (entry > 0 and stop_loss > 0) else 22.0))
+    sl_points = float(sig.get("sl_points") or sig.get("init_sl_points") or (abs(entry - stop_loss) if (entry > 0 and stop_loss > 0) else 25.0))
 
-    target_budget = env_equity * (env_risk_pct / 100.0)
-    sig_budget = float(sig.get("risk_budget_usd") or (sig_equity * (float(sig.get("risk_pct", 0.0)) / 100.0)) if sig_equity > 0 else 0.0)
+    # Calculate estimated monetary risk of current lots
+    if is_gold:
+        estimated_risk = lots * 100.0 * sl_points if lots > 0 else 0.0
+    else:
+        from core.instrument_validator import calculate_monetary_risk
+        estimated_risk = calculate_monetary_risk(
+            lots=lots,
+            sl_pips=sl_pips,
+            symbol=pair,
+            exchange_rate=entry if entry > 0 else None
+        ) if lots > 0 else 0.0
 
-    # If lots is missing/zero, or if sig was generated on a mismatched reference equity (e.g. 5,000 vs 25,000),
-    # or if the signal was under-sized below target risk budget:
+    # If lots is missing/zero, or if existing lots breaches target risk budget,
+    # or if sig was generated on a mismatched reference equity (e.g. 5,000 vs 25,000),
+    # or if the signal was explicitly under-sized below target risk budget:
     # Dynamically recalculate lots to guarantee execution risk matches live account equity & risk configuration
+    sig_budget = float(sig.get("risk_budget_usd") or (sig_equity * (effective_risk_pct / 100.0)) if sig_equity > 0 else 0.0)
     need_recalc = (
         lots <= 0.0 or
-        (sig_equity > 0 and abs(sig_equity - env_equity) > 1.0) or
-        (sig_budget > 0 and sig_budget < (target_budget * 0.85))
+        estimated_risk > (target_budget * 1.05) or
+        (sig_equity > 0 and abs(sig_equity - effective_equity) > 1.0) or
+        (sig_budget > 0.0 and sig_budget < (target_budget * 0.85))
     )
     if need_recalc:
         try:
             if is_gold:
                 from satellite.gold_validator import calculate_gold_position_size
-                sl_points = float(sig.get("sl_points") or sig.get("init_sl_points") or abs(entry - stop_loss) or 25.0)
-                recalc_lots, _ = calculate_gold_position_size(env_equity, env_risk_pct, sl_points)
+                recalc_lots, _ = calculate_gold_position_size(effective_equity, effective_risk_pct, sl_points)
                 if recalc_lots > 0:
                     lots = recalc_lots
             else:
                 from core.instrument_validator import calculate_position_size
-                pip_size = 0.01 if "JPY" in pair.upper() else 0.0001
-                sl_pips = float(sig.get("sl_pips") or (abs(entry - stop_loss) / pip_size) or 22.0)
                 recalc_lots = calculate_position_size(
-                    account_equity=env_equity,
-                    risk_pct=env_risk_pct,
+                    account_equity=effective_equity,
+                    risk_pct=effective_risk_pct,
                     sl_pips=sl_pips,
                     symbol=pair,
                     exchange_rate=entry if entry > 0 else None
@@ -720,6 +760,58 @@ def execute_ctrader_order(sig: Dict[str, Any]) -> Dict[str, Any]:
                     lots = recalc_lots
         except Exception as recalc_err:
             logger.warning(f"cTrader dynamic lot recalculation notice: {recalc_err}. Using original lots: {lots}")
+
+    # Capital Defense Hard Clamp: Validate monetary risk CANNOT breach target risk budget (+5% tolerance)
+    if is_gold:
+        final_risk = lots * 100.0 * sl_points
+    else:
+        from core.instrument_validator import calculate_monetary_risk
+        final_risk = calculate_monetary_risk(
+            lots=lots,
+            sl_pips=sl_pips,
+            symbol=pair,
+            exchange_rate=entry if entry > 0 else None
+        )
+
+    if final_risk > (target_budget * 1.05):
+        logger.warning(
+            f"[Capital Defense Hard Clamp] Sized lots ({lots}) risks ${final_risk:.2f}, "
+            f"exceeding target budget ${target_budget:.2f} ({effective_risk_pct:.2f}% of ${effective_equity:,.2f}). "
+            f"Clamping lots..."
+        )
+        if not is_gold:
+            from core.instrument_validator import calculate_position_size
+            clamped_lots = calculate_position_size(
+                account_equity=effective_equity,
+                risk_pct=effective_risk_pct,
+                sl_pips=sl_pips,
+                symbol=pair,
+                exchange_rate=entry if entry > 0 else None
+            )
+            if 0 < clamped_lots < lots:
+                lots = clamped_lots
+                final_risk = calculate_monetary_risk(
+                    lots=lots,
+                    sl_pips=sl_pips,
+                    symbol=pair,
+                    exchange_rate=entry if entry > 0 else None
+                )
+
+        if final_risk > (target_budget * 1.05):
+            logger.error(
+                f"[Capital Defense Hard Clamp] REJECTED: Final risk ${final_risk:.2f} strictly exceeds "
+                f"target budget ${target_budget:.2f} for {pair}. Order blocked to preserve account."
+            )
+            return {
+                "status": "REJECTED_RISK_BUDGET_BREACH",
+                "error": f"Monetary risk ${final_risk:.2f} exceeds target budget ${target_budget:.2f} (Hard Capital Clamp)",
+                "pair": pair,
+                "lots": lots,
+                "monetary_risk": final_risk,
+                "target_budget": target_budget,
+                "account_equity": effective_equity,
+                "risk_pct": effective_risk_pct,
+            }
 
     if lots <= 0.0:
         logger.error(
@@ -731,8 +823,8 @@ def execute_ctrader_order(sig: Dict[str, Any]) -> Dict[str, Any]:
             "error": "Computed lot size is 0.00 (risk budget insufficient or position sizing rejected)",
             "pair": pair,
             "lots": lots,
-            "account_equity": env_equity,
-            "risk_pct": env_risk_pct,
+            "account_equity": effective_equity,
+            "risk_pct": effective_risk_pct,
         }
 
     if is_gold:
@@ -1444,7 +1536,7 @@ def get_ctrader_account_equity(
     """
     env_name = (env or CTRADER_ENV).lower()
     acc_id = account_id or (int(CTRADER_ACCOUNT_ID) if CTRADER_ACCOUNT_ID and CTRADER_ACCOUNT_ID.isdigit() else 0)
-    fallback_equity = float(os.environ.get("ACCOUNT_EQUITY", "25000.0"))
+    fallback_equity = float(os.environ.get("ACCOUNT_EQUITY", "5000.0"))
 
     # Return simulated payload if cTrader execution disabled or missing credentials
     if not ENABLE_CTRADER_EXECUTION or not has_valid_credentials() or not acc_id:

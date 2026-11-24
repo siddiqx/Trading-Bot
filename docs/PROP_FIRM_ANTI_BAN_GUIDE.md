@@ -81,7 +81,7 @@ In your GitHub repository, go to **Settings ➔ Secrets and variables ➔ Action
 | `CTRADER_CLIENT_SECRET` | `secret_...` | Your cTrader Open API Client Secret. |
 | `CTRADER_ACCESS_TOKEN` | `token_...` | Your cTrader User Access Token. |
 | `CTRADER_ACCOUNT_ID` | `87654321` | Your numeric cTrader Trading Account ID. |
-| `ACCOUNT_EQUITY` | `25000.0` | Your exact account balance / equity. |
+| `ACCOUNT_EQUITY` | `5000.0` | Your exact account balance / equity. |
 | `RISK_PCT` | `0.50` | Recommended 0.50% for challenges. |
 | `CTRADER_ORDER_COMMENT` | *(Leave Empty)* | Submits clean orders with zero tags (looks manual). |
 

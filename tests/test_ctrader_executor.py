@@ -167,6 +167,152 @@ def test_dynamic_25k_account_lot_sizing(monkeypatch):
     assert res_gold["units"] == 10 # 10 oz
 
 
+def test_dynamic_5k_account_lot_sizing_forex_and_gold(monkeypatch):
+    """Verify that a $5,000 prop firm challenge account dynamically sizes Forex and Gold to exact risk budgets."""
+    import core.ctrader_executor as ce
+    monkeypatch.setattr(ce, "ENABLE_CTRADER_EXECUTION", False)
+    monkeypatch.setenv("ACCOUNT_EQUITY", "5000.0")
+    monkeypatch.setenv("RISK_PCT", "1.00")
+
+    # 1. EURUSD with 22p stop: $50 budget / (22 * $10) = 0.22 lots ($48.40 risk <= $50.00)
+    sig_eur = {
+        "pair": "EURUSD",
+        "direction": "LONG",
+        "entry": 1.08500,
+        "stop_loss": 1.08280,
+        "take_profit": 1.08830,
+        "sl_pips": 22.0,
+        "account_equity": 5000.0,
+        "suggested_lots": 0.0
+    }
+    res_eur = ce.execute_ctrader_order(sig_eur)
+    assert res_eur["lots"] == 0.22
+    assert res_eur["units"] == 22_000
+
+    # 2. USDCAD with 22p stop, entry 1.4100: CAD pip value ~$7.09/pip/lot -> 0.32 lots ($49.92 risk <= $50.00)
+    sig_cad = {
+        "pair": "USDCAD",
+        "direction": "SHORT",
+        "entry": 1.41000,
+        "stop_loss": 1.41220,
+        "take_profit": 1.40670,
+        "sl_pips": 22.0,
+        "account_equity": 5000.0,
+        "suggested_lots": 0.0
+    }
+    res_cad = ce.execute_ctrader_order(sig_cad)
+    assert res_cad["lots"] == 0.32
+    assert res_cad["units"] == 32_000
+
+    # 3. USDCHF with 22p stop, entry 0.8800: CHF pip value ~$11.36/pip/lot -> 0.20 lots ($49.98 risk <= $50.00)
+    sig_chf = {
+        "pair": "USDCHF",
+        "direction": "LONG",
+        "entry": 0.88000,
+        "stop_loss": 0.87780,
+        "take_profit": 0.88330,
+        "sl_pips": 22.0,
+        "account_equity": 5000.0,
+        "suggested_lots": 0.0
+    }
+    res_chf = ce.execute_ctrader_order(sig_chf)
+    assert res_chf["lots"] == 0.20
+    assert res_chf["units"] == 20_000
+
+    # 4. AUDUSD with 22p stop: USD quote currency ($10/pip) -> 0.22 lots ($48.40 risk <= $50.00)
+    sig_aud = {
+        "pair": "AUDUSD",
+        "direction": "LONG",
+        "entry": 0.65000,
+        "stop_loss": 0.64780,
+        "take_profit": 0.65330,
+        "sl_pips": 22.0,
+        "account_equity": 5000.0,
+        "suggested_lots": 0.0
+    }
+    res_aud = ce.execute_ctrader_order(sig_aud)
+    assert res_aud["lots"] == 0.22
+    assert res_aud["units"] == 22_000
+
+    # 5. Gold XAUUSD with 25pt stop: $50 budget / (25 * $100) = 0.02 lots ($50.00 risk)
+    sig_gold = {
+        "pair": "XAUUSD",
+        "direction": "SHORT",
+        "entry": 4050.0,
+        "stop_loss": 4075.0,
+        "take_profit": 4012.5,
+        "sl_points": 25.0,
+        "account_equity": 5000.0,
+        "suggested_lots": 0.0
+    }
+    res_gold = ce.execute_ctrader_order(sig_gold)
+    assert res_gold["lots"] == 0.02
+    assert res_gold["units"] == 2  # 2 oz
+
+
+def test_capital_defense_hard_clamp_intercepts_oversized_orders(monkeypatch):
+    """Verify Capital Defense Hard Clamp downsizes or rejects oversized lot sizes to protect 5k capital."""
+    import core.ctrader_executor as ce
+    monkeypatch.setattr(ce, "ENABLE_CTRADER_EXECUTION", False)
+    monkeypatch.setenv("ACCOUNT_EQUITY", "5000.0")
+    monkeypatch.setenv("RISK_PCT", "1.00")
+
+    # Mismatched signal sending 1.13 lots ($248 risk) into a $5,000 account ($50 budget)
+    oversized_sig = {
+        "pair": "EURUSD",
+        "direction": "LONG",
+        "entry": 1.08500,
+        "stop_loss": 1.08280,
+        "take_profit": 1.08830,
+        "sl_pips": 22.0,
+        "suggested_lots": 1.13,  # Dangerously oversized!
+        "account_equity": 5000.0
+    }
+    res = ce.execute_ctrader_order(oversized_sig)
+    # Must be clamped down to 0.22 lots ($48.40) to preserve $5k account
+    assert res["lots"] == 0.22
+    assert res["units"] == 22_000
+
+
+def test_dynamic_equity_fluctuations_adaptive_sizing(monkeypatch):
+    """Verify that sizing adapts dynamically to account drawdown and profit states."""
+    import core.ctrader_executor as ce
+    monkeypatch.setattr(ce, "ENABLE_CTRADER_EXECUTION", False)
+    monkeypatch.setenv("RISK_PCT", "1.00")
+
+    # Drawdown state ($4,800 equity): $48 budget -> 0.21 lots ($46.20 risk)
+    monkeypatch.setenv("ACCOUNT_EQUITY", "4800.0")
+    sig_dd = {
+        "pair": "EURUSD",
+        "direction": "LONG",
+        "entry": 1.08500,
+        "stop_loss": 1.08280,
+        "take_profit": 1.08830,
+        "sl_pips": 22.0,
+        "account_equity": 4800.0,
+        "suggested_lots": 0.0
+    }
+    res_dd = ce.execute_ctrader_order(sig_dd)
+    assert res_dd["lots"] == 0.21
+    assert res_dd["units"] == 21_000
+
+    # Profit state ($5,250 equity): $52.50 budget -> 0.23 lots ($50.60 risk)
+    monkeypatch.setenv("ACCOUNT_EQUITY", "5250.0")
+    sig_profit = {
+        "pair": "EURUSD",
+        "direction": "LONG",
+        "entry": 1.08500,
+        "stop_loss": 1.08280,
+        "take_profit": 1.08830,
+        "sl_pips": 22.0,
+        "account_equity": 5250.0,
+        "suggested_lots": 0.0
+    }
+    res_profit = ce.execute_ctrader_order(sig_profit)
+    assert res_profit["lots"] == 0.23
+    assert res_profit["units"] == 23_000
+
+
 def test_stealth_comment_and_label_configuration(monkeypatch):
     """Verify stealth comment and label configuration for prop firm anti-ban safety."""
     monkeypatch.setenv("ENABLE_CTRADER_EXECUTION", "true")

@@ -85,7 +85,7 @@ jobs:
           CTRADER_ACCESS_TOKEN: ${{ secrets.CTRADER_ACCESS_TOKEN }}
           CTRADER_ACCOUNT_ID: ${{ secrets.CTRADER_ACCOUNT_ID }}
           ENABLE_CTRADER_EXECUTION: ${{ secrets.ENABLE_CTRADER_EXECUTION || 'false' }}
-          ACCOUNT_EQUITY: ${{ secrets.ACCOUNT_EQUITY || '25000.0' }}
+          ACCOUNT_EQUITY: ${{ secrets.ACCOUNT_EQUITY || '5000.0' }}
           RISK_PCT: ${{ secrets.RISK_PCT || '1.00' }}
         run: |
           echo "=== [1/2] Scanning Forex Markets (4 Active Institutional Pairs) ==="

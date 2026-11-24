@@ -1970,6 +1970,68 @@ def test_scan_pair_timeframe_dual_timeframe_long_pullback(monkeypatch):
     assert sig["rr"] == CANONICAL_RISK_REWARD_RATIO
 
 
+def test_scan_pair_timeframe_adaptive_account_equity(monkeypatch):
+    """Verify that scan_pair_timeframe dynamically sizes signals to the provided account_equity."""
+    from market_scanner import scan_pair_timeframe
+
+    cfg = {"ticker": "EURUSD=X", "pip": 0.0001, "digits": 5, "donchian_len": 20}
+    state = {"alerted_signals": []}
+
+    now_utc = datetime(2026, 10, 15, 10, 30, tzinfo=timezone.utc)
+    t0 = now_utc - timedelta(minutes=15 * 60)
+    times = [t0 + timedelta(minutes=15 * i) for i in range(60)]
+    closes = [1.0850] * 60
+
+    df = pd.DataFrame({
+        "time": times,
+        "open": closes,
+        "high": [c + 0.0010 for c in closes],
+        "low": [c - 0.0005 for c in closes],
+        "close": closes,
+        "volume": [1000] * 60
+    })
+    df.loc[59, "open"] = 1.0845
+    df.loc[59, "low"] = 1.0840
+    df.loc[59, "close"] = 1.0855
+    df.loc[59, "high"] = 1.0858
+
+    mock_ccrs = {
+        "latest_div": {"EURUSD": 2.10},
+        "prev_div": {"EURUSD": 2.05},
+        "latest_z": {"EUR": 1.50, "USD": -0.60},
+    }
+
+    monkeypatch.setenv("PYTEST_CURRENT_TEST", "1")
+    monkeypatch.setattr("market_scanner.is_forex_market_open", lambda *a, **kw: True)
+    monkeypatch.setattr("market_scanner.fetch_candles", lambda *a, **kw: df)
+    monkeypatch.setattr("market_scanner.get_live_price", lambda *a, **kw: 1.08550)
+    monkeypatch.setattr("market_scanner.check_htf_alignment", lambda *a, **kw: (True, "1H Bullish Aligned"))
+
+    # Test with $5,000 equity (1% risk = $50.00 budget)
+    signals_5k = scan_pair_timeframe("EURUSD", cfg, "15m", state, ccrs_matrix=mock_ccrs, account_equity=5000.0, risk_pct=1.00)
+    assert len(signals_5k) == 1
+    sig_5k = signals_5k[0]
+    assert sig_5k["account_equity"] == 5000.0
+    assert sig_5k["risk_pct"] == 1.00
+    assert sig_5k["risk_budget_usd"] == 50.0
+    from core.instrument_validator import calculate_position_size
+    expected_lots_5k = calculate_position_size(5000.0, 1.00, sig_5k["sl_pips"], "EURUSD", sig_5k["entry"])
+    assert sig_5k["suggested_lots"] == expected_lots_5k
+    assert sig_5k["risk_usd"] <= 50.0
+
+    # Test with $10,000 equity (1% risk = $100.00 budget)
+    state_10k = {"alerted_signals": []}
+    signals_10k = scan_pair_timeframe("EURUSD", cfg, "15m", state_10k, ccrs_matrix=mock_ccrs, account_equity=10000.0, risk_pct=1.00)
+    assert len(signals_10k) == 1
+    sig_10k = signals_10k[0]
+    assert sig_10k["account_equity"] == 10000.0
+    assert sig_10k["risk_budget_usd"] == 100.0
+    expected_lots_10k = calculate_position_size(10000.0, 1.00, sig_10k["sl_pips"], "EURUSD", sig_10k["entry"])
+    assert sig_10k["suggested_lots"] == expected_lots_10k
+    assert sig_10k["suggested_lots"] == expected_lots_5k * 2
+    assert sig_10k["risk_usd"] <= 100.0
+
+
 def test_scan_pair_timeframe_dual_timeframe_short_sweep(monkeypatch):
     """Verify 15M fractal liquidity sweep triggers when 1H CCRS is in bearish active flow."""
     from market_scanner import scan_pair_timeframe

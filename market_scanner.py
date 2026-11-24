@@ -192,7 +192,7 @@ from core.ctrader_executor import (
     ENABLE_CTRADER_EXECUTION,
 )
 
-DEFAULT_ACCOUNT_EQUITY: float = float(os.environ.get("ACCOUNT_EQUITY", "25000.0"))
+DEFAULT_ACCOUNT_EQUITY: float = float(os.environ.get("ACCOUNT_EQUITY", "5000.0"))
 DEFAULT_RISK_PCT: float = float(os.environ.get("RISK_PCT", "1.00"))
 
 # Monitored Pairs and Ticker Mapping - Standard Institutional Forex Only (Zero Gold)
@@ -2475,9 +2475,19 @@ def detect_ict_liquidity_sweep(
     return False, None, 0.0, 0.0, ""
 
 
-def scan_pair_timeframe(pair_name: str, config: dict, tf: str, state: dict, ccrs_matrix: dict | None = None) -> list:
+def scan_pair_timeframe(
+    pair_name: str,
+    config: dict,
+    tf: str,
+    state: dict,
+    ccrs_matrix: dict | None = None,
+    account_equity: float | None = None,
+    risk_pct: float | None = None,
+) -> list:
     """Scans a single pair and timeframe for confirmed Two-Phase Pullback & Rejection setups."""
     now_utc = datetime.now(timezone.utc)
+    eff_equity = float(account_equity if (account_equity is not None and account_equity > 0) else DEFAULT_ACCOUNT_EQUITY)
+    eff_risk_pct = float(risk_pct if (risk_pct is not None and risk_pct > 0) else DEFAULT_RISK_PCT)
 
     # De-whitelisted Pair Guard: USDJPY is de-whitelisted from active trading due to negative statistical expectancy (BoJ intervention chop)
     if pair_name in DEWHITELISTED_PAIRS and not os.environ.get("FORCE_ENABLE_DEWHITELISTED"):
@@ -2775,8 +2785,8 @@ def scan_pair_timeframe(pair_name: str, config: dict, tf: str, state: dict, ccrs
 
                                 try:
                                     calc_lots = calculate_position_size(
-                                        account_equity=DEFAULT_ACCOUNT_EQUITY,
-                                        risk_pct=DEFAULT_RISK_PCT,
+                                        account_equity=eff_equity,
+                                        risk_pct=eff_risk_pct,
                                         sl_pips=sl_pips,
                                         symbol=pair_name,
                                         exchange_rate=entry,
@@ -2843,9 +2853,9 @@ def scan_pair_timeframe(pair_name: str, config: dict, tf: str, state: dict, ccrs
                                         "calc_lots": calc_lots,
                                         "risk_usd": calc_risk_usd,
                                         "monetary_risk_usd": calc_risk_usd,
-                                        "risk_budget_usd": DEFAULT_ACCOUNT_EQUITY * (DEFAULT_RISK_PCT / 100.0),
-                                        "risk_pct": DEFAULT_RISK_PCT,
-                                        "account_equity": DEFAULT_ACCOUNT_EQUITY,
+                                        "risk_budget_usd": eff_equity * (eff_risk_pct / 100.0),
+                                        "risk_pct": eff_risk_pct,
+                                        "account_equity": eff_equity,
                                         "max_hold_hours": 36.0,
                                     })
                                     state["alerted_signals"].append(sig_id)
@@ -2907,8 +2917,8 @@ def scan_pair_timeframe(pair_name: str, config: dict, tf: str, state: dict, ccrs
 
                             try:
                                 calc_lots = calculate_position_size(
-                                    account_equity=DEFAULT_ACCOUNT_EQUITY,
-                                    risk_pct=DEFAULT_RISK_PCT,
+                                    account_equity=eff_equity,
+                                    risk_pct=eff_risk_pct,
                                     sl_pips=sl_pips,
                                     symbol=pair_name,
                                     exchange_rate=entry,
@@ -2974,9 +2984,9 @@ def scan_pair_timeframe(pair_name: str, config: dict, tf: str, state: dict, ccrs
                                     "calc_lots": calc_lots,
                                     "risk_usd": calc_risk_usd,
                                     "monetary_risk_usd": calc_risk_usd,
-                                    "risk_budget_usd": DEFAULT_ACCOUNT_EQUITY * (DEFAULT_RISK_PCT / 100.0),
-                                    "risk_pct": DEFAULT_RISK_PCT,
-                                    "account_equity": DEFAULT_ACCOUNT_EQUITY,
+                                    "risk_budget_usd": eff_equity * (eff_risk_pct / 100.0),
+                                    "risk_pct": eff_risk_pct,
+                                    "account_equity": eff_equity,
                                     "max_hold_hours": 48.0,
                                 })
                                 state["alerted_signals"].append(sig_id)
@@ -3010,8 +3020,8 @@ def scan_pair_timeframe(pair_name: str, config: dict, tf: str, state: dict, ccrs
                 if abs(live_price - bar_close_price) <= (max_chase_pips * pip):
                     try:
                         calc_lots = calculate_position_size(
-                            account_equity=DEFAULT_ACCOUNT_EQUITY,
-                            risk_pct=DEFAULT_RISK_PCT,
+                            account_equity=eff_equity,
+                            risk_pct=eff_risk_pct,
                             sl_pips=mr_sl_p_l,
                             symbol=pair_name,
                             exchange_rate=entry,
@@ -3058,9 +3068,9 @@ def scan_pair_timeframe(pair_name: str, config: dict, tf: str, state: dict, ccrs
                             "calc_lots": calc_lots,
                             "risk_usd": calc_risk_usd,
                             "monetary_risk_usd": calc_risk_usd,
-                            "risk_budget_usd": DEFAULT_ACCOUNT_EQUITY * (DEFAULT_RISK_PCT / 100.0),
-                            "risk_pct": DEFAULT_RISK_PCT,
-                            "account_equity": DEFAULT_ACCOUNT_EQUITY,
+                            "risk_budget_usd": eff_equity * (eff_risk_pct / 100.0),
+                            "risk_pct": eff_risk_pct,
+                            "account_equity": eff_equity,
                             "max_hold_hours": 4.0,
                         })
                         state["alerted_signals"].append(sig_id)
@@ -3084,8 +3094,8 @@ def scan_pair_timeframe(pair_name: str, config: dict, tf: str, state: dict, ccrs
                 if abs(live_price - bar_close_price) <= (max_chase_pips * pip):
                     try:
                         calc_lots = calculate_position_size(
-                            account_equity=DEFAULT_ACCOUNT_EQUITY,
-                            risk_pct=DEFAULT_RISK_PCT,
+                            account_equity=eff_equity,
+                            risk_pct=eff_risk_pct,
                             sl_pips=mr_sl_p_s,
                             symbol=pair_name,
                             exchange_rate=entry,
@@ -3132,9 +3142,9 @@ def scan_pair_timeframe(pair_name: str, config: dict, tf: str, state: dict, ccrs
                             "calc_lots": calc_lots,
                             "risk_usd": calc_risk_usd,
                             "monetary_risk_usd": calc_risk_usd,
-                            "risk_budget_usd": DEFAULT_ACCOUNT_EQUITY * (DEFAULT_RISK_PCT / 100.0),
-                            "risk_pct": DEFAULT_RISK_PCT,
-                            "account_equity": DEFAULT_ACCOUNT_EQUITY,
+                            "risk_budget_usd": eff_equity * (eff_risk_pct / 100.0),
+                            "risk_pct": eff_risk_pct,
+                            "account_equity": eff_equity,
                             "max_hold_hours": 4.0,
                         })
                         state["alerted_signals"].append(sig_id)
@@ -3225,8 +3235,8 @@ def scan_pair_timeframe(pair_name: str, config: dict, tf: str, state: dict, ccrs
             # Quantitative Multi-Currency Position Sizing & Monetary Risk Calculation
             try:
                 calc_lots = calculate_position_size(
-                    account_equity=DEFAULT_ACCOUNT_EQUITY,
-                    risk_pct=DEFAULT_RISK_PCT,
+                    account_equity=eff_equity,
+                    risk_pct=eff_risk_pct,
                     sl_pips=pair_sl_pips,
                     symbol=pair_name,
                     exchange_rate=entry,
@@ -3284,9 +3294,9 @@ def scan_pair_timeframe(pair_name: str, config: dict, tf: str, state: dict, ccrs
                 "calc_lots": calc_lots,
                 "risk_usd": calc_risk_usd,
                 "monetary_risk_usd": calc_risk_usd,
-                "risk_budget_usd": DEFAULT_ACCOUNT_EQUITY * (DEFAULT_RISK_PCT / 100.0),
-                "risk_pct": DEFAULT_RISK_PCT,
-                "account_equity": DEFAULT_ACCOUNT_EQUITY
+                "risk_budget_usd": eff_equity * (eff_risk_pct / 100.0),
+                "risk_pct": eff_risk_pct,
+                "account_equity": eff_equity
             })
 
             state["alerted_signals"].append(sig_id)
@@ -3373,8 +3383,8 @@ def scan_pair_timeframe(pair_name: str, config: dict, tf: str, state: dict, ccrs
             # Quantitative Multi-Currency Position Sizing & Monetary Risk Calculation
             try:
                 calc_lots = calculate_position_size(
-                    account_equity=DEFAULT_ACCOUNT_EQUITY,
-                    risk_pct=DEFAULT_RISK_PCT,
+                    account_equity=eff_equity,
+                    risk_pct=eff_risk_pct,
                     sl_pips=pair_sl_pips,
                     symbol=pair_name,
                     exchange_rate=entry,
@@ -3432,9 +3442,9 @@ def scan_pair_timeframe(pair_name: str, config: dict, tf: str, state: dict, ccrs
                 "calc_lots": calc_lots,
                 "risk_usd": calc_risk_usd,
                 "monetary_risk_usd": calc_risk_usd,
-                "risk_budget_usd": DEFAULT_ACCOUNT_EQUITY * (DEFAULT_RISK_PCT / 100.0),
-                "risk_pct": DEFAULT_RISK_PCT,
-                "account_equity": DEFAULT_ACCOUNT_EQUITY
+                "risk_budget_usd": eff_equity * (eff_risk_pct / 100.0),
+                "risk_pct": eff_risk_pct,
+                "account_equity": eff_equity
             })
 
             state["alerted_signals"].append(sig_id)
@@ -3799,7 +3809,12 @@ def run_scan_cycle():
                 continue
 
             try:
-                signals = scan_pair_timeframe(pair_name, cfg, tf, state, ccrs_matrix=ccrs_matrix)
+                signals = scan_pair_timeframe(
+                    pair_name, cfg, tf, state,
+                    ccrs_matrix=ccrs_matrix,
+                    account_equity=current_eq,
+                    risk_pct=DEFAULT_RISK_PCT
+                )
                 if not signals:
                     telemetry["slots_scanned"].append({"pair": pair_name, "tf": tf, "status": "NO_SETUP", "detail": "Conditions not met"})
                 else:

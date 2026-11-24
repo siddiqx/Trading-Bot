@@ -91,26 +91,34 @@ Standard ECN brokers enforce a minimum order volume of **0.01 lots** (1 micro-lo
 The cTrader executor (`core/ctrader_executor.py`) enforces dynamic equity and risk budget synchronization.
 
 ### 5.1 Runtime Resolution Workflow
-1. When `execute_ctrader_order(sig)` is called, it inspects `sig["suggested_lots"]`.
-2. It cross-checks `ACCOUNT_EQUITY` and `RISK_PCT` from runtime environment variables.
-3. If `sig` was generated using a mismatched reference equity (e.g., $5,000 default when the live account is $25,000), `core/ctrader_executor.py` automatically recalculates the exact lot size before TLS dispatch, preventing under-sized low-profit executions.
+1. When `execute_ctrader_order(sig)` is called, it inspects live broker equity directly via `get_ctrader_account_equity()`.
+2. Sizing resolution priority:
+   - **Priority 1 (Authoritative):** Live broker equity queried over TLS from cTrader Open API (`ProtoOATraderRes` balance + floating P&L).
+   - **Priority 2:** Explicit `ACCOUNT_EQUITY` environment variable if configured.
+   - **Priority 3:** Signal equity embedded at scan time by `market_scanner.py`.
+   - **Priority 4:** Default reference equity ($5,000 USD).
+3. **Capital Defense Hard Clamp:** Before TLS order submission, the executor calculates the exact dollar risk of `lots` given `sl_pips` and current exchange rate. If `monetary_risk > target_budget * 1.05`, the order is clamped down to the exact risk budget. If clamped risk still exceeds the ceiling, the trade is rejected with `REJECTED_RISK_BUDGET_BREACH`, guaranteeing zero oversized lot execution.
 
 ### 5.2 How to Switch Account Tiers in 10 Seconds
 
 #### Option A: Local / VPS Execution (`.env`)
 Update your `.env` file with your target account equity and risk percentage:
 ```bash
-# For a $25,000 Funded Account with 1.0% Risk ($250 per trade):
-ACCOUNT_EQUITY=25000
-RISK_PCT=1.00
+# For a $5,000 Prop Firm Challenge (Default):
+ACCOUNT_EQUITY=5000.0
+RISK_PCT=1.00  # $50.00 risk per trade (or 0.50 for $25.00)
 ENABLE_CTRADER_EXECUTION=true
 
-# For a $100,000 Funded Account with 0.50% Conservative Risk:
-# ACCOUNT_EQUITY=100000
+# For a $25,000 Funded Account with 1.0% Risk ($250 per trade):
+# ACCOUNT_EQUITY=25000.0
+# RISK_PCT=1.00
+
+# For a $100,000 Funded Account with 0.50% Conservative Risk ($500 per trade):
+# ACCOUNT_EQUITY=100000.0
 # RISK_PCT=0.50
 ```
 
 #### Option B: GitHub Actions 24/7 Cloud Scanner
 Navigate to **GitHub Repository $\rightarrow$ Settings $\rightarrow$ Secrets and variables $\rightarrow$ Actions** and configure:
-* `ACCOUNT_EQUITY`: `25000`
+* `ACCOUNT_EQUITY`: `5000.0`
 * `RISK_PCT`: `1.00`
