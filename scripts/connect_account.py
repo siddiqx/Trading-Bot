@@ -271,14 +271,26 @@ def update_github_secrets(updates: Dict[str, str]):
 
 def main():
     if len(sys.argv) < 2:
-        print("Usage: python scripts/connect_account.py <authorization_code_or_url>")
+        print("Usage: python scripts/connect_account.py <authorization_code_or_url_or_token>")
         sys.exit(1)
 
-    code = extract_code(sys.argv[1])
-    print("\n[1/4] Exchanging Authorization Code for Token...")
-    token_data = exchange_code_for_token(code)
-    access_token = token_data["accessToken"]
-    print("  ✓ Access token received.")
+    raw_arg = sys.argv[1].strip()
+    access_token = None
+
+    if raw_arg.startswith("token:"):
+        access_token = raw_arg.split("token:", 1)[1].strip()
+        print("\n[1/4] Using provided direct Access Token...")
+    else:
+        code = extract_code(raw_arg)
+        print("\n[1/4] Exchanging Authorization Code for Token...")
+        try:
+            token_data = exchange_code_for_token(code)
+            access_token = token_data["accessToken"]
+            print("  ✓ Access token received.")
+        except Exception as ex:
+            print(f"  ⚠️ Code exchange notice: {ex}")
+            print("  Attempting to use input directly as an Access Token...")
+            access_token = code
 
     print(f"\n[2/4] Inspecting cTrader Accounts for Login {TARGET_LOGIN}...")
     acc_info = inspect_and_authorize_account(access_token, TARGET_LOGIN)
