@@ -1,4 +1,4 @@
-# 24/7 Institutional Algorithmic Signal Engine & Trade Journal
+# 24/7 Institutional Forex Algorithmic Trading Engine
 
 ![Python Version](https://img.shields.io/badge/Python-3.11%20%7C%203.12-blue?logo=python)
 ![Cloudflare Workers](https://img.shields.io/badge/Cloudflare_Workers-Edge_Serverless-orange?logo=cloudflare)
@@ -9,9 +9,9 @@
 ![System Version](https://img.shields.io/badge/System-v3.3.0--Production-success)
 ![Test Suite](https://img.shields.io/badge/Tests-216%20Passing-brightgreen)
 
-An institutional-grade, **24/7 autonomous systematic algorithmic trading bot, trade journal, and execution gateway** engineered for institutional Forex markets and Spot Gold commodity trading.
+An institutional-grade, **24/7 autonomous systematic algorithmic trading bot, trade journal, and execution gateway** engineered for Forex markets.
 
-The engine operates serverless in the cloud with **zero hardware dependency** (runs 24/7 without requiring a home computer or paid VPS) and **zero paid SaaS subscriptions** (eliminates TradingView Premium subscriptions and third-party signal relays).
+The engine operates fully serverless in the cloud with **zero hardware dependency** (runs 24/7 via GitHub Actions and Cloudflare Global Edge) and **zero paid SaaS subscriptions**.
 
 ---
 
@@ -19,202 +19,116 @@ The engine operates serverless in the cloud with **zero hardware dependency** (r
 
 ```
                     ┌────────────────────────────────────────────────────────┐
-                    │            24/7 SERVERLESS CLOUD ARCHITECTURE           │
+                    │            24/7 SERVERLESS CLOUD ARCHITECTURE          │
                     └────────────────────────────────────────────────────────┘
 
-    ┌──────────────────────────┐                   ┌──────────────────────────┐
-    │  GitHub Actions (Cloud)  │                   │ Cloudflare Global Edge   │
-    │  Scheduled Cron (*/15m)  │                   │ Serverless Worker Relay  │
-    └─────────────┬────────────┘                   └─────────────┬────────────┘
-                  │                                              │
-                  ▼                                              │
-    ┌──────────────────────────┐                                 │
-    │ Dual Production Engines  │                                 │
-    │ 1. Forex Scanner (15M)   │                                 │
-    │    market_scanner.py     │                                 │
-    │    • 5 Institutional FX  │                                 │
-    │    • 1H 7-Currency CCRS  │                                 │
-    │    • Forex Factory News  │                                 │
-    │                          │                                 │
-    │ 2. Gold Satellite (1H)   │                                 │
-    │    market_scanner_gold.py│                                 │
-    │    • Spot Gold (XAUUSD)  │                                 │
-    │    • CCRS USD Factor     │                                 │
-    │    • Dynamic ATR Stops   │                                 │
-    │    • Correlation Interlock                                 │
-    └─────────────┬────────────┘                                 │
-                  │                                              │
-                  ├─────────────────── Sync Ledgers ─────────────┤
-                  │                   (POST /sync_trades)        │
-                  │                                              │
-                  ▼                                              ▼
-    ┌──────────────────────────┐                   ┌──────────────────────────┐
-    │  Outbound Notifications  │                   │ Telegram Webhook Router  │
-    │  • Telegram Push Alerts  │                   │ • /radar   • /history    │
-    │  • cTrader Open API      │                   │ • /prices  • /performance│
-    │    Automated Execution   │                   │ • /status  • /strategy   │
-    │    (TLS Protobuf Client) │                   │ • /active                │
-    └─────────────┬────────────┘                   └─────────────┬────────────┘
-                  │                                              │
-                  ▼                                              ▼
-    ┌─────────────────────────────────────────────────────────────────────────┐
-    │                      Institutional Trader Cockpit                       │
-    │           Real-Time Signals, Risk Management & Trade Ledger             │
-    └─────────────────────────────────────────────────────────────────────────┘
+     ┌──────────────────────────┐                   ┌──────────────────────────┐
+     │  GitHub Actions (Cloud)  │                   │ Cloudflare Global Edge   │
+     │  Scheduled Cron (*/15m)  │                   │ Serverless Worker Relay  │
+     └─────────────┬────────────┘                   └─────────────┬────────────┘
+                   │                                              │
+                   ▼                                              │
+     ┌──────────────────────────┐                                 │
+     │  Forex Market Scanner    │                                 │
+     │  `market_scanner.py`     │                                 │
+     │  • Macro Regime Engine   │                                 │
+     │  • 15M Precision Signals │                                 │
+     │  • Economic News Filter  │                                 │
+     │  • Position Reconciler   │                                 │
+     └─────────────┬────────────┘                                 │
+                   │                                              │
+                   ├─────────────────── Sync Ledgers ─────────────┤
+                   │                   (POST /sync_trades)        │
+                   │                                              │
+                   ▼                                              ▼
+     ┌──────────────────────────┐                   ┌──────────────────────────┐
+     │  Outbound Notifications  │                   │ Telegram Webhook Router  │
+     │  • Telegram Push Alerts  │                   │ • /radar   • /history    │
+     │  • cTrader Open API      │                   │ • /prices  • /performance│
+     │    Automated Execution   │                   │ • /status  • /strategy   │
+     │    (TLS Protobuf Client) │                   │ • /active                │
+     └─────────────┬────────────┘                   └─────────────┬────────────┘
+                   │                                              │
+                   ▼                                              ▼
+     ┌─────────────────────────────────────────────────────────────────────────┐
+     │                      Institutional Trader Cockpit                       │
+     │           Real-Time Signals, Risk Management & Trade Ledger             │
+     └─────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## 2. Quantitative Strategy Engine (v3.3.0 Production)
+## 2. Core Capabilities
 
-The system deploys a decoupled, multi-asset quantitative strategy that separates **Macro Order Flow Regime Identification (1H)** from **Precision Execution Timing (15M & 1H)**.
-
-### A. Core Institutional Forex Engine (`market_scanner.py`)
-* **Monitored Universe (4 Active Pairs):** `EURUSD`, `USDCAD`, `USDCHF`, `AUDUSD`.
-* **USDJPY, GBPUSD & XAUUSD De-whitelisted:** Paused due to empirical negative statistical expectancy: USDJPY (20% live win rate, PF 0.38) caused by BoJ intervention whipsaws; GBPUSD (0% live win rate, 33.3% 5-year backtest WR, PF 0.72) caused by structural Cable liquidity sweep traps; and XAUUSD (38.4% 2-year backtest WR, PF 0.84, -23.06R net loss) caused by commodity liquidity sweeps. Quotes are retained solely for synthetic currency basket mathematics and reference radar quotes.
-* **Macro Factor Model (1H CCRS):** Decomposes 6 major Forex pairs into 7 pure currency strength indices (`EUR`, `GBP`, `AUD`, `JPY`, `CAD`, `CHF`, `USD`). Normalizes 120-hour returns across a 200-hour rolling volatility window into Z-scores. Trades active macro momentum regimes where pairwise spread divergence $|D| \ge 1.75\sigma$.
-* **Precision Execution (15M):** Evaluates completed 15M candle bars for 20-EMA pullback rejections and 10-bar Donchian / fractal liquidity sweeps aligned with the 1H macro bias.
-* **Dynamic Exits:** Stop Loss dynamically anchored to 14-period ATR ($20.0 - 25.0$ pips, canonical $22.0$ pips). Take Profit fixed at $1:1.50$ Risk-to-Reward ratio ($30.0 - 37.5$ pips, canonical $33.0 - 35.0$ pips).
-* **Volatility Cushion Trailing:**
-  - **Tier 1 (+1.20R):** Halves risk by advancing SL to $-0.50$R of entry.
-  - **Tier 2 (+1.50R):** Locks in $+0.50$R guaranteed profit and extends runner target to $+2.00$R.
-
-### B. Dedicated Gold Satellite Engine (`satellite/market_scanner_gold.py`) — *De-whitelisted (Surveillance Only)*
-* **Asset:** Spot Gold (`XAUUSD` / front-month futures `GC=F`).
-* **Execution Status:** **De-whitelisted from active trading** (`GOLD_TRADING_ENABLED=false`). In 2-year look-ahead-free backtesting (11,427 1H bars), Gold demonstrated negative expectancy (38.4% Win Rate, 0.84 Profit Factor, -23.06R drag), with 57.4% of total losses concentrated on Fridays. Quotes are actively tracked on Telegram `/radar` and `/prices` for reference surveillance and macro flow calculations.
-* **Contract Geometry:** 1 Standard Lot = 100 Troy Ounces ($1.00 move in Gold price = $100.00 USD per standard lot). Minimum trade = 0.01 lot (1 Troy Ounce = $1.00/point).
-* **Macro Factor (1H CCRS Single-Factor):** Computes isolated USD basket factor $Z_{\text{USD}}$. Macro flow is established when $|Z_{\text{USD}}| \ge 1.25\sigma$ (statistically calibrated to match the $1.75\sigma$ pairwise Forex threshold: $1.25 \times \sqrt{2} \approx 1.76\sigma$).
-  - $Z_{\text{USD}} \le -1.25\sigma$ $\implies$ Institutional USD Weakness $\implies$ **Long Gold (BUY)**.
-  - $Z_{\text{USD}} \ge +1.25\sigma$ $\implies$ Institutional USD Strength $\implies$ **Short Gold (SELL)**.
-* **Precision Triggers (1H):** Confirmed 1H 20-EMA retest rejection or 10-bar Donchian liquidity sweep on closed 1H bars.
-* **Dynamic Volatility Stops:** $2.0\times$ 14-period 1H ATR stop bounded strictly between $\$20.00$ and $\$35.00$/oz ($1:1.50$ base TP at $\$30.00 - \$52.50$/oz).
+* **Automated 24/7 Cloud Surveillance:** Autonomous market surveillance runs on closed candle bars every 15 minutes during global market hours.
+* **Macro Regime & Execution Decoupling:** Combines higher-timeframe macro flow analysis with lower-timeframe precision execution timing.
+* **Direct Broker Execution:** Native TLS Open API Protobuf client for cTrader with atomic server-side Stop Loss and Take Profit protection.
+* **Multi-Account Auto-Discovery:** Seamlessly discovers and concurrently executes across linked challenge and funded accounts in parallel.
+* **Phase-Aware Risk Architecture:** Dynamically adjusts risk exposure based on account phase (Evaluation vs Funded) and live equity drawdown tiers.
+* **Capital Defense Guardrails:** Live broker equity tracking, floating drawdown limits, correlated exposure limits, news event blackouts, and weekend auto-close protection.
+* **Mobile Telegram Terminal:** Real-time push notifications, live market radar, interactive trade history, and remote commands.
 
 ---
 
-## 3. Institutional Risk Management & Prop Firm Controls
+## 3. Interactive Telegram Cockpit
 
-The system was engineered from the ground up to comply with institutional prop firm challenge rules (FTMO, FundedNext, Alpha Capital, 5%ers):
+The Telegram terminal provides mobile surveillance and trade management via the Cloudflare Edge Worker:
 
-| Risk Control | Implementation | Purpose |
-| :--- | :--- | :--- |
-| **Phase-Asymmetric Dynamic Sizing (Rank 3)** | `core/config.py` (`resolve_effective_risk_pct()`) & `core/ctrader_executor.py` | Adapts risk dynamically to live drawdown tier: **Evaluation Stage:** `1.25%` above `-1.5%` DD, `0.75%` between `-1.5%` and `-4.0%` DD, `0.40%` crash-guard below `-4.0%` DD. **Funded Stage:** `0.75%` above `-3.0%` DD, `0.50%` below `-3.0%` DD. Overridable via `RISK_MODE=flat`. |
-| **Capital Defense Hard Clamp** | `core/ctrader_executor.py` | Evaluates dollar risk against live account balance prior to TLS order submission. Strictly clamps lot size or rejects order if risk would exceed 1.05× of the configured dollar budget. |
-| **Multi-Account Auto-Discovery & Parallel Execution** | `core/ctrader_executor.py` (`CTRADER_ACCOUNT_IDS=auto`) | Auto-discovers all `FULL_ACCESS` live challenge accounts linked to cTrader ID; parallel socket dispatch executes fills across multiple accounts in ~200–400ms without sequential latency. |
-| **Live Equity & Floating Drawdown Guardrail (ROP-03)** | `core/ctrader_executor.py` (`ProtoOATraderReq` + `ProtoOAGetPositionUnrealizedPnLReq`) | Real-time broker polling tracks floating equity and halts bot at 3.0% daily loss (`BOT_HALT_DAILY_LOSS_PCT`), guaranteeing immunity beneath firm 5.0% limit (`FIRM_DAILY_LOSS_LIMIT_PCT`), resetting daily at 00:00 UTC rollover. |
-| **Atomic SL/TP Attachment & 3-Retry Guard (ROP-01)** | `core/ctrader_executor.py` (`ProtoOANewOrderReq` scaled to $10^{-5}$) | Enforces server-side `relativeStopLoss` / `relativeTakeProfit` directly upon order fill. If broker fills naked, triggers 3-retry fallback amendment loop with exponential backoff and emergency market liquidation if SL fails. |
-| **Broker State Reconciler & Fill Recovery (ROP-09)** | `core/ctrader_executor.py` (`ProtoOAReconcileReq`) | Expands socket timeout to 10.0s and reconciles with broker before retrying or declaring failure, seamlessly recovering "timeout-then-fill" executions without creating duplicate or phantom orders. |
-| **Forex Weekend Flat Auto-Close** | `market_scanner.py` (`CLOSE_FOREX_BEFORE_WEEKEND = True`) | Prohibits fresh entries after 12:00 UTC on Friday, and automatically liquidates all open Forex positions flat and cancels pending orders at 20:00 UTC (`FRIDAY_MARKET_FLAT_HOUR_UTC = 20`) to guarantee strict compliance with prop firm weekend holding bans (The 5%ers, FTMO). |
-| **Server-Side Close Watchdog Prevention** | `core/ctrader_executor.py` & `market_scanner.py` | Reconciles `POSITION_NOT_FOUND` as `ALREADY_CLOSED` when positions hit broker server-side SL/TP, eliminating infinite 48-hour watchdog retry loops. |
-| **Capped Market Order Slippage** | `core/config.py` (`MAX_SLIPPAGE_PIPS = 3.0`, `MAX_GOLD_SLIPPAGE_POINTS = 50.0`) | Enforces `baseSlippagePrice` and `slippageInPoints` (30 points for Forex, 50 points for Gold) to reject fills beyond max slippage tolerance during news volatility spikes. |
-| **USD Correlation Interlock** | `MAX_CONCURRENT_USD_EXPOSURE = 1` | Strictly limits simultaneous net USD exposure to 1 position across the universe, preventing multi-pair news cascade wipeouts. |
-| **Forex Factory News Filter** | `core/news_filter.py` | Automatically suppresses fresh entries 30 minutes before and after high-impact (Red Folder) economic events. |
-| **Daily Loss Circuit Breaker** | `DAILY_LOSS_CIRCUIT_BREAKER = 2` | Halts fresh entries for the day if 2 stop-outs occur or daily loss exceeds $-2.00$R, guaranteeing immunity from prop firm 4–5% daily drawdown limits. |
-| **Rollover Blackout** | 20:30 – 22:30 UTC (Gold) & 21:00 – 23:00 UTC (Forex) | Halts entries during illiquid interbank rollover when spreads widen drastically. |
-| **Monday London Window** | 06:00 – 12:00 UTC strictly | Prohibits entries during erratic Asian opens and low-volume NY afternoon drift. |
-| **Post-Loss Cooldown** | 60 Minutes | Enforces mandatory 1-hour timeout following a stop-out to prevent revenge trading. |
-
-> 🛡️ **Prop Firm Anti-Ban Guide:** For full breakdown of copy-trading stealth settings, news trading shields, and challenge pass rules, see [docs/PROP_FIRM_ANTI_BAN_GUIDE.md](docs/PROP_FIRM_ANTI_BAN_GUIDE.md).
-
----
-
-## 4. Interactive Telegram Terminal
-
-The Telegram bot functions as a 24/7 mobile cockpit powered by the Cloudflare Worker edge router:
-
-| Command | Action & Output Description |
+| Command | Action & Telemetry |
 | :--- | :--- |
-| `/radar` | **Live Market Radar:** Shows floating PnL, Entry, SL, TP, and trailing stage for all active positions, plus CCRS macro regimes across the universe. |
-| `/prices` | **Institutional Quotes:** Real-time spot prices across EURUSD, USDCAD, GBPUSD, USDCHF, AUDUSD, and XAUUSD. |
-| `/history` | **Trade Journal Ledger:** Filterable record of completed trades. Defaults to the **5 most recent trades** for a quick glance; tap **"All Time"** for full paginated history (10 trades/page with `⬅️ Newer` / `Older ➡️` navigation), or filter by **Today**, **7 Days**, or specific pair. |
-| `/performance` | **Forward Performance Metrics:** Calculates Win Rate, Expectancy, Pips, R-multiples, and Profit Factor from verified live forward trades. |
-| `/strategy` | **System Specifications:** Complete active quantitative rulebook and parameter matrix. |
-| `/status` | **System Health Monitor:** Edge uptime, active trade count, circuit breaker status, and broker connection state. |
-| `/active` | **Immediate Active Trade Status:** Summary of currently floating positions with entry, SL, TP, and R-multiple excursion. |
+| `/radar` | **Live Market Radar:** Real-time tracking of open trades, floating PnL, trailing status, and market regimes. |
+| `/prices` | **Institutional Quotes:** Live spot price quotes across monitored pairs. |
+| `/history` | **Trade History Ledger:** Completed trade records with quick toggle buttons (`Recent`, `Today`, `7 Days`, `All Time`) and pair filters. |
+| `/performance` | **Performance Metrics:** Real-time Win Rate, Profit Factor, realized R-multiples, and trade statistics. |
+| `/status` | **System Health Monitor:** Scanner heartbeat, broker connection status, and circuit breaker telemetry. |
+| `/active` | **Active Positions:** Detailed breakdown of currently open positions and excursions. |
 
 ---
 
-## 5. Repository File Structure
+## 4. Repository Structure
 
 ```
 trading-bot/
-├── .github/
-│   └── workflows/
-│       └── scanner.yml              # GitHub Actions 24/7 cron runner (every 15 min)
-├── app/                             # Secondary / Legacy FastAPI webhook service
-├── archives/                        # Long-term historical trade backups (all iterations)
-│   └── live_trade_history_backup_all_versions.json # Full 51-trade archival dataset
-├── core/                            # Core quantitative & execution modules
-│   ├── config.py                    # Authoritative Forex configuration & single source of truth
-│   ├── ctrader_executor.py          # cTrader Open API TLS Protobuf execution engine
-│   ├── instrument_validator.py      # Multi-currency pip math & position sizing
-│   ├── news_filter.py               # Forex Factory real-time economic calendar filter
-│   └── post_mortem.py               # Trade excursion diagnostics (MFE/MAE tracking)
-├── data/                            # Historical data, patterns, and trade ledgers
-│   ├── gold_trade_records.json      # Gold Satellite active & historical trade ledger
-│   └── patterns/                    # Trade volume benchmarks and pattern journals
-├── docs/                            # Deep institutional documentation & strategy specs
-│   ├── BACKTESTING_METHODOLOGY.md   # Rigorous look-ahead-free backtest framework
-│   ├── DEVELOPMENT_ROADMAP.md       # Development history and milestone tracking
-│   ├── KNOWN_ISSUES.md              # Complete forensic defect log & remediation history
-│   ├── LOT_SIZE_GUIDE.md            # Account sizing table ($100 to $100,000 accounts)
-│   ├── PROJECT_AUDIT.md             # System audit & codebase verification
-│   ├── PROJECT_CONTEXT.md           # Authoritative agent context & architecture map
-│   ├── PROP_FIRM_ANTI_BAN_GUIDE.md  # Comprehensive prop firm anti-ban & safety manual
-│   └── TRADING_STRATEGY_SPEC.md     # Mathematical & algorithmic strategy rulebook
-├── satellite/                       # Dedicated Isolated Gold Satellite Engine
-│   ├── gold_config.py               # Authoritative Gold contract & exit configuration
-│   ├── gold_validator.py            # Gold position sizing & correlation interlock
-│   └── market_scanner_gold.py       # Standalone 24/7 Gold scanning & trailing engine
-├── scripts/                         # Research, backtesting & simulation scripts
-│   ├── check_ctrader_account.py     # Account permissions, scopes & broker diagnostics
-│   ├── demo_live_equity.py          # Standalone live account equity & floating drawdown inspector
-│   ├── demo_timeout_reconciliation.py# Standalone socket timeout & reconciliation validator
-│   ├── forward_test_tracker.py      # Out-of-sample forward validation tracker
-│   ├── run_canonical_backtest.py    # Walk-forward 70/30 backtest engine
-│   └── simulate_prop_firm_5k.py     # Prop firm challenge Monte Carlo simulation
-├── tests/                           # Complete automated unit test suite (216 tests)
-│   ├── test_canonical_strategy.py   # CCRS factor matrix & regime tests
-│   ├── test_ctrader_executor.py     # cTrader Protobuf message & TLS client tests
-│   ├── test_gold_satellite.py       # Gold contract geometry, sizing & interlock tests
-│   ├── test_instrument_validator.py # Multi-currency pip value & lot sizing tests
-│   ├── test_market_scanner.py       # Forex scanner cycle & signal tests
-│   ├── test_news_filter.py          # Economic calendar parsing & blackout tests
-│   └── test_position_sizing.py      # Prop firm budget & risk ceiling tests
-├── cloudflare_worker.js             # Global Edge V8 Worker & Telegram webhook router
-├── market_scanner.py                # Standalone 24/7 Forex Market Scanner Engine
-├── trade_records.json               # Atomic live Forex trade ledger & journal
-├── requirements.txt                 # Production Python dependencies
-└── README.md                        # Primary project documentation
+├── .github/workflows/
+│   └── scanner.yml              # GitHub Actions 24/7 automated runner
+├── core/                        # Core quantitative, risk & execution modules
+│   ├── config.py                # System configuration & risk rules
+│   ├── ctrader_executor.py      # cTrader Open API TLS Protobuf engine
+│   ├── instrument_validator.py  # Pip math & position sizing engine
+│   ├── news_filter.py           # Real-time economic calendar filter
+│   └── post_mortem.py           # Trade diagnostics & excursion analytics
+├── cloudflare_worker.js         # Cloudflare Edge Worker & Telegram router
+├── market_scanner.py            # 24/7 Market Scanner & position reconciler
+├── trade_records.json           # Live trade ledger & execution state
+├── scripts/                     # Account validation & diagnostic utilities
+│   ├── check_ctrader_account.py # Broker permissions & account inspector
+│   ├── demo_live_equity.py      # Live equity & drawdown diagnostic
+│   └── forward_test_tracker.py  # Forward validation performance tracker
+├── tests/                       # Automated unit test suite (216 tests)
+└── README.md                    # System documentation
 ```
 
 ---
 
-## 6. Deployment & Operations
+## 5. Operations & Quickstart
 
 ### A. 24/7 Cloud Automated Execution (GitHub Actions)
-The bot executes autonomously every 15 minutes during Forex market hours via `.github/workflows/scanner.yml`.
+The scanner runs autonomously during market hours via `.github/workflows/scanner.yml`.
 
-To deploy:
-1. Fork or clone this repository to your GitHub account.
-2. In your GitHub repository, navigate to **Settings ➔ Secrets and variables ➔ Actions**.
-3. Add the following secrets:
-   - `TELEGRAM_BOT_TOKEN`: Your Telegram Bot API token from `@BotFather`.
-   - `TELEGRAM_CHAT_ID`: Your private Telegram Chat ID.
-   - `CTRADER_ENV`: `demo` or `live` (Optional, defaults to `demo`).
-   - `CTRADER_CLIENT_ID`: cTrader Open API Client ID (Optional).
-   - `CTRADER_CLIENT_SECRET`: cTrader Open API Client Secret (Optional).
-   - `CTRADER_ACCESS_TOKEN`: cTrader User Access Token (Optional).
-   - `CTRADER_ACCOUNT_IDS`: `auto` to auto-discover all active challenge accounts, or explicit comma-separated IDs (Optional).
-   - `ENABLE_CTRADER_EXECUTION`: `true` to enable automated broker execution (defaults to `false` for paper trading).
-   - `RISK_MODE`: `dynamic_rank3` (default) or `flat`.
-   - `ACCOUNT_STAGE`: `EVALUATION` (default) or `FUNDED`.
-4. In **Settings ➔ Actions ➔ General ➔ Workflow permissions**, select **"Read and write permissions"** so the scanner can automatically persist trade records to `trade_records.json`.
+Configure the following secrets in **GitHub Repository ➔ Settings ➔ Secrets and variables ➔ Actions**:
+* `TELEGRAM_BOT_TOKEN`: Telegram Bot token from `@BotFather`.
+* `TELEGRAM_CHAT_ID`: Authorized Telegram Chat ID.
+* `ENABLE_CTRADER_EXECUTION`: Set `true` to enable automated broker execution (defaults to `false` for paper trading).
+* `CTRADER_ENV`: `demo` or `live`.
+* `CTRADER_CLIENT_ID`, `CTRADER_CLIENT_SECRET`, `CTRADER_ACCESS_TOKEN`: cTrader Open API credentials.
+* `CTRADER_ACCOUNT_IDS`: Set `auto` to auto-discover all active challenge accounts.
+* `RISK_MODE`: `dynamic_rank3` (phase-asymmetric risk) or `flat`.
+* `ACCOUNT_STAGE`: `EVALUATION` or `FUNDED`.
 
-### B. Interactive Telegram Edge Cockpit (Cloudflare Workers)
-1. In the [Cloudflare Dashboard](https://dash.cloudflare.com), create a new Worker named `tradingview-telegram-relay`.
-2. Paste the contents of `cloudflare_worker.js` and click **Deploy**.
-3. Bind a KV Namespace named `TRADE_LEDGER` to the Worker.
-4. Set your Telegram webhook:
+### B. Telegram Edge Router (Cloudflare Workers)
+1. Deploy `cloudflare_worker.js` to Cloudflare Workers.
+2. Bind a KV Namespace named `TRADE_LEDGER`.
+3. Set your Telegram webhook:
    ```bash
    curl -X POST "https://api.telegram.org/bot<YOUR_TELEGRAM_BOT_TOKEN>/setWebhook" \
         -H "Content-Type: application/json" \
@@ -224,57 +138,39 @@ To deploy:
 ### C. Local CLI Commands
 ```bash
 # Activate virtual environment
-source .venv/bin/activate  # On Windows: .venv\Scripts\Activate.ps1
+source .venv_linux/bin/activate  # On Windows: .venv\Scripts\Activate.ps1
 
-# Run complete automated test suite (216 unit tests)
+# Run complete test suite (216 unit tests)
 pytest
 
-# Inspect live account balance, equity, and floating drawdown over TLS
-python scripts/demo_live_equity.py
+# Verify broker connection, token scopes & account permissions
+python scripts/check_ctrader_account.py
 
-# Verify timeout reconciliation and broker recovery
-python scripts/demo_timeout_reconciliation.py
-
-# Execute a single Forex market scan cycle
+# Run a single manual scan cycle
 python market_scanner.py
 
-# Execute a single Gold Satellite scan cycle
-python satellite/market_scanner_gold.py
-
-# Run continuous 24/7 background loops locally
+# Run scanner in continuous local background loop
 python market_scanner.py --loop
-python satellite/market_scanner_gold.py --loop
 
-# Send sample verification test alerts to Telegram
+# Send a test alert to Telegram
 python market_scanner.py --test
-python satellite/market_scanner_gold.py --test
-
-# Run canonical look-ahead-free backtest (70/30 In-Sample/Out-of-Sample)
-python scripts/run_canonical_backtest.py --markdown
-
-# Check live forward validation performance metrics
-python scripts/forward_test_tracker.py --markdown
 ```
 
 ---
 
-## 7. Production Readiness & System Verification
+## 6. Verification & Quality Assurance
 
 | Verification Dimension | Status | Evidence / Metric |
 | :--- | :---: | :--- |
-| **Unit Test Coverage** | **100% PASS** | **216 automated unit tests** passing with zero regressions across all core components. |
-| **Cloud Surveillance** | **OPERATIONAL** | GitHub Actions 24/7 runner executing cycles every 15 minutes during global market hours. |
-| **Signal Dispatch** | **OPERATIONAL** | Real-time HTML alerts delivered to Telegram with entry, SL, TP, lot size, and confluence metrics. |
-| **Edge Synchronization** | **OPERATIONAL** | Atomic two-way synchronization between Python scanner ledgers and Cloudflare Worker KV. |
-| **Financial Safety** | **ENFORCED** | Conservative lot flooring, zero budget breaching, look-ahead prevention, pessimistic intra-candle resolution, and default dry-run broker execution. |
-| **Broker Execution** | **STAGE-GATED** | Full cTrader Open API Protobuf client implemented, tested, and ready for live order submission upon credential injection. |
+| **Unit Test Coverage** | **100% PASS** | **216 automated unit tests** passing with zero regressions across all modules. |
+| **Cloud Surveillance** | **OPERATIONAL** | GitHub Actions scheduled execution running every 15 minutes during market hours. |
+| **Edge Synchronization** | **OPERATIONAL** | Real-time atomic ledger synchronization between Python engine and Cloudflare KV. |
+| **Broker Security** | **ENFORCED** | Process-level test interlocks, strict risk clamping, atomic server SL/TP, and timeout fill reconciliation. |
 
 ---
 
-## 8. Financial Safety Invariants
+## 7. Safety Invariants
 
-Until explicitly authorized in writing:
-1. **Zero Live Financial Transactions:** Never place live trades, enable live broker order submission, or manipulate real trading balances.
-2. **Offline Research & Paper Execution:** Rely strictly on historical market data, local mocks, forward paper trading, and dry-run execution.
-3. **Zero Secret Exposure:** Never commit, print, echo, or log API keys, broker passwords, Telegram tokens, or personal access tokens.
-4. **Pessimistic Intra-Candle Assumption:** When a candle touches both Stop Loss and Take Profit thresholds, Stop Loss takes absolute precedence.
+* **Guarded Broker Execution:** Real-money execution remains strictly disabled (`ENABLE_CTRADER_EXECUTION=false`) until explicitly authorized.
+* **Credential Protection:** Secrets, access tokens, and passwords are never logged, printed, or committed to source control.
+* **Pessimistic Intra-Candle Assumption:** When a candle touches both Stop Loss and Take Profit levels, Stop Loss takes precedence.
