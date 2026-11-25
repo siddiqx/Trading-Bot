@@ -409,6 +409,22 @@ This document tracks verified defects, architectural discrepancies, and security
   - **Telegram Rate-Limited Alerting:** `market_scanner.py` notifies Telegram immediately upon detecting `accessRights != FULL_ACCESS`, explaining probable causes (evaluation concluded, weekend rule breach) and remediation steps (checking FTMO MetriX/updating credentials), while de-duplicating notifications in `market_scanner_state.json` to prevent cycle spam.
   - **Dedicated Diagnostic CLI:** Implemented `scripts/check_ctrader_account.py` to inspect cTrader Open API connection, token scope (`SCOPE_TRADE`), linked accounts list, and broker access rights (`FULL_ACCESS`, `CLOSE_ONLY`, `NO_TRADING`).
 
+---
+
+### ISSUE-RISK-03: False Daily Circuit Breaker Trip on Cross-Account Migration
+
+* **Severity:** **High** (False-Positive Trading Halt)
+* **Status:** **REMEDIATED IN CODE (2026-11-25)** — Validated in `tests/test_ctrader_executor.py` and live GitHub Actions scanner runs.
+* **Affected Files:** `core/ctrader_executor.py`, `market_scanner.py`, `tests/test_ctrader_executor.py`, `trade_records.json`
+* **Root Cause:** In `market_scanner.py`, `check_daily_circuit_breaker()` recorded a daily starting equity baseline strictly keyed by date (`cycle_date`). When migrating accounts on the same calendar day (e.g. from an expired $25,000 demo account to a new $10,000 evaluation account), the circuit breaker compared the new live balance ($10,000.00) against the morning baseline ($24,847.77), calculating an artificial 59.75% drawdown and immediately locking the bot with `Guard: TRIPPED (Prop Firm Daily Drawdown Guardrail Triggered: 59.75% >= 3.0%)`.
+* **Remediation Implemented:**
+  - **Account-Bound Baseline Tracking:** Enhanced `daily_equity_baseline` in `trade_records.json` and `market_scanner.py` to track `account_id` alongside date and starting equity.
+  - **Automated Seamless Re-Initialization:** `check_daily_circuit_breaker()` automatically resets the baseline if the connected `account_id` changes, or if a legacy baseline without `account_id` exhibits a step-change >15% without closed trades.
+  - **Account-Isolated Trade Filtering:** Closed trade count and daily R-sum checks strictly filter trades matching the currently active account, preventing retired account trades from contaminating fresh evaluation accounts.
+  - **Executor Account Propagation:** `_query_equity_over_socket()` and `get_ctrader_account_equity()` now return `account_id` in their payload.
+  - **Regression Coverage:** Added unit test coverage in `tests/test_ctrader_executor.py` validating seamless baseline reset during account switching.
+
+
 
 
 
