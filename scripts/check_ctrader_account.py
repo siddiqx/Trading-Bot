@@ -58,14 +58,15 @@ def run_diagnostics() -> Dict[str, Any]:
     print(f"  • CTRADER_CLIENT_SECRET:    {'Present (hidden)' if CTRADER_CLIENT_SECRET else '<NOT SET>'}")
     print(f"  • CTRADER_ACCESS_TOKEN:     {'Present (' + CTRADER_ACCESS_TOKEN[:8] + '...)' if CTRADER_ACCESS_TOKEN else '<NOT SET>'}")
 
-    if not (CTRADER_CLIENT_ID and CTRADER_CLIENT_SECRET and CTRADER_ACCESS_TOKEN and CTRADER_ACCOUNT_ID):
+    if not (CTRADER_CLIENT_ID and CTRADER_CLIENT_SECRET and CTRADER_ACCESS_TOKEN):
         print("\n❌ FAILED: Missing required cTrader credentials in environment (.env or secrets).")
-        print("   Required variables: CTRADER_CLIENT_ID, CTRADER_CLIENT_SECRET, CTRADER_ACCESS_TOKEN, CTRADER_ACCOUNT_ID")
+        print("   Required variables: CTRADER_CLIENT_ID, CTRADER_CLIENT_SECRET, CTRADER_ACCESS_TOKEN")
         return {"status": "MISSING_CREDENTIALS"}
 
-    try:
-        acc_id = int(CTRADER_ACCOUNT_ID)
-    except ValueError:
+    acc_id = None
+    if CTRADER_ACCOUNT_ID and CTRADER_ACCOUNT_ID.strip().isdigit():
+        acc_id = int(CTRADER_ACCOUNT_ID.strip())
+    elif CTRADER_ACCOUNT_ID and CTRADER_ACCOUNT_ID.strip():
         print(f"\n❌ FAILED: CTRADER_ACCOUNT_ID must be numeric, got: '{CTRADER_ACCOUNT_ID}'")
         return {"status": "INVALID_ACCOUNT_ID"}
 
@@ -155,7 +156,12 @@ def run_diagnostics() -> Dict[str, Any]:
                     "trader_login": acc.traderLogin
                 })
 
-            if not found_target:
+            if acc_id is None and linked_accounts:
+                env_matches = [a["account_id"] for a in linked_accounts if a["is_live"] == (CTRADER_ENV == "live")]
+                acc_id = env_matches[0] if env_matches else linked_accounts[0]["account_id"]
+                print(f"  ✓ Auto-selected active account ID: {acc_id}")
+                found_target = True
+            elif not found_target and acc_id:
                 print(f"    ❌ Warning: Configured CTRADER_ACCOUNT_ID ({acc_id}) was NOT found in this token's authorized accounts list!")
         else:
             print("  ⚠️ Could not query account list by token.")

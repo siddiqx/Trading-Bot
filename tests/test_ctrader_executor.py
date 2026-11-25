@@ -1318,6 +1318,108 @@ def test_query_equity_over_socket_access_rights_parsing():
     assert info["is_trading_allowed"] is False
 
 
+def test_target_account_ids_resolution(monkeypatch):
+    """Verify target cTrader account IDs resolve correctly from comma-separated env, auto, and single fallback."""
+    from core.ctrader_executor import get_target_account_ids
+
+    # 1. Comma-separated list
+    monkeypatch.setenv("CTRADER_ACCOUNT_IDS", "49700506, 49700507, 12345678")
+    ids = get_target_account_ids(auto_discover=False)
+    assert ids == [49700506, 49700507, 12345678]
+
+    # 2. Single account fallback
+    monkeypatch.delenv("CTRADER_ACCOUNT_IDS", raising=False)
+    monkeypatch.setenv("CTRADER_ACCOUNT_ID", "49700506")
+    ids = get_target_account_ids(auto_discover=False)
+    assert ids == [49700506]
+
+    # 3. Auto discovery test mock
+    monkeypatch.setenv("CTRADER_ACCOUNT_IDS", "auto")
+    monkeypatch.setenv("ENABLE_CTRADER_EXECUTION", "true")
+    monkeypatch.setenv("CTRADER_CLIENT_ID", "test_id")
+    monkeypatch.setenv("CTRADER_CLIENT_SECRET", "test_secret")
+    monkeypatch.setenv("CTRADER_ACCESS_TOKEN", "test_token")
+    ids = get_target_account_ids(auto_discover=True, force_refresh=True)
+    assert 49700506 in ids
+
+
+def test_execute_multi_account_concurrent_dispatch(monkeypatch):
+    """Verify execute_multi_account_orders executes concurrently across accounts and sizes dynamically per account."""
+    import core.ctrader_executor as ce
+    from core.ctrader_executor import execute_multi_account_orders
+
+    monkeypatch.setattr(ce, "ENABLE_CTRADER_EXECUTION", True)
+    monkeypatch.setenv("ENABLE_CTRADER_EXECUTION", "true")
+
+    # Mock get_ctrader_account_equity to return different balances for different accounts
+    account_balances = {
+        1001: 10000.0,
+        1002: 50000.0
+    }
+
+    def mock_get_equity(account_id=None, env=None):
+        acc = account_id or 1001
+        bal = account_balances.get(acc, 10000.0)
+        return {
+            "status": "OK",
+            "balance": bal,
+            "equity": bal,
+            "unrealized_pnl": 0.0,
+            "is_trading_allowed": True,
+            "access_rights_name": "FULL_ACCESS"
+        }
+
+    monkeypatch.setattr(ce, "get_ctrader_account_equity", mock_get_equity)
+
+    sig = {
+        "id": "USDCHF_15M_TEST",
+        "pair": "USDCHF",
+        "direction": "SHORT",
+        "entry": 0.83598,
+        "stop_loss": 0.83798,
+        "take_profit": 0.83280,
+        "sl_pips": 20.0,
+        "tp_pips": 31.8,
+        "rr": 1.59,
+        "risk_pct": 0.75
+    }
+
+    receipts = execute_multi_account_orders(sig, account_ids=[1001, 1002])
+    assert len(receipts) == 2
+
+    # Map by account_id
+    receipt_map = {r["account_id"]: r for r in receipts}
+    assert "1001" in receipt_map
+    assert "1002" in receipt_map
+
+    rec_1001 = receipt_map["1001"]
+    rec_1002 = receipt_map["1002"]
+
+    assert rec_1001["status"] == "EXECUTED"
+    assert rec_1002["status"] == "EXECUTED"
+
+    # Account 1001 ($10,000) vs Account 1002 ($50,000):
+    # Account 1002 must have ~5x the lot size of Account 1001!
+    assert rec_1002["lots"] > rec_1001["lots"]
+    assert round(rec_1002["lots"] / rec_1001["lots"], 1) == 5.0
+
+
+def test_modify_and_close_with_account_id(monkeypatch):
+    """Verify modify_ctrader_position and close_ctrader_position route to the specified account_id."""
+    import core.ctrader_executor as ce
+    from core.ctrader_executor import modify_ctrader_position, close_ctrader_position
+
+    monkeypatch.setattr(ce, "ENABLE_CTRADER_EXECUTION", False)
+
+    res_mod = modify_ctrader_position(position_id=12345, stop_loss=0.83600, take_profit=0.83200, account_id=98765432)
+    assert res_mod["status"] == "SIMULATED_AMENDMENT"
+    assert res_mod["account_id"] == "98765432"
+
+    res_close = close_ctrader_position(position_id=12345, lots=0.20, pair="USDCHF", account_id=98765432)
+    assert res_close["status"] == "SIMULATED_CLOSE"
+    assert res_close["account_id"] == "98765432"
+
+
 
 
 

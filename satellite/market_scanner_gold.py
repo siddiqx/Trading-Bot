@@ -387,11 +387,12 @@ def check_active_gold_trades(records: Dict[str, Any], cur_bar: pd.Series, record
             net_pnl = (raw_diff * oz) - friction
             r_val = net_pnl / tr["monetary_risk_usd"]
             pos_id = tr.get("ctrader_position_id") or (tr.get("ctrader_receipt") or {}).get("position_id")
+            acc_id = tr.get("account_id") or (tr.get("ctrader_receipt") or {}).get("account_id")
             c_res = None
             if pos_id:
                 try:
                     from core.ctrader_executor import close_ctrader_position
-                    c_res = close_ctrader_position(position_id=int(pos_id), lots=float(lots), pair=tr.get("symbol", "XAUUSD"))
+                    c_res = close_ctrader_position(position_id=int(pos_id), lots=float(lots), pair=tr.get("symbol", "XAUUSD"), account_id=int(acc_id) if acc_id else None)
                     logger.info(f"[cTrader Gold Weekend Flat] Position #{pos_id} close response: {c_res.get('status')}")
                 except Exception as ex:
                     logger.error(f"[cTrader Gold Weekend Flat] Error closing #{pos_id}: {ex}")
@@ -417,11 +418,12 @@ def check_active_gold_trades(records: Dict[str, Any], cur_bar: pd.Series, record
         if is_pending_cancelled:
             exit_p = float(tr.get("pending_exit_price") or cur_close)
             pos_id = tr.get("ctrader_position_id") or (tr.get("ctrader_receipt") or {}).get("position_id")
+            acc_id = tr.get("account_id") or (tr.get("ctrader_receipt") or {}).get("account_id")
             c_res = None
             if pos_id:
                 try:
                     from core.ctrader_executor import close_ctrader_position
-                    c_res = close_ctrader_position(position_id=int(pos_id), lots=float(lots), pair=tr.get("symbol", "XAUUSD"))
+                    c_res = close_ctrader_position(position_id=int(pos_id), lots=float(lots), pair=tr.get("symbol", "XAUUSD"), account_id=int(acc_id) if acc_id else None)
                     logger.info(f"[cTrader Gold Cancel] Position #{pos_id} close response: {c_res.get('status')}")
                 except Exception as ex:
                     logger.error(f"[cTrader Gold Cancel] Error closing #{pos_id}: {ex}")
@@ -449,11 +451,12 @@ def check_active_gold_trades(records: Dict[str, Any], cur_bar: pd.Series, record
             net_pnl = (raw_diff * oz) - friction
             r_val = net_pnl / tr["monetary_risk_usd"]
             pos_id = tr.get("ctrader_position_id") or (tr.get("ctrader_receipt") or {}).get("position_id")
+            acc_id = tr.get("account_id") or (tr.get("ctrader_receipt") or {}).get("account_id")
             c_res = None
             if pos_id:
                 try:
                     from core.ctrader_executor import close_ctrader_position
-                    c_res = close_ctrader_position(position_id=int(pos_id), lots=float(lots), pair=tr.get("symbol", "XAUUSD"))
+                    c_res = close_ctrader_position(position_id=int(pos_id), lots=float(lots), pair=tr.get("symbol", "XAUUSD"), account_id=int(acc_id) if acc_id else None)
                     logger.info(f"[cTrader Gold Manual Close] Position #{pos_id} close response: {c_res.get('status')}")
                 except Exception as ex:
                     logger.error(f"[cTrader Gold Manual Close] Error closing #{pos_id}: {ex}")
@@ -573,11 +576,12 @@ def check_active_gold_trades(records: Dict[str, Any], cur_bar: pd.Series, record
                 daily_losses[today_str] += 1
 
             pos_id = tr.get("ctrader_position_id") or (tr.get("ctrader_receipt") or {}).get("position_id")
+            acc_id = tr.get("account_id") or (tr.get("ctrader_receipt") or {}).get("account_id")
             c_res = None
             if pos_id:
                 try:
                     from core.ctrader_executor import close_ctrader_position
-                    c_res = close_ctrader_position(position_id=int(pos_id), lots=float(lots), pair=tr.get("symbol", "XAUUSD"))
+                    c_res = close_ctrader_position(position_id=int(pos_id), lots=float(lots), pair=tr.get("symbol", "XAUUSD"), account_id=int(acc_id) if acc_id else None)
                     logger.info(f"[cTrader Gold Close] Position #{pos_id} close response: {c_res.get('status')}")
                 except Exception as ex:
                     logger.error(f"[cTrader Gold Close] Error closing #{pos_id}: {ex}")
@@ -862,11 +866,12 @@ def run_gold_scan_cycle() -> None:
         "max_usd_exposure": 2,
     }
 
-    # 15. cTrader Execution (Stage 2 Demo / Live)
+    # 15. cTrader Execution (Stage 2 Demo / Live Multi-Account)
     c_receipt = None
     try:
-        from core.ctrader_executor import execute_ctrader_order
-        c_receipt = execute_ctrader_order({
+        from core.ctrader_executor import execute_multi_account_orders, get_target_account_ids
+        target_accounts = get_target_account_ids()
+        receipts = execute_multi_account_orders({
             "pair": GOLD_SYMBOL,
             "direction": direction,
             "entry": entry_price,
@@ -876,11 +881,19 @@ def run_gold_scan_cycle() -> None:
             "suggested_lots": lots,
             "is_trading_allowed": is_trading_allowed,
             "access_rights_name": access_rights_name,
-        })
-        sig_payload["ctrader_receipt"] = c_receipt
-        pos_id = c_receipt.get("position_id")
-        if pos_id and pos_id != 9990001:
-            sig_payload["ctrader_position_id"] = pos_id
+        }, account_ids=target_accounts)
+        successful_receipts = [r for r in receipts if r.get("status") in ("EXECUTED", "SIMULATED_DEMO_FILL")]
+        if successful_receipts:
+            c_receipt = successful_receipts[0]
+            sig_payload["ctrader_receipt"] = c_receipt
+            pos_id = c_receipt.get("position_id")
+            if pos_id and pos_id != 9990001:
+                sig_payload["ctrader_position_id"] = pos_id
+            if c_receipt.get("account_id"):
+                sig_payload["account_id"] = str(c_receipt.get("account_id"))
+        else:
+            c_receipt = receipts[0] if receipts else {"status": "ERROR", "error": "No execution receipt"}
+            sig_payload["ctrader_receipt"] = c_receipt
     except Exception as e:
         logger.warning(f"cTrader execution hook error on Gold: {e}")
         c_receipt = {"status": "ERROR", "error": str(e)}

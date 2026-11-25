@@ -185,6 +185,9 @@ RISK_REWARD: float = FIXED_RISK_REWARD_RATIO      # 1:1.5 before costs
 from core.news_filter import is_news_window_active
 from core.ctrader_executor import (
     execute_ctrader_order,
+    execute_multi_account_orders,
+    get_target_account_ids,
+    query_authorized_accounts,
     modify_ctrader_position,
     close_ctrader_position,
     get_ctrader_account_equity,
@@ -581,6 +584,56 @@ def format_exit_message(
     )
 
 
+def _safe_close_ctrader_position(
+    pos_id: int,
+    vol_units: Optional[int] = None,
+    lots_val: Optional[float] = None,
+    pair: Optional[str] = None,
+    acc_id: Optional[Any] = None
+) -> Dict[str, Any]:
+    """Helper to dispatch position close to cTrader with backwards-compatible argument handling."""
+    close_kwargs = {
+        "position_id": int(pos_id),
+        "volume_units": int(vol_units) if vol_units else None,
+        "lots": float(lots_val) if lots_val else None,
+        "pair": pair
+    }
+    if acc_id:
+        try:
+            close_kwargs["account_id"] = int(acc_id)
+        except (ValueError, TypeError):
+            pass
+    try:
+        return close_ctrader_position(**close_kwargs)
+    except TypeError:
+        close_kwargs.pop("account_id", None)
+        return close_ctrader_position(**close_kwargs)
+
+
+def _safe_modify_ctrader_position(
+    pos_id: int,
+    sl: Optional[float] = None,
+    tp: Optional[float] = None,
+    acc_id: Optional[Any] = None
+) -> Dict[str, Any]:
+    """Helper to amend position on cTrader with backwards-compatible argument handling."""
+    mod_kwargs = {
+        "position_id": int(pos_id),
+        "stop_loss": sl,
+        "take_profit": tp
+    }
+    if acc_id:
+        try:
+            mod_kwargs["account_id"] = int(acc_id)
+        except (ValueError, TypeError):
+            pass
+    try:
+        return modify_ctrader_position(**mod_kwargs)
+    except TypeError:
+        mod_kwargs.pop("account_id", None)
+        return modify_ctrader_position(**mod_kwargs)
+
+
 def check_active_trades(records: dict):
     """Monitors live market prices against active trades for Take Profit and Stop Loss."""
     if not is_forex_market_open():
@@ -664,16 +717,18 @@ def check_active_trades(records: dict):
                 logger.info(f"==> TRADE RESOLVED (FRIDAY WEEKEND FLAT AUTO-CLOSE): {pair} {trade.get('direction')} ({realized_pips:+.1f} pips, {realized_r:+.2f}R)")
 
                 pos_id = trade.get("ctrader_position_id") or trade.get("ctrader_receipt", {}).get("position_id")
+                acc_id = trade.get("account_id") or trade.get("ctrader_receipt", {}).get("account_id")
                 ctrader_close_res = None
                 if pos_id:
                     try:
                         vol_units = trade.get("units") or trade.get("ctrader_receipt", {}).get("units")
                         lots_val = trade.get("lots") or trade.get("ctrader_receipt", {}).get("lots")
-                        ctrader_close_res = close_ctrader_position(
-                            position_id=int(pos_id),
-                            volume_units=int(vol_units) if vol_units else None,
-                            lots=float(lots_val) if lots_val else None,
+                        ctrader_close_res = _safe_close_ctrader_position(
+                            pos_id=int(pos_id),
+                            vol_units=int(vol_units) if vol_units else None,
+                            lots_val=float(lots_val) if lots_val else None,
                             pair=pair,
+                            acc_id=acc_id
                         )
                         logger.info(f"[cTrader Weekend Flat] Position #{pos_id} close response: {ctrader_close_res.get('status')}")
                     except Exception as ex:
@@ -889,11 +944,12 @@ def check_active_trades(records: dict):
                         send_telegram_alert(tier1_msg)
                         logger.info(f"==> VOLATILITY CUSHION TIER 1: {pair} SL moved to {sl} (-10.0p)")
                         pos_id = trade.get("ctrader_position_id")
+                        acc_id = trade.get("account_id") or (trade.get("ctrader_receipt") or {}).get("account_id")
                         if pos_id:
                             try:
-                                modify_ctrader_position(pos_id, stop_loss=sl, take_profit=tp)
+                                _safe_modify_ctrader_position(pos_id=pos_id, sl=sl, tp=tp, acc_id=acc_id)
                             except Exception as ex:
-                                logger.warning(f"cTrader trailing amendment error for position #{pos_id}: {ex}")
+                                logger.warning(f"cTrader trailing amendment error for position #{pos_id} (Account: {acc_id}): {ex}")
 
                     # Tier 2: Profit Lock & Runner Expansion at +1.50R (+33.0 pips)
                     elif cushion_tier == 1 and mfe_pips >= (VOLATILITY_CUSHION_TIER2_R * 22.0):
@@ -918,11 +974,12 @@ def check_active_trades(records: dict):
                         send_telegram_alert(tier2_msg)
                         logger.info(f"==> VOLATILITY CUSHION TIER 2: {pair} Profit locked at {sl} (+11p), TP extended to {tp} (+44p)")
                         pos_id = trade.get("ctrader_position_id")
+                        acc_id = trade.get("account_id") or (trade.get("ctrader_receipt") or {}).get("account_id")
                         if pos_id:
                             try:
-                                modify_ctrader_position(pos_id, stop_loss=sl, take_profit=tp)
+                                _safe_modify_ctrader_position(pos_id=pos_id, sl=sl, tp=tp, acc_id=acc_id)
                             except Exception as ex:
-                                logger.warning(f"cTrader trailing amendment error for position #{pos_id}: {ex}")
+                                logger.warning(f"cTrader trailing amendment error for position #{pos_id} (Account: {acc_id}): {ex}")
 
                 # Strict Exit Resolution with Retail Spread Clearance Buffer:
                 # Stop Loss takes absolute precedence over Take Profit.
@@ -1062,16 +1119,18 @@ def check_active_trades(records: dict):
 
             # Dispatch Market Close to cTrader to liquidate any open position
             pos_id = trade.get("ctrader_position_id") or trade.get("ctrader_receipt", {}).get("position_id")
+            acc_id = trade.get("account_id") or trade.get("ctrader_receipt", {}).get("account_id")
             ctrader_close_res = None
             if pos_id:
                 try:
                     vol_units = trade.get("units") or trade.get("ctrader_receipt", {}).get("units")
                     lots_val = trade.get("lots") or trade.get("ctrader_receipt", {}).get("lots")
-                    ctrader_close_res = close_ctrader_position(
-                        position_id=int(pos_id),
-                        volume_units=int(vol_units) if vol_units else None,
-                        lots=float(lots_val) if lots_val else None,
-                        pair=pair
+                    ctrader_close_res = _safe_close_ctrader_position(
+                        pos_id=int(pos_id),
+                        vol_units=int(vol_units) if vol_units else None,
+                        lots_val=float(lots_val) if lots_val else None,
+                        pair=pair,
+                        acc_id=acc_id
                     )
                     logger.info(f"[cTrader Auto-Close] Position #{pos_id} cancelled response: {ctrader_close_res.get('status')}")
                 except Exception as ex:
@@ -1130,16 +1189,18 @@ def check_active_trades(records: dict):
             logger.info(f"==> TRADE RESOLVED (MANUAL CLOSE): {pair} {trade.get('direction')} ({realized_pips:+.1f} pips, {realized_r:+.2f} R)")
 
             pos_id = trade.get("ctrader_position_id") or trade.get("ctrader_receipt", {}).get("position_id")
+            acc_id = trade.get("account_id") or trade.get("ctrader_receipt", {}).get("account_id")
             ctrader_close_res = None
             if pos_id:
                 try:
                     vol_units = trade.get("units") or trade.get("ctrader_receipt", {}).get("units")
                     lots_val = trade.get("lots") or trade.get("ctrader_receipt", {}).get("lots")
-                    ctrader_close_res = close_ctrader_position(
-                        position_id=int(pos_id),
-                        volume_units=int(vol_units) if vol_units else None,
-                        lots=float(lots_val) if lots_val else None,
-                        pair=pair
+                    ctrader_close_res = _safe_close_ctrader_position(
+                        pos_id=int(pos_id),
+                        vol_units=int(vol_units) if vol_units else None,
+                        lots_val=float(lots_val) if lots_val else None,
+                        pair=pair,
+                        acc_id=acc_id
                     )
                     logger.info(f"[cTrader Auto-Close] Position #{pos_id} manual close response: {ctrader_close_res.get('status')}")
                 except Exception as ex:
@@ -1188,16 +1249,18 @@ def check_active_trades(records: dict):
 
             # Dispatch Market Close to cTrader to prevent orphaned live positions
             pos_id = trade.get("ctrader_position_id") or trade.get("ctrader_receipt", {}).get("position_id")
+            acc_id = trade.get("account_id") or trade.get("ctrader_receipt", {}).get("account_id")
             ctrader_close_res = None
             if pos_id:
                 try:
                     vol_units = trade.get("units") or trade.get("ctrader_receipt", {}).get("units")
                     lots_val = trade.get("lots") or trade.get("ctrader_receipt", {}).get("lots")
-                    ctrader_close_res = close_ctrader_position(
-                        position_id=int(pos_id),
-                        volume_units=int(vol_units) if vol_units else None,
-                        lots=float(lots_val) if lots_val else None,
-                        pair=pair
+                    ctrader_close_res = _safe_close_ctrader_position(
+                        pos_id=int(pos_id),
+                        vol_units=int(vol_units) if vol_units else None,
+                        lots_val=float(lots_val) if lots_val else None,
+                        pair=pair,
+                        acc_id=acc_id
                     )
                     logger.info(f"[cTrader Auto-Close] Position #{pos_id} close response: {ctrader_close_res.get('status')}")
                 except Exception as ex:
@@ -1246,16 +1309,18 @@ def check_active_trades(records: dict):
 
             # Dispatch Market Close to cTrader to prevent orphaned live positions
             pos_id = trade.get("ctrader_position_id") or trade.get("ctrader_receipt", {}).get("position_id")
+            acc_id = trade.get("account_id") or trade.get("ctrader_receipt", {}).get("account_id")
             ctrader_close_res = None
             if pos_id:
                 try:
                     vol_units = trade.get("units") or trade.get("ctrader_receipt", {}).get("units")
                     lots_val = trade.get("lots") or trade.get("ctrader_receipt", {}).get("lots")
-                    ctrader_close_res = close_ctrader_position(
-                        position_id=int(pos_id),
-                        volume_units=int(vol_units) if vol_units else None,
-                        lots=float(lots_val) if lots_val else None,
-                        pair=pair
+                    ctrader_close_res = _safe_close_ctrader_position(
+                        pos_id=int(pos_id),
+                        vol_units=int(vol_units) if vol_units else None,
+                        lots_val=float(lots_val) if lots_val else None,
+                        pair=pair,
+                        acc_id=acc_id
                     )
                     logger.info(f"[cTrader Auto-Close] Position #{pos_id} close response: {ctrader_close_res.get('status')}")
                 except Exception as ex:
@@ -1316,16 +1381,18 @@ def check_active_trades(records: dict):
 
             # Dispatch Market Close to cTrader to prevent orphaned live positions
             pos_id = trade.get("ctrader_position_id") or trade.get("ctrader_receipt", {}).get("position_id")
+            acc_id = trade.get("account_id") or trade.get("ctrader_receipt", {}).get("account_id")
             ctrader_close_res = None
             if pos_id:
                 try:
                     vol_units = trade.get("units") or trade.get("ctrader_receipt", {}).get("units")
                     lots_val = trade.get("lots") or trade.get("ctrader_receipt", {}).get("lots")
-                    ctrader_close_res = close_ctrader_position(
-                        position_id=int(pos_id),
-                        volume_units=int(vol_units) if vol_units else None,
-                        lots=float(lots_val) if lots_val else None,
-                        pair=pair
+                    ctrader_close_res = _safe_close_ctrader_position(
+                        pos_id=int(pos_id),
+                        vol_units=int(vol_units) if vol_units else None,
+                        lots_val=float(lots_val) if lots_val else None,
+                        pair=pair,
+                        acc_id=acc_id
                     )
                     logger.info(f"[cTrader Auto-Close] Position #{pos_id} close response: {ctrader_close_res.get('status')}")
                 except Exception as ex:
@@ -1401,17 +1468,19 @@ def reconcile_and_close_orphaned_ctrader_positions(records: dict) -> bool:
             continue
 
         pos_id = tr.get("ctrader_position_id") or (tr.get("ctrader_receipt") or {}).get("position_id")
+        acc_id = tr.get("account_id") or (tr.get("ctrader_receipt") or {}).get("account_id")
         close_receipt = tr.get("ctrader_close_receipt") or {}
         if pos_id and close_receipt.get("status") not in ("CLOSED", "SIMULATED_CLOSE", "ALREADY_CLOSED"):
             logger.warning(f"[Broker Watchdog] Found completed trade {tr.get('trade_id')} with unclosed cTrader position #{pos_id}. Dispatching close order...")
             try:
                 vol_units = tr.get("units") or (tr.get("ctrader_receipt") or {}).get("units")
                 lots_val = tr.get("lots") or (tr.get("ctrader_receipt") or {}).get("lots")
-                close_res = close_ctrader_position(
-                    position_id=int(pos_id),
-                    volume_units=int(vol_units) if vol_units else None,
-                    lots=float(lots_val) if lots_val else None,
-                    pair=tr.get("pair") or tr.get("symbol")
+                close_res = _safe_close_ctrader_position(
+                    pos_id=int(pos_id),
+                    vol_units=int(vol_units) if vol_units else None,
+                    lots_val=float(lots_val) if lots_val else None,
+                    pair=tr.get("pair") or tr.get("symbol"),
+                    acc_id=acc_id
                 )
                 tr["ctrader_close_receipt"] = close_res
                 modified = True
@@ -3840,7 +3909,12 @@ def run_scan_cycle():
         for tf in TIMEFRAMES:
             slot_key = f"{pair_name}_{tf.upper()}"
             active_slot_trade = active_trades_map.get(slot_key) or active_trades_map.get(pair_name)
-            
+            if not active_slot_trade:
+                for k, t in active_trades_map.items():
+                    if k.startswith(f"{slot_key}_") or (t.get("pair") == pair_name and (t.get("timeframe") or "").upper() == tf.upper()):
+                        active_slot_trade = t
+                        break
+
             # Multi-trade concurrency: allow independent 15M and 1H trades on the same pair!
             # If an existing trade in this slot has already banked +1.0R and is locked at Break-Even, allow fresh entry!
             if active_slot_trade and not active_slot_trade.get("be_active", False):
@@ -3906,81 +3980,103 @@ def run_scan_cycle():
                     sig["is_trading_allowed"] = is_trading_allowed
                     sig["access_rights_name"] = access_rights_name
 
-                    # Stage 2 Automated Prop Execution (cTrader Demo / Dry-Run)
-                    ctrader_receipt = None
+                    # Stage 2 Automated Prop Execution (cTrader Multi-Account Engine)
+                    target_accounts = get_target_account_ids() if ENABLE_CTRADER_EXECUTION else []
+                    receipts = []
                     try:
-                        ctrader_receipt = execute_ctrader_order(sig)
-                        sig["ctrader_receipt"] = ctrader_receipt
+                        receipts = execute_multi_account_orders(sig, account_ids=target_accounts)
                     except Exception as ex:
-                        logger.warning(f"cTrader auto-execution hook error: {ex}")
-                        ctrader_receipt = {"status": "ERROR", "error": str(ex)}
-                        sig["ctrader_receipt"] = ctrader_receipt
+                        logger.warning(f"cTrader multi-account execution hook error: {ex}")
+                        receipts = [{"status": "ERROR", "error": str(ex)}]
 
-                    # Live Execution Safeguard:
-                    # If cTrader execution was attempted and rejected/failed, do NOT record a phantom active trade.
-                    if ctrader_receipt and ctrader_receipt.get("status") not in ("EXECUTED", "SIMULATED_DEMO_FILL"):
-                        err_msg = ctrader_receipt.get("error", "cTrader order rejected by broker")
-                        logger.error(f"[Forex Scanner] Aborting trade recording for {sig['pair']}: cTrader execution failed ({err_msg}).")
-                        
+                    # Separate successful and failed executions
+                    successful_receipts = [r for r in receipts if r.get("status") in ("EXECUTED", "SIMULATED_DEMO_FILL")]
+                    failed_receipts = [r for r in receipts if r.get("status") not in ("EXECUTED", "SIMULATED_DEMO_FILL")]
+
+                    for failed_rec in failed_receipts:
+                        err_msg = failed_rec.get("error", "cTrader order rejected by broker")
+                        failed_acc = failed_rec.get("account_id", CTRADER_ACCOUNT_ID)
+                        logger.error(f"[Forex Scanner] Order rejected on account #{failed_acc} for {sig['pair']}: {err_msg}")
                         diag_note = ""
-                        if "TRADING_NOT_ALLOWED" in err_msg or ctrader_receipt.get("trading_not_allowed"):
+                        if "TRADING_NOT_ALLOWED" in err_msg or failed_rec.get("trading_not_allowed"):
                             diag_note = (
                                 f"\n• <b>Diagnostic:</b> Account restricted to <code>{access_rights_name}</code> by {broker_name.upper()}.\n"
                                 f"• <b>Remediation:</b> Check {broker_name.upper()} client portal (challenge expired/concluded, or new account ID needed)."
                             )
-
                         send_telegram_alert(
                             f"⚠️ <b>[{sig['pair']} EXECUTION REJECTED]</b>\n\n"
                             f"• <b>Instrument:</b> {sig['pair']}\n"
                             f"• <b>Direction:</b> {sig['direction']}\n"
-                            f"• <b>Status:</b> {ctrader_receipt.get('status')}\n"
+                            f"• <b>Account:</b> <code>#{failed_acc}</code>\n"
+                            f"• <b>Status:</b> {failed_rec.get('status')}\n"
                             f"• <b>Broker Reason:</b> <code>{err_msg}</code>{diag_note}\n"
-                            f"• <i>No active position recorded in trade journal.</i>"
+                            f"• <i>No active position recorded for this account.</i>"
                         )
+
+                    # Live Execution Safeguard:
+                    # If all accounts failed/rejected, do NOT record any phantom active trade.
+                    if not successful_receipts:
+                        logger.error(f"[Forex Scanner] Aborting trade recording for {sig['pair']}: zero accounts executed successfully.")
                         continue
 
+                    # Attach primary receipt for message formatting
+                    sig["ctrader_receipt"] = successful_receipts[0]
                     msg = format_alert_message(sig)
+                    if len(successful_receipts) > 1:
+                        acc_pills = ", ".join([f"#{r.get('account_id')} ({float(r.get('lots', 0.1)):.2f}L)" for r in successful_receipts])
+                        msg += f"\n⚡ <b>Multi-Account Fills:</b> <code>{acc_pills}</code>"
+
                     telemetry["telegram_attempts"] += 1
                     sent = send_telegram_alert(msg)
                     if sent:
                         telemetry["telegram_successes"] += 1
 
-                    # Register newly opened active trade as OPEN market execution
+                    # Register newly opened active trade(s) in journal
                     bar_time = sig.get("time") or datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-                    pos_id = sig.get("ctrader_receipt", {}).get("position_id")
-                    trade_lots = float(sig.get("suggested_lots") or sig.get("calc_lots") or sig.get("lots") or 0.10)
-                    trade_units = int(sig.get("ctrader_receipt", {}).get("units") or round(trade_lots * 100_000))
-                    new_trade_entry = {
-                        "trade_id": sig["id"],
-                        "ctrader_position_id": pos_id,
-                        "ctrader_receipt": sig.get("ctrader_receipt"),
-                        "lots": trade_lots,
-                        "units": trade_units,
-                        "pair": sig["pair"],
-                        "symbol": pair_name,
-                        "ticker": cfg["ticker"],
-                        "direction": sig["direction"],
-                        "timeframe": sig["timeframe"],
-                        "strategy": sig.get("strategy", STRATEGY_NAME),
-                        "strategy_type": sig.get("strategy_type", "CANONICAL"),
-                        "max_hold_hours": sig.get("max_hold_hours", 12.0),
-                        "entry": sig["entry"],
-                        "stop_loss": sig["stop_loss"],
-                        "take_profit": sig["take_profit"],
-                        "sl_pips": sig["sl_pips"],
-                        "tp_pips": sig["tp_pips"],
-                        "rr": sig["rr"],
-                        "bank_pct": 0.0,
-                        "partial_taken": False,
-                        "be_active": False,
-                        "pip": cfg["pip"],
-                        "digits": cfg["digits"],
-                        "opened_at": bar_time,
-                        "status": "OPEN",
-                        "filled_at": bar_time
-                    }
-                    records.setdefault("active_trades", {})[slot_key] = new_trade_entry
-                    active_trades_map[slot_key] = new_trade_entry
+                    for rec in successful_receipts:
+                        acc_id_str = str(rec.get("account_id") or CTRADER_ACCOUNT_ID)
+                        pos_id = rec.get("position_id")
+                        trade_lots = float(rec.get("lots") or sig.get("suggested_lots") or sig.get("calc_lots") or 0.10)
+                        trade_units = int(rec.get("units") or round(trade_lots * 100_000))
+
+                        # If single account, preserve canonical slot key (e.g. "USDCHF_15M") for backward compatibility
+                        # If multiple accounts, append account ID to slot key (e.g. "USDCHF_15M_49700506")
+                        trade_key = slot_key if len(successful_receipts) == 1 else f"{slot_key}_{acc_id_str}"
+                        trade_id_val = sig["id"] if len(successful_receipts) == 1 else f"{sig['id']}_{acc_id_str}"
+
+                        new_trade_entry = {
+                            "trade_id": trade_id_val,
+                            "account_id": acc_id_str,
+                            "ctrader_position_id": pos_id,
+                            "ctrader_receipt": rec,
+                            "lots": trade_lots,
+                            "units": trade_units,
+                            "pair": sig["pair"],
+                            "symbol": pair_name,
+                            "ticker": cfg["ticker"],
+                            "direction": sig["direction"],
+                            "timeframe": sig["timeframe"],
+                            "strategy": sig.get("strategy", STRATEGY_NAME),
+                            "strategy_type": sig.get("strategy_type", "CANONICAL"),
+                            "max_hold_hours": sig.get("max_hold_hours", 12.0),
+                            "entry": sig["entry"],
+                            "stop_loss": sig["stop_loss"],
+                            "take_profit": sig["take_profit"],
+                            "sl_pips": sig["sl_pips"],
+                            "tp_pips": sig["tp_pips"],
+                            "rr": sig["rr"],
+                            "bank_pct": 0.0,
+                            "partial_taken": False,
+                            "be_active": False,
+                            "pip": cfg["pip"],
+                            "digits": cfg["digits"],
+                            "opened_at": bar_time,
+                            "status": "OPEN",
+                            "filled_at": bar_time
+                        }
+                        records.setdefault("active_trades", {})[trade_key] = new_trade_entry
+                        active_trades_map[trade_key] = new_trade_entry
+
                     save_trade_records(records)
                     sync_worker(records, overwrite_active=False)  # Instant push to Cloudflare KV the exact moment signal fires!
 

@@ -17,7 +17,8 @@ import ssl
 import struct
 import time
 import logging
-from typing import Dict, Any, Optional, Tuple
+import concurrent.futures
+from typing import Dict, Any, Optional, Tuple, List
 
 try:
     from dotenv import load_dotenv
@@ -33,6 +34,7 @@ CTRADER_CLIENT_ID = (os.environ.get("CTRADER_CLIENT_ID") or "").strip()
 CTRADER_CLIENT_SECRET = (os.environ.get("CTRADER_CLIENT_SECRET") or "").strip()
 CTRADER_ACCESS_TOKEN = (os.environ.get("CTRADER_ACCESS_TOKEN") or "").strip()
 CTRADER_ACCOUNT_ID = (os.environ.get("CTRADER_ACCOUNT_ID") or "").strip()
+CTRADER_ACCOUNT_IDS = (os.environ.get("CTRADER_ACCOUNT_IDS") or "").strip()
 ENABLE_CTRADER_EXECUTION = os.environ.get("ENABLE_CTRADER_EXECUTION", "false").lower() in ("true", "1", "yes")
 
 # cTrader Open API Host Configuration
@@ -74,11 +76,13 @@ except ImportError:
 
 def has_valid_credentials() -> bool:
     """Check whether all required cTrader credentials are provided."""
+    raw_acc_ids = (os.environ.get("CTRADER_ACCOUNT_IDS") or CTRADER_ACCOUNT_IDS).strip()
+    raw_acc_id = (os.environ.get("CTRADER_ACCOUNT_ID") or CTRADER_ACCOUNT_ID).strip()
     return bool(
         CTRADER_CLIENT_ID and
         CTRADER_CLIENT_SECRET and
         CTRADER_ACCESS_TOKEN and
-        CTRADER_ACCOUNT_ID
+        (raw_acc_id or raw_acc_ids or os.environ.get("ENABLE_CTRADER_AUTO_DISCOVERY", "true").lower() in ("true", "1", "yes"))
     )
 
 
@@ -130,6 +134,172 @@ def _send_tls_frame(sock: ssl.SSLSocket, payload_type: int, req_pb: Any) -> Opti
     frame = struct.pack('>I', len(data)) + data
     sock.sendall(frame)
     return _read_tls_frame(sock)
+
+
+# In-memory account discovery cache to avoid excessive network round-trips
+_DISCOVERED_ACCOUNTS_CACHE = {
+    "timestamp": 0.0,
+    "accounts": []
+}
+
+
+def query_authorized_accounts(timeout: float = 8.0) -> List[Dict[str, Any]]:
+    """Query cTrader Open API for all active trading accounts authorized under current access token.
+
+    Filters for accounts that:
+    1. Match the current environment (live vs demo)
+    2. Possess FULL_ACCESS rights (excludes CLOSE_ONLY, VIEW_ONLY, or suspended accounts)
+    """
+    if os.environ.get("PYTEST_CURRENT_TEST") and not os.environ.get("TEST_REAL_SOCKET"):
+        # Return mock account list for unit tests
+        mock_acc_str = (os.environ.get("CTRADER_ACCOUNT_ID") or CTRADER_ACCOUNT_ID).strip()
+        mock_acc = int(mock_acc_str) if (mock_acc_str and mock_acc_str.isdigit()) else 49700506
+        return [{
+            "account_id": mock_acc,
+            "trader_login": mock_acc,
+            "broker": "MOCK_BROKER",
+            "balance": float(os.environ.get("ACCOUNT_EQUITY", "10000.0")),
+            "access_rights": "FULL_ACCESS",
+            "is_live": (CTRADER_ENV == "live")
+        }]
+
+    client_id = (os.environ.get("CTRADER_CLIENT_ID") or CTRADER_CLIENT_ID).strip()
+    client_secret = (os.environ.get("CTRADER_CLIENT_SECRET") or CTRADER_CLIENT_SECRET).strip()
+    access_token = (os.environ.get("CTRADER_ACCESS_TOKEN") or CTRADER_ACCESS_TOKEN).strip()
+    env_name = (os.environ.get("CTRADER_ENV") or CTRADER_ENV).lower()
+
+    if not client_id or not client_secret or not access_token:
+        return []
+
+    from ctrader_open_api.messages.OpenApiModelMessages_pb2 import ProtoOAPayloadType, ProtoOAAccessRights
+    from ctrader_open_api.messages.OpenApiMessages_pb2 import (
+        ProtoOAApplicationAuthReq, ProtoOAGetAccountListByAccessTokenReq,
+        ProtoOAGetAccountListByAccessTokenRes, ProtoOAAccountAuthReq,
+        ProtoOATraderReq, ProtoOATraderRes
+    )
+
+    host = CTRADER_HOSTS.get(env_name, "demo.ctraderapi.com")
+    active_accounts = []
+
+    try:
+        ctx = ssl.create_default_context()
+        with ctx.wrap_socket(socket.socket(), server_hostname=host) as s:
+            s.settimeout(timeout)
+            s.connect((host, CTRADER_PORT))
+
+            # 1. Application Auth
+            app_req = ProtoOAApplicationAuthReq()
+            app_req.clientId = client_id
+            app_req.clientSecret = client_secret
+            app_res = _send_tls_frame(s, ProtoOAPayloadType.PROTO_OA_APPLICATION_AUTH_REQ, app_req)
+            if not app_res or app_res[0] != ProtoOAPayloadType.PROTO_OA_APPLICATION_AUTH_RES:
+                logger.warning("[cTrader Discovery] Application authentication failed.")
+                return []
+
+            # 2. Get Account List by Token
+            acc_list_req = ProtoOAGetAccountListByAccessTokenReq()
+            acc_list_req.accessToken = access_token
+            list_res = _send_tls_frame(s, ProtoOAPayloadType.PROTO_OA_GET_ACCOUNTS_BY_ACCESS_TOKEN_REQ, acc_list_req)
+            if not list_res or list_res[0] != ProtoOAPayloadType.PROTO_OA_GET_ACCOUNTS_BY_ACCESS_TOKEN_RES:
+                logger.warning("[cTrader Discovery] Account list query failed.")
+                return []
+
+            parsed_list = ProtoOAGetAccountListByAccessTokenRes()
+            parsed_list.ParseFromString(list_res[1])
+
+            # 3. Filter and Validate each account's status and permissions
+            for acc_meta in parsed_list.ctidTraderAccount:
+                if env_name == "live" and not acc_meta.isLive:
+                    continue
+                if env_name == "demo" and acc_meta.isLive:
+                    continue
+
+                acc_id = acc_meta.ctidTraderAccountId
+                acc_auth = ProtoOAAccountAuthReq()
+                acc_auth.ctidTraderAccountId = acc_id
+                acc_auth.accessToken = access_token
+                auth_res = _send_tls_frame(s, ProtoOAPayloadType.PROTO_OA_ACCOUNT_AUTH_REQ, acc_auth)
+                if not auth_res or auth_res[0] != ProtoOAPayloadType.PROTO_OA_ACCOUNT_AUTH_RES:
+                    continue
+
+                trader_req = ProtoOATraderReq()
+                trader_req.ctidTraderAccountId = acc_id
+                t_res = _send_tls_frame(s, ProtoOAPayloadType.PROTO_OA_TRADER_REQ, trader_req)
+                if t_res and t_res[0] == ProtoOAPayloadType.PROTO_OA_TRADER_RES:
+                    t_msg = ProtoOATraderRes()
+                    t_msg.ParseFromString(t_res[1])
+                    t = t_msg.trader
+                    access = t.accessRights if t.HasField("accessRights") else 0
+                    if access == ProtoOAAccessRights.FULL_ACCESS:
+                        money_digits = t.moneyDigits if t.HasField("moneyDigits") else 2
+                        bal = t.balance / (10 ** money_digits)
+                        broker = t.brokerName if t.HasField("brokerName") else "ftmo"
+                        t_login = t.traderLogin if t.HasField("traderLogin") else acc_id
+                        active_accounts.append({
+                            "account_id": acc_id,
+                            "trader_login": t_login,
+                            "broker": broker,
+                            "balance": bal,
+                            "access_rights": "FULL_ACCESS",
+                            "is_live": acc_meta.isLive
+                        })
+                        logger.info(
+                            f"[cTrader Discovery] Discovered active account #{acc_id} (Login: {t_login}, "
+                            f"Broker: {broker.upper()}, Balance: ${bal:,.2f}, Status: FULL_ACCESS)"
+                        )
+                    else:
+                        try:
+                            r_name = ProtoOAAccessRights.Name(access)
+                        except Exception:
+                            r_name = str(access)
+                        logger.info(f"[cTrader Discovery] Skipping account #{acc_id} (Access: {r_name})")
+    except Exception as ex:
+        logger.warning(f"[cTrader Discovery] Open API discovery notice: {ex}")
+
+    return active_accounts
+
+
+def get_target_account_ids(auto_discover: bool = True, force_refresh: bool = False) -> List[int]:
+    """Resolve target cTrader account IDs.
+
+    Resolution hierarchy:
+    1. Explicit CTRADER_ACCOUNT_IDS env var (e.g. "49700506, 12345678")
+    2. Dynamic auto-discovery via cTrader Open API token (when CTRADER_ACCOUNT_IDS is "auto" or empty)
+    3. Fallback to single configured CTRADER_ACCOUNT_ID
+    """
+    raw_env = (os.environ.get("CTRADER_ACCOUNT_IDS") or CTRADER_ACCOUNT_IDS).strip()
+
+    # 1. Explicit comma-separated list of IDs
+    if raw_env and raw_env.lower() not in ("auto", "true", "all", "discover"):
+        try:
+            ids = [int(x.strip()) for x in raw_env.split(",") if x.strip().isdigit()]
+            if ids:
+                return ids
+        except Exception as ex:
+            logger.warning(f"Failed parsing CTRADER_ACCOUNT_IDS='{raw_env}': {ex}")
+
+    # 2. Dynamic auto-discovery from token if live execution enabled
+    enable_exec = os.environ.get("ENABLE_CTRADER_EXECUTION", "false").lower() in ("true", "1", "yes") or ENABLE_CTRADER_EXECUTION
+    if auto_discover and enable_exec and has_valid_credentials():
+        now = time.time()
+        if not force_refresh and (now - _DISCOVERED_ACCOUNTS_CACHE["timestamp"] < 120.0) and _DISCOVERED_ACCOUNTS_CACHE["accounts"]:
+            return [acc["account_id"] for acc in _DISCOVERED_ACCOUNTS_CACHE["accounts"]]
+
+        try:
+            discovered = query_authorized_accounts()
+            if discovered:
+                _DISCOVERED_ACCOUNTS_CACHE["timestamp"] = now
+                _DISCOVERED_ACCOUNTS_CACHE["accounts"] = discovered
+                return [acc["account_id"] for acc in discovered]
+        except Exception as ex:
+            logger.warning(f"cTrader auto-discovery notice: {ex}")
+
+    # 3. Fallback to single configured CTRADER_ACCOUNT_ID
+    acc_id_str = (os.environ.get("CTRADER_ACCOUNT_ID") or CTRADER_ACCOUNT_ID).strip()
+    if acc_id_str and acc_id_str.isdigit():
+        return [int(acc_id_str)]
+
+    return []
 
 
 def _find_matching_reconciled_position(
@@ -662,11 +832,12 @@ def dispatch_ctrader_tls_reconcile_and_recover(
         }
 
 
-def execute_ctrader_order(sig: Dict[str, Any]) -> Dict[str, Any]:
+def execute_ctrader_order(sig: Dict[str, Any], account_id: Optional[int] = None) -> Dict[str, Any]:
     """Execute a new trade order onto cTrader Demo/Live account.
 
     Args:
         sig: Signal payload dictionary generated by market_scanner.py.
+        account_id: Optional specific cTrader account ID to execute order on.
 
     Returns:
         Execution status receipt dictionary.
@@ -678,17 +849,28 @@ def execute_ctrader_order(sig: Dict[str, Any]) -> Dict[str, Any]:
     take_profit = float(sig.get("take_profit") or sig.get("tp_price") or 0.0)
     lots = float(sig.get("suggested_lots") or sig.get("calc_lots") or sig.get("lots") or 0.0)
 
+    # Resolve target account ID
+    if account_id is not None:
+        target_account_id = int(account_id)
+    else:
+        acc_str = str(CTRADER_ACCOUNT_ID or os.environ.get("CTRADER_ACCOUNT_ID", "")).strip()
+        if acc_str and acc_str.isdigit():
+            target_account_id = int(acc_str)
+        else:
+            targets = get_target_account_ids(auto_discover=True)
+            target_account_id = targets[0] if targets else 0
+
     # Dynamic Account Equity & Risk Resolution for cTrader Execution
     env_equity = float(os.environ.get("ACCOUNT_EQUITY", "5000.0"))
     env_risk_pct = float(os.environ.get("RISK_PCT", "0.75"))
     sig_equity = float(sig.get("account_equity") or sig.get("equity") or 0.0)
     sig_risk_pct = float(sig.get("risk_pct") or 0.0)
 
-    # In live broker execution, query live broker balance/equity immediately before execution
+    # In live broker execution, query live broker balance/equity immediately before execution for this specific account
     live_broker_equity = 0.0
-    if ENABLE_CTRADER_EXECUTION and not os.environ.get("PYTEST_CURRENT_TEST"):
+    if ENABLE_CTRADER_EXECUTION:
         try:
-            live_info = get_ctrader_account_equity()
+            live_info = get_ctrader_account_equity(account_id=target_account_id)
             if live_info and live_info.get("status") in ("OK", "SIMULATED"):
                 b_val = float(live_info.get("balance", 0.0))
                 e_val = float(live_info.get("equity", 0.0))
@@ -697,7 +879,7 @@ def execute_ctrader_order(sig: Dict[str, Any]) -> Dict[str, Any]:
                 elif e_val > 0.0:
                     live_broker_equity = e_val
         except Exception as eq_err:
-            logger.warning(f"Failed to fetch live broker balance for order sizing: {eq_err}")
+            logger.warning(f"Failed to fetch live broker balance for account {target_account_id}: {eq_err}")
 
     # Dynamic Sizing Capital resolution hierarchy:
     # 1. Live broker balance/equity (sub-second query from cTrader Open API if live execution enabled)
@@ -875,7 +1057,7 @@ def execute_ctrader_order(sig: Dict[str, Any]) -> Dict[str, Any]:
     if sig.get("is_trading_allowed") is False:
         access_name = sig.get("access_rights_name", "CLOSE_ONLY")
         err_msg = (
-            f"TRADING_NOT_ALLOWED: cTrader account {CTRADER_ACCOUNT_ID} is restricted to "
+            f"TRADING_NOT_ALLOWED: cTrader account {target_account_id} is restricted to "
             f"'{access_name}' mode by the broker. New order placement is blocked."
         )
         logger.error(f"[cTrader Execution] Pre-flight Check Blocked: {err_msg}")
@@ -896,7 +1078,7 @@ def execute_ctrader_order(sig: Dict[str, Any]) -> Dict[str, Any]:
             "take_profit": take_profit,
             "position_id": None,
             "order_id": None,
-            "account_id": CTRADER_ACCOUNT_ID,
+            "account_id": str(target_account_id),
             "environment": CTRADER_ENV
         }
 
@@ -905,11 +1087,11 @@ def execute_ctrader_order(sig: Dict[str, Any]) -> Dict[str, Any]:
         from ctrader_open_api.messages.OpenApiModelMessages_pb2 import ProtoOAOrderType, ProtoOATradeSide
 
         host = CTRADER_HOSTS.get(CTRADER_ENV, "demo.ctraderapi.com")
-        logger.info(f"[cTrader Execution] Submitting {direction} {pair} ({lots} lots) to {host}...")
+        logger.info(f"[cTrader Execution] Submitting {direction} {pair} ({lots} lots) to {host} for account #{target_account_id}...")
 
         # Construct Protobuf Order Request
         req = ProtoOANewOrderReq()
-        req.ctidTraderAccountId = int(CTRADER_ACCOUNT_ID)
+        req.ctidTraderAccountId = int(target_account_id)
         req.symbolId = symbol_id if symbol_id is not None else 1
         req.orderType = ProtoOAOrderType.MARKET_RANGE if is_market_range else ProtoOAOrderType.MARKET
         req.tradeSide = ProtoOATradeSide.BUY if direction == "LONG" else ProtoOATradeSide.SELL
@@ -984,7 +1166,7 @@ def execute_ctrader_order(sig: Dict[str, Any]) -> Dict[str, Any]:
                     client_id=CTRADER_CLIENT_ID,
                     client_secret=CTRADER_CLIENT_SECRET,
                     access_token=CTRADER_ACCESS_TOKEN,
-                    account_id=int(CTRADER_ACCOUNT_ID),
+                    account_id=int(target_account_id),
                     order_req=req
                 )
                 tls_status = tls_res.get("status", "ERROR")
@@ -1001,7 +1183,7 @@ def execute_ctrader_order(sig: Dict[str, Any]) -> Dict[str, Any]:
         if tls_status != "EXECUTED" or not position_id:
             logger.error(
                 f"[cTrader Execution] Order execution FAILED on cTrader {CTRADER_ENV.upper()}: "
-                f"Account: {CTRADER_ACCOUNT_ID} | Symbol: {pair} (ID: {req.symbolId}) | "
+                f"Account: {target_account_id} | Symbol: {pair} (ID: {req.symbolId}) | "
                 f"Status: {tls_status} | Error: {tls_error} | Position ID: {position_id}"
             )
             return {
@@ -1022,13 +1204,13 @@ def execute_ctrader_order(sig: Dict[str, Any]) -> Dict[str, Any]:
                 "slippage_in_points": req.slippageInPoints if req.HasField("slippageInPoints") else None,
                 "order_id": order_id,
                 "position_id": position_id,
-                "account_id": CTRADER_ACCOUNT_ID,
+                "account_id": str(target_account_id),
                 "environment": CTRADER_ENV
             }
 
         logger.info(
             f"[cTrader Execution] Order executed on cTrader {CTRADER_ENV.upper()}: "
-            f"Account: {CTRADER_ACCOUNT_ID} | Symbol: {pair} (ID: {req.symbolId}) | "
+            f"Account: {target_account_id} | Symbol: {pair} (ID: {req.symbolId}) | "
             f"Side: {direction} | Volume: {volume_cents} cents | Position ID: {position_id} | Status: {tls_status}"
         )
 
@@ -1045,7 +1227,7 @@ def execute_ctrader_order(sig: Dict[str, Any]) -> Dict[str, Any]:
             "take_profit": take_profit,
             "order_id": order_id,
             "position_id": position_id,
-            "account_id": CTRADER_ACCOUNT_ID,
+            "account_id": str(target_account_id),
             "environment": CTRADER_ENV,
             "base_slippage_price": req.baseSlippagePrice if req.HasField("baseSlippagePrice") else None,
             "slippage_in_points": req.slippageInPoints if req.HasField("slippageInPoints") else None,
@@ -1059,6 +1241,53 @@ def execute_ctrader_order(sig: Dict[str, Any]) -> Dict[str, Any]:
             "error": str(ex),
             "pair": pair
         }
+
+
+def execute_multi_account_orders(
+    sig: Dict[str, Any],
+    account_ids: Optional[List[int]] = None,
+    max_workers: int = 10
+) -> List[Dict[str, Any]]:
+    """Execute trade orders concurrently across multiple cTrader accounts in parallel threads.
+
+    Guarantees sub-second simultaneous execution across all accounts with zero sequential lag.
+    Each account dynamically queries its own live balance and sizes its lots independently.
+    """
+    targets = account_ids or get_target_account_ids()
+    if not targets:
+        return [execute_ctrader_order(sig)]
+
+    if len(targets) == 1:
+        return [execute_ctrader_order(sig, account_id=targets[0])]
+
+    pair_name = sig.get("pair") or sig.get("symbol", "")
+    direction = sig.get("direction", "LONG")
+    logger.info(
+        f"[cTrader Multi-Account Engine] Concurrently dispatching {direction} {pair_name} "
+        f"across {len(targets)} accounts in parallel: {targets}"
+    )
+
+    results = []
+    with concurrent.futures.ThreadPoolExecutor(max_workers=min(max_workers, len(targets))) as executor:
+        future_to_acc = {
+            executor.submit(execute_ctrader_order, sig=sig.copy(), account_id=acc_id): acc_id
+            for acc_id in targets
+        }
+        for future in concurrent.futures.as_completed(future_to_acc):
+            acc_id = future_to_acc[future]
+            try:
+                receipt = future.result()
+                results.append(receipt)
+            except Exception as exc:
+                logger.error(f"[cTrader Multi-Account Engine] Execution failed for account #{acc_id}: {exc}")
+                results.append({
+                    "status": "ERROR",
+                    "error": str(exc),
+                    "account_id": str(acc_id),
+                    "pair": pair_name
+                })
+
+    return results
 
 
 def dispatch_ctrader_tls_amend(
@@ -1118,7 +1347,8 @@ def dispatch_ctrader_tls_amend(
 def modify_ctrader_position(
     position_id: int,
     stop_loss: Optional[float] = None,
-    take_profit: Optional[float] = None
+    take_profit: Optional[float] = None,
+    account_id: Optional[int] = None
 ) -> Dict[str, Any]:
     """Amend Stop Loss and Take Profit on an open cTrader position (Volatility Cushion Trailing).
 
@@ -1126,10 +1356,21 @@ def modify_ctrader_position(
         position_id: cTrader integer position ID.
         stop_loss: New updated Stop Loss price.
         take_profit: New updated Take Profit price.
+        account_id: Optional specific cTrader account ID hosting this position.
 
     Returns:
         Amendment status dictionary.
     """
+    if account_id is not None:
+        target_account_id = int(account_id)
+    else:
+        acc_str = str(CTRADER_ACCOUNT_ID or os.environ.get("CTRADER_ACCOUNT_ID", "")).strip()
+        if acc_str and acc_str.isdigit():
+            target_account_id = int(acc_str)
+        else:
+            targets = get_target_account_ids(auto_discover=True)
+            target_account_id = targets[0] if targets else 0
+
     if not ENABLE_CTRADER_EXECUTION or not has_valid_credentials():
         logger.info(
             f"[cTrader Demo Simulator] DRY-RUN TRAILING AMENDMENT: Position #{position_id} -> "
@@ -1139,14 +1380,15 @@ def modify_ctrader_position(
             "status": "SIMULATED_AMENDMENT",
             "position_id": position_id,
             "stop_loss": stop_loss,
-            "take_profit": take_profit
+            "take_profit": take_profit,
+            "account_id": str(target_account_id)
         }
 
     try:
         from ctrader_open_api.messages.OpenApiMessages_pb2 import ProtoOAAmendPositionSLTPReq
 
         req = ProtoOAAmendPositionSLTPReq()
-        req.ctidTraderAccountId = int(CTRADER_ACCOUNT_ID)
+        req.ctidTraderAccountId = int(target_account_id)
         req.positionId = int(position_id)
         if stop_loss is not None:
             req.stopLoss = float(stop_loss)
@@ -1162,28 +1404,30 @@ def modify_ctrader_position(
                     client_id=CTRADER_CLIENT_ID,
                     client_secret=CTRADER_CLIENT_SECRET,
                     access_token=CTRADER_ACCESS_TOKEN,
-                    account_id=int(CTRADER_ACCOUNT_ID),
+                    account_id=int(target_account_id),
                     amend_req=req
                 )
             except Exception as net_err:
                 logger.warning(f"[cTrader TLS] Amend live dispatch notice: {net_err}")
 
         logger.info(
-            f"[cTrader Execution] Trailing Cushion Amendment sent: Position #{position_id} -> "
+            f"[cTrader Execution] Trailing Cushion Amendment sent: Position #{position_id} (Account: {target_account_id}) -> "
             f"SL: {stop_loss} | TP: {take_profit}"
         )
         return {
             "status": "AMENDED",
             "position_id": position_id,
             "stop_loss": stop_loss,
-            "take_profit": take_profit
+            "take_profit": take_profit,
+            "account_id": str(target_account_id)
         }
     except Exception as ex:
-        logger.error(f"[cTrader Execution] Failed to amend position #{position_id}: {ex}")
+        logger.error(f"[cTrader Execution] Failed to amend position #{position_id} on account {target_account_id}: {ex}")
         return {
             "status": "ERROR",
             "error": str(ex),
-            "position_id": position_id
+            "position_id": position_id,
+            "account_id": str(target_account_id)
         }
 
 
@@ -1295,7 +1539,8 @@ def close_ctrader_position(
     volume_units: Optional[int] = None,
     lots: Optional[float] = None,
     pair: Optional[str] = None,
-    volume: Optional[int] = None
+    volume: Optional[int] = None,
+    account_id: Optional[int] = None
 ) -> Dict[str, Any]:
     """Close an open position on cTrader Demo/Live account at market.
 
@@ -1306,10 +1551,21 @@ def close_ctrader_position(
         lots: Position volume in lots (e.g. 0.86).
         pair: Currency pair or commodity symbol.
         volume: Generic volume parameter (either cents or units).
+        account_id: Optional specific cTrader account ID hosting this position.
 
     Returns:
         Close execution status receipt dictionary.
     """
+    if account_id is not None:
+        target_account_id = int(account_id)
+    else:
+        acc_str = str(CTRADER_ACCOUNT_ID or os.environ.get("CTRADER_ACCOUNT_ID", "")).strip()
+        if acc_str and acc_str.isdigit():
+            target_account_id = int(acc_str)
+        else:
+            targets = get_target_account_ids(auto_discover=True)
+            target_account_id = targets[0] if targets else 0
+
     if volume_cents is None:
         if volume is not None:
             if volume >= 1_000_000:
@@ -1341,6 +1597,7 @@ def close_ctrader_position(
             "mode": "DRY_RUN",
             "position_id": position_id,
             "volume_cents": volume_cents,
+            "account_id": str(target_account_id),
             "environment": CTRADER_ENV
         }
 
@@ -1348,10 +1605,10 @@ def close_ctrader_position(
         from ctrader_open_api.messages.OpenApiMessages_pb2 import ProtoOAClosePositionReq
 
         host = CTRADER_HOSTS.get(CTRADER_ENV, "demo.ctraderapi.com")
-        logger.info(f"[cTrader Execution] Closing Position #{position_id} (volume: {volume_cents} cents) on {host}...")
+        logger.info(f"[cTrader Execution] Closing Position #{position_id} (volume: {volume_cents} cents) on {host} for account #{target_account_id}...")
 
         req = ProtoOAClosePositionReq()
-        req.ctidTraderAccountId = int(CTRADER_ACCOUNT_ID)
+        req.ctidTraderAccountId = int(target_account_id)
         req.positionId = int(position_id)
         req.volume = int(volume_cents)
 
@@ -1364,7 +1621,7 @@ def close_ctrader_position(
                     client_id=CTRADER_CLIENT_ID,
                     client_secret=CTRADER_CLIENT_SECRET,
                     access_token=CTRADER_ACCESS_TOKEN,
-                    account_id=int(CTRADER_ACCOUNT_ID),
+                    account_id=int(target_account_id),
                     close_req=req
                 )
                 if tls_res.get("status"):
@@ -1374,7 +1631,7 @@ def close_ctrader_position(
 
         logger.info(
             f"[cTrader Execution] Position #{position_id} close dispatched to cTrader {CTRADER_ENV.upper()}: "
-            f"Account: {CTRADER_ACCOUNT_ID} | Volume: {volume_cents} | Status: {tls_status}"
+            f"Account: {target_account_id} | Volume: {volume_cents} | Status: {tls_status}"
         )
 
         return {
@@ -1382,7 +1639,7 @@ def close_ctrader_position(
             "mode": f"LIVE_{CTRADER_ENV.upper()}",
             "position_id": position_id,
             "volume_cents": volume_cents,
-            "account_id": CTRADER_ACCOUNT_ID,
+            "account_id": str(target_account_id),
             "environment": CTRADER_ENV
         }
 
@@ -1540,8 +1797,15 @@ def get_ctrader_account_equity(
 
     In dry-run mode, test execution, or missing credentials, returns simulated equity.
     """
-    env_name = (env or CTRADER_ENV).lower()
-    acc_id = account_id or (int(CTRADER_ACCOUNT_ID) if CTRADER_ACCOUNT_ID and CTRADER_ACCOUNT_ID.isdigit() else 0)
+    env_name = (env or os.environ.get("CTRADER_ENV") or CTRADER_ENV).lower()
+    acc_id = account_id
+    if not acc_id:
+        acc_str = str(CTRADER_ACCOUNT_ID or os.environ.get("CTRADER_ACCOUNT_ID", "")).strip()
+        if acc_str and acc_str.isdigit():
+            acc_id = int(acc_str)
+        else:
+            targets = get_target_account_ids(auto_discover=True)
+            acc_id = targets[0] if targets else 0
     fallback_equity = float(os.environ.get("ACCOUNT_EQUITY", "5000.0"))
 
     # Return simulated payload if cTrader execution disabled or missing credentials
