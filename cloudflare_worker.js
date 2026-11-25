@@ -1102,8 +1102,8 @@ export default {
 async function handleTelegramUpdate(update, env) {
   if (update.callback_query) {
     const cb = update.callback_query;
-    const chatId = cb.message.chat.id;
-    const action = cb.data;
+    const chatId = (cb.message && cb.message.chat && cb.message.chat.id) || (cb.from && cb.from.id);
+    const action = cb.data || "";
 
     const apiUrl = getTelegramApi(env);
     await fetch(`${apiUrl}/answerCallbackQuery`, {
@@ -1119,18 +1119,24 @@ async function handleTelegramUpdate(update, env) {
     else if (action === "cmd_active") await sendActiveMessage(chatId, env);
     else if (action === "cmd_prices") await sendPricesMessage(chatId);
     else if (action === "cmd_gold") await sendRadarMessage(chatId, env);
-    else if (action === "cmd_history") await sendHistoryMessage(chatId, "ALL", "ALL", env);
+    else if (action === "cmd_history") await sendHistoryMessage(chatId, "ALL", "ALL", env, 1);
     else if (action === "cmd_performance") await sendPerformanceMessage(chatId, "ALL", env);
     else if (action === "cmd_patterns") await sendPatternsMessage(chatId, env);
     else if (action === "cmd_status") await sendStatusMessage(chatId, env);
     else if (action === "cmd_strategy") await sendStrategyMessage(chatId);
     else if (action === "cmd_menu") await sendMenuMessage(chatId, env);
-    else if (action.startsWith("hist_pair_")) {
+    else if (action.startsWith("hist_page_")) {
+      const segs = action.split("_"); // hist_page_<PAIR>_<RANGE>_<PAGE>
+      const p = (segs[2] || "ALL").toUpperCase();
+      const r = segs[3] || "ALL";
+      const pg = Math.max(1, parseInt(segs[4] || "1", 10) || 1);
+      await sendHistoryMessage(chatId, p, r, env, pg);
+    } else if (action.startsWith("hist_pair_")) {
       const p = action.replace("hist_pair_", "");
-      await sendHistoryMessage(chatId, p, "ALL", env);
+      await sendHistoryMessage(chatId, p, "ALL", env, 1);
     } else if (action.startsWith("hist_range_")) {
       const r = action.replace("hist_range_", "");
-      await sendHistoryMessage(chatId, "ALL", r, env);
+      await sendHistoryMessage(chatId, "ALL", r, env, 1);
     } else if (action.startsWith("perf_pair_")) {
       const p = action.replace("perf_pair_", "");
       await sendPerformanceMessage(chatId, p, env);
@@ -1945,7 +1951,7 @@ async function sendActiveMessage(chatId, env) {
 /**
  * /history - Historical completed trade records ONLY with pair & date range filters
  */
-async function sendHistoryMessage(chatId, filterPair = "ALL", filterRange = "ALL", env) {
+async function sendHistoryMessage(chatId, filterPair = "ALL", filterRange = "ALL", env, page = 1) {
   const utcNow = new Date().toISOString().replace("T", " ").substring(0, 16) + " UTC";
   const nowMs = Date.now();
   const { completed } = await getLedger(env);
@@ -1953,32 +1959,43 @@ async function sendHistoryMessage(chatId, filterPair = "ALL", filterRange = "ALL
   let closedTrades = completed.slice();
 
   // 1. Filter by Pair
-  if (filterPair !== "ALL") {
-    closedTrades = closedTrades.filter(t => getBaseSymbol(t.symbol || t.pair, t) === filterPair.toUpperCase());
+  const normPair = String(filterPair || "ALL").toUpperCase();
+  if (normPair !== "ALL") {
+    closedTrades = closedTrades.filter(t => getBaseSymbol(t.symbol || t.pair, t) === normPair);
   }
 
   // 2. Filter by Date Range
+  const normRange = String(filterRange || "ALL").toLowerCase();
   let rangeLabel = "ALL TIME";
-  if (filterRange === "today" || filterRange === "1d") {
+  if (normRange === "today" || normRange === "1d") {
     rangeLabel = "TODAY";
     const todayStr = new Date().toISOString().substring(0, 10);
     closedTrades = closedTrades.filter(t => (t.closed_at || t.opened_at || "").startsWith(todayStr));
-  } else if (filterRange === "7d") {
+  } else if (normRange === "7d") {
     rangeLabel = "LAST 7 DAYS";
     const cutoff = nowMs - (7 * 24 * 60 * 60 * 1000);
     closedTrades = closedTrades.filter(t => new Date(t.closed_at || t.opened_at).getTime() >= cutoff);
-  } else if (filterRange === "30d") {
+  } else if (normRange === "30d") {
     rangeLabel = "LAST 30 DAYS";
     const cutoff = nowMs - (30 * 24 * 60 * 60 * 1000);
     closedTrades = closedTrades.filter(t => new Date(t.closed_at || t.opened_at).getTime() >= cutoff);
   }
 
+  // Sort newest-first so latest trades appear at top (#1) and all trades are paginated cleanly
+  closedTrades.sort((a, b) => new Date(b.closed_at || b.opened_at || 0).getTime() - new Date(a.closed_at || a.opened_at || 0).getTime());
+
+  const PAGE_SIZE = 12; // Fits safely below Telegram 4096-char limit while showing 10+ trades on Page 1
+  const totalTrades = closedTrades.length;
+  const totalPages = Math.max(1, Math.ceil(totalTrades / PAGE_SIZE));
+  const curPage = Math.min(Math.max(1, parseInt(page || 1, 10) || 1), totalPages);
+  const startIdx = (curPage - 1) * PAGE_SIZE;
+  const pageTrades = closedTrades.slice(startIdx, startIdx + PAGE_SIZE);
+
   // Build Output Rows strictly for Completed Trades
   let closedRows = [];
-  let closedIdx = 1;
-
-  for (const t of closedTrades) {
-    const num = closedIdx++;
+  for (let i = 0; i < pageTrades.length; i++) {
+    const t = pageTrades[i];
+    const num = totalTrades - (startIdx + i);
     const openDate = (t.opened_at || "").substring(0, 10);
     const closeDate = (t.closed_at || "").substring(0, 10) || openDate;
     const pName = t.pair || t.symbol;
@@ -2011,45 +2028,53 @@ async function sendHistoryMessage(chatId, filterPair = "ALL", filterRange = "ALL
 
   let bodyText = "";
   if (closedRows.length > 0) {
-    // Show maximum 5 most recent trades to keep chat clean and fast
-    const recentRows = closedRows.slice(-5).reverse();
-    bodyText = recentRows.join("\n\n──────────────────\n\n") + "\n\n";
+    bodyText = closedRows.join("\n\n──────────────────\n\n") + "\n\n";
   } else {
     bodyText = `<i>No completed trades recorded in current session. Live trades will log here automatically upon TP/SL resolution.</i>\n\n`;
   }
 
+  const pageTag = totalPages > 1 ? ` | Page <b>${curPage}/${totalPages}</b>` : "";
   const text = 
     `📜 <b>COMPLETED TRADE HISTORY</b>\n` +
     `━━━━━━━━━━━━━━━━━━\n` +
-    `Scope: <b>${filterPair}</b> | Range: <b>${rangeLabel}</b>\n` +
-    `Total Completed: <b>${closedTrades.length} Trades</b>\n` +
+    `Scope: <b>${normPair}</b> | Range: <b>${rangeLabel}</b>${pageTag}\n` +
+    `Total Completed: <b>${totalTrades} Trades</b>\n` +
     `━━━━━━━━━━━━━━━━━━\n\n` +
     bodyText +
     `━━━━━━━━━━━━━━━━━━\n` +
     `🕒 <code>${utcNow}</code>`;
 
-  const keyboard = {
-    inline_keyboard: [
-      [
-        { text: "Today", callback_data: "hist_range_today" },
-        { text: "7 Days", callback_data: "hist_range_7d" },
-        { text: "All Time", callback_data: "hist_range_all" }
-      ],
-      [
-        { text: "EUR/USD", callback_data: "hist_pair_EURUSD" },
-        { text: "USD/CAD", callback_data: "hist_pair_USDCAD" }
-      ],
-      [
-        { text: "USD/CHF", callback_data: "hist_pair_USDCHF" },
-        { text: "AUD/USD", callback_data: "hist_pair_AUDUSD" }
-      ],
-      [
-        { text: "⚡ Active Trades", callback_data: "cmd_active" },
-        { text: "📈 Performance", callback_data: "cmd_performance" },
-        { text: "« Menu", callback_data: "cmd_menu" }
-      ]
+  const inlineRows = [
+    [
+      { text: "Today", callback_data: `hist_page_${normPair}_today_1` },
+      { text: "7 Days", callback_data: `hist_page_${normPair}_7d_1` },
+      { text: "All Time", callback_data: `hist_page_${normPair}_all_1` }
+    ],
+    [
+      { text: "EUR/USD", callback_data: "hist_pair_EURUSD" },
+      { text: "USD/CAD", callback_data: "hist_pair_USDCAD" }
+    ],
+    [
+      { text: "USD/CHF", callback_data: "hist_pair_USDCHF" },
+      { text: "AUD/USD", callback_data: "hist_pair_AUDUSD" }
     ]
-  };
+  ];
+
+  if (totalPages > 1 || normPair !== "ALL") {
+    const navRow = [];
+    if (curPage > 1) navRow.push({ text: "⬅️ Newer", callback_data: `hist_page_${normPair}_${normRange}_${curPage - 1}` });
+    if (normPair !== "ALL") navRow.push({ text: "🌐 All Pairs", callback_data: `hist_page_ALL_${normRange}_1` });
+    if (curPage < totalPages) navRow.push({ text: "Older ➡️", callback_data: `hist_page_${normPair}_${normRange}_${curPage + 1}` });
+    if (navRow.length > 0) inlineRows.push(navRow);
+  }
+
+  inlineRows.push([
+    { text: "⚡ Active Trades", callback_data: "cmd_active" },
+    { text: "📈 Performance", callback_data: "cmd_performance" },
+    { text: "« Menu", callback_data: "cmd_menu" }
+  ]);
+
+  const keyboard = { inline_keyboard: inlineRows };
 
   await sendTelegramMessage(chatId, text, keyboard, env);
 }
