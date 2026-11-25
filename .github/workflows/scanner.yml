@@ -88,6 +88,8 @@ jobs:
           ENABLE_CTRADER_EXECUTION: ${{ secrets.ENABLE_CTRADER_EXECUTION || 'false' }}
           ACCOUNT_EQUITY: ${{ secrets.ACCOUNT_EQUITY || '5000.0' }}
           RISK_PCT: ${{ secrets.RISK_PCT || '0.75' }}
+          WEBHOOK_SECRET: ${{ secrets.WEBHOOK_SECRET }}
+          WORKER_ADMIN_SECRET: ${{ secrets.WORKER_ADMIN_SECRET }}
         run: |
           echo "=== [1/2] Scanning Forex Markets (4 Active Institutional Pairs) ==="
           python market_scanner.py

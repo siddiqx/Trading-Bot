@@ -500,11 +500,12 @@ async function getLedger(env) {
  * @param {object|null} prefetchedLedger - already-fetched {active, completed} to avoid re-fetching
  */
 async function autoResolveTrade(symbol, t, outcome, exitPrice, env, prefetchedLedger = null) {
-  // Defensive Guard: If trade is associated with a live broker position (cTrader),
+  // Defensive Guard: If trade is associated with a real live broker position (cTrader),
   // do NOT purge it from active trades in KV until Python market_scanner.py executes
   // the market close order (ProtoOAClosePositionReq) and verifies closure.
-  const hasBrokerPosition = !!(t.ctrader_position_id || (t.ctrader_receipt && t.ctrader_receipt.position_id));
-  const isBrokerClosed = !!(t.ctrader_close_receipt && t.ctrader_close_receipt.status === "CLOSED");
+  const rawPosId = t.ctrader_position_id || (t.ctrader_receipt && t.ctrader_receipt.position_id);
+  const hasBrokerPosition = !!(rawPosId && String(rawPosId) !== "9990001");
+  const isBrokerClosed = !!(t.ctrader_close_receipt && (t.ctrader_close_receipt.status === "CLOSED" || t.ctrader_close_receipt.status === "ALREADY_CLOSED"));
 
   if (hasBrokerPosition && !isBrokerClosed) {
     console.log(`[Edge Gateway] Trade ${t.trade_id || symbol} has active broker position. Flagging pending_close and triggering Python scanner...`);
@@ -718,20 +719,23 @@ async function runActiveTradeChecks(env) {
         }
 
         if (hitTP || hitSL) {
-          const hasBrokerPosition = !!(t.ctrader_position_id || (t.ctrader_receipt && t.ctrader_receipt.position_id));
-          const isBrokerClosed = !!(t.ctrader_close_receipt && t.ctrader_close_receipt.status === "CLOSED");
+          const rawPosId = t.ctrader_position_id || (t.ctrader_receipt && t.ctrader_receipt.position_id);
+          const hasBrokerPosition = !!(rawPosId && String(rawPosId) !== "9990001");
+          const isBrokerClosed = !!(t.ctrader_close_receipt && (t.ctrader_close_receipt.status === "CLOSED" || t.ctrader_close_receipt.status === "ALREADY_CLOSED"));
+
+          // Safety Interlock: When a real cTrader broker position has atomic server-side SL/TP,
+          // NEVER set pending_close from third-party TradingView FX_IDC tick quotes (spread variance risk).
+          // Instead trigger Python market_scanner.py to reconcile directly with broker ProtoOAReconcileReq.
+          if (hasBrokerPosition && !isBrokerClosed) {
+            console.log(`[Watchdog] Price touched threshold for broker-protected ${t.trade_id || symbol}. Triggering Python broker reconciliation (not forcing close from 3rd-party tick).`);
+            await triggerGitHubScanner(env);
+            continue;
+          }
 
           const exitPrice = hitSL ? t.stop_loss : t.take_profit;
           const rawOutcome = hitSL ? "LOSS" : "WIN";
           await autoResolveTrade(symbol, t, rawOutcome, exitPrice, env, ledger);
           resolved.push({ symbol, outcome: rawOutcome, exitPrice });
-
-          // If the position is attached to a live broker order, let market_scanner.py
-          // execute the broker liquidation and dispatch the verified exit alert with post-mortem diagnostics.
-          if (hasBrokerPosition && !isBrokerClosed) {
-            console.log(`[Watchdog] Position ${t.trade_id || symbol} flagged pending_close. Awaiting broker execution confirmation.`);
-            continue;
-          }
 
           // Alert De-duplication Watchdog: prevent duplicate broadcasts
           const tradeId = t.trade_id || `${symbol}_${t.opened_at}`;
@@ -933,6 +937,13 @@ export default {
       // The worker may have resolved a trade (auto-resolved TP/SL) between scanner runs.
       // We always let KV be the source of truth for active trades; scanner only ADDS new ones.
       if (payload.event === "sync_trades") {
+        if (env && (env.ADMIN_SECRET || env.WEBHOOK_SECRET)) {
+          const authHdr = request.headers.get("Authorization") || request.headers.get("X-Admin-Secret") || request.headers.get("X-Webhook-Secret") || "";
+          const expected = env.ADMIN_SECRET || env.WEBHOOK_SECRET;
+          if (authHdr !== expected && authHdr !== `Bearer ${expected}`) {
+            return new Response("Unauthorized Trade Sync", { status: 403 });
+          }
+        }
         const kv = env && (env.TRADE_LEDGER || env.TRADES_KV || env.KV);
 
         // Incoming trades from scanner
@@ -998,6 +1009,13 @@ export default {
 
       // Handle Sync from Gold Satellite Engine
       if (payload.event === "sync_gold_trades") {
+        if (env && (env.ADMIN_SECRET || env.WEBHOOK_SECRET)) {
+          const authHdr = request.headers.get("Authorization") || request.headers.get("X-Admin-Secret") || request.headers.get("X-Webhook-Secret") || "";
+          const expected = env.ADMIN_SECRET || env.WEBHOOK_SECRET;
+          if (authHdr !== expected && authHdr !== `Bearer ${expected}`) {
+            return new Response("Unauthorized Gold Trade Sync", { status: 403 });
+          }
+        }
         const kv = env && (env.TRADE_LEDGER || env.TRADES_KV || env.KV);
         const incomingActive = payload.active_trades || {};
         const incomingCompleted = payload.completed_trades || [];
@@ -1263,7 +1281,8 @@ async function handleTelegramUpdate(update, env) {
       }
 
       // Standard /close <PAIR>: Close at live market price with floating PnL (No WIN/LOSS required)
-      const matchedKey = Object.keys(closeLedger.active || {}).find(k => k === symbol || getBaseSymbol(k, closeLedger.active[k]) === symbol);
+      const matchedKeys = Object.keys(closeLedger.active || {}).filter(k => k === symbol || getBaseSymbol(k, closeLedger.active[k]) === symbol);
+      const matchedKey = matchedKeys[0];
       const trade = matchedKey ? closeLedger.active[matchedKey] : null;
       if (!trade) {
         await sendTelegramMessage(chatId, `⚠️ No active trade found for <code>${symbol}</code>. Use /active to see current positions.`);
@@ -1307,8 +1326,14 @@ async function handleTelegramUpdate(update, env) {
         }
       }
 
-      await autoResolveTrade(matchedKey, trade, "MANUAL_CLOSE", livePrice, env, closeLedger);
-      const hasBrokerPosition = !!(trade.ctrader_position_id || (trade.ctrader_receipt && trade.ctrader_receipt.position_id));
+      for (const mk of matchedKeys) {
+        await autoResolveTrade(mk, closeLedger.active[mk], "MANUAL_CLOSE", livePrice, env, closeLedger);
+      }
+      const hasBrokerPosition = matchedKeys.some(mk => {
+        const tr = closeLedger.active[mk];
+        const pid = tr?.ctrader_position_id || tr?.ctrader_receipt?.position_id;
+        return !!(pid && String(pid) !== "9990001");
+      });
       const brokerNote = hasBrokerPosition
         ? "📡 <i>cTrader market close dispatched to broker via TLS client...</i>"
         : "🔓 <i>Pair unlocked. Surveillance resumed immediately.</i>";
@@ -1370,7 +1395,8 @@ async function handleTelegramUpdate(update, env) {
         return new Response("OK", { status: 200 });
       }
 
-      const matchedKey = Object.keys(cancelLedger.active || {}).find(k => k === symbol || getBaseSymbol(k, cancelLedger.active[k]) === symbol);
+      const matchedKeys = Object.keys(cancelLedger.active || {}).filter(k => k === symbol || getBaseSymbol(k, cancelLedger.active[k]) === symbol);
+      const matchedKey = matchedKeys[0];
       const trade = matchedKey ? cancelLedger.active[matchedKey] : null;
       if (!trade) {
         await sendTelegramMessage(chatId, `⚠️ No active trade found for <code>${symbol}</code>. Use /active to see current positions.`);
@@ -1383,8 +1409,14 @@ async function handleTelegramUpdate(update, env) {
         exitPrice = trade.entry;
       }
 
-      await autoResolveTrade(matchedKey, trade, "CANCELLED", exitPrice, env, cancelLedger);
-      const hasBrokerPosition = !!(trade.ctrader_position_id || (trade.ctrader_receipt && trade.ctrader_receipt.position_id));
+      for (const mk of matchedKeys) {
+        await autoResolveTrade(mk, cancelLedger.active[mk], "CANCELLED", exitPrice, env, cancelLedger);
+      }
+      const hasBrokerPosition = matchedKeys.some(mk => {
+        const tr = cancelLedger.active[mk];
+        const pid = tr?.ctrader_position_id || tr?.ctrader_receipt?.position_id;
+        return !!(pid && String(pid) !== "9990001");
+      });
       const brokerNote = hasBrokerPosition
         ? "📡 <i>cTrader market close dispatched to broker via TLS client...</i>"
         : "🔓 <i>Pair unlocked. Surveillance resumed immediately.</i>";
@@ -2055,13 +2087,13 @@ async function sendPerformanceMessage(chatId, filterPair = "ALL", env) {
     `<b>1. EXECUTION METRICS</b>\n` +
     `• Decided Trades: <b>${decided}</b> (${wins}W · ${losses}L${beLabel}${cancelled > 0 ? ` · ${cancelled} Cancelled` : ""})\n` +
     `• Win Rate: <b>${winRate}${decided > 0 ? "%" : ""}</b>\n` +
-    `• Active Positions: <b>${active.length} / 2 Max Concurrent</b>\n\n` +
+    `• Active Positions: <b>${active.length} / 3 Max Concurrent Slots</b>\n\n` +
     `<b>2. RETURNS & PROFITABILITY</b>\n` +
     `• Net Return: <b>${rSign}${netR.toFixed(2)} R</b>\n` +
     `• Net Pips: <b>${pipsSign}${netPips.toFixed(1)} pips</b>\n` +
     `• Profit Factor: <code>${profitFactor}</code>\n` +
     `• Target Geometry: <code>Pure Binary 1:1.50 R:R</code>\n` +
-    `• Risk per Trade: <code>0.50% Equity ($125 on $25k Prop Demo)</code>\n\n` +
+    `• Risk per Trade: <code>0.75% Live Balance (Dynamic Per-Account)</code>\n\n` +
     `━━━━━━━━━━━━━━━━━━\n` +
     `⚡ <i>Live prop firm metrics · 24/7 serverless tracking</i>\n` +
     `🕒 <code>${utcNow}</code>`;
@@ -2288,11 +2320,11 @@ async function sendStatusMessage(chatId, env) {
 ` +
     `<b>📊 PORTFOLIO & RISK STATE</b>
 ` +
-    `• <b>Active Positions:</b> <code>${activeCount} / 2 Max Concurrent</code>
+    `• <b>Active Positions:</b> <code>${activeCount} / 3 Max Concurrent Slots</code>
 ` +
-    `• <b>Account Model:</b> <code>FTMO $25,000 Prop Demo</code>
+    `• <b>Account Model:</b> <code>Dynamic Multi-Account Auto-Discovery</code>
 ` +
-    `• <b>Risk Budget:</b> <code>0.50% ($125.00 / Trade)</code>
+    `• <b>Risk Budget:</b> <code>0.75% Live Balance (Per Account)</code>
 ` +
     `• <b>Daily Circuit Breaker:</b> <code>2-Loss Lockout (-1.00% Cap)</code>
 ` +
@@ -2370,7 +2402,7 @@ async function sendStrategyMessage(chatId) {
 ` +
     `<b>4. Prop Firm Risk Management</b>
 ` +
-    `• <b>Position Risk:</b> <code>0.50% Equity</code> ($125 max risk on $25k Prop Demo)
+    `• <b>Position Risk:</b> <code>0.75% Live Balance</code> (Dynamic per-account sizing)
 ` +
     `• <b>Daily Circuit Breaker:</b> 2-loss lockout (-1.00% daily loss cap)
 ` +

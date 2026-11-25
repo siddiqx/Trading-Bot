@@ -394,7 +394,6 @@ def test_live_order_rejection_safety(monkeypatch):
     monkeypatch.setattr(ce, "CTRADER_CLIENT_SECRET", "real_client_secret")
     monkeypatch.setattr(ce, "CTRADER_ACCESS_TOKEN", "real_token")
     monkeypatch.setattr(ce, "CTRADER_ACCOUNT_ID", "12345678")
-    monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)
 
     # Mock dispatch_ctrader_tls_order returning broker rejection
     monkeypatch.setattr(
@@ -426,7 +425,6 @@ def test_rop01_relative_sltp_market_framing(monkeypatch):
     monkeypatch.setattr(ce, "CTRADER_CLIENT_SECRET", "real_client_secret")
     monkeypatch.setattr(ce, "CTRADER_ACCESS_TOKEN", "real_token")
     monkeypatch.setattr(ce, "CTRADER_ACCOUNT_ID", "12345678")
-    monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)
 
     captured_req = {}
     def mock_dispatch(**kwargs):
@@ -494,7 +492,6 @@ def test_market_order_slippage_parameters(monkeypatch):
     monkeypatch.setattr(ce, "CTRADER_CLIENT_SECRET", "real_client_secret")
     monkeypatch.setattr(ce, "CTRADER_ACCESS_TOKEN", "real_token")
     monkeypatch.setattr(ce, "CTRADER_ACCOUNT_ID", "12345678")
-    monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)
 
     captured_req = {}
     def mock_dispatch(**kwargs):
@@ -1478,6 +1475,71 @@ def test_test_signal_never_touches_broker(monkeypatch):
     assert res["status"] == "SIMULATED_DEMO_FILL"
     assert res["is_test"] is True
     assert res["position_id"] == 9990001
+
+
+def test_modify_ctrader_position_propagates_errors(monkeypatch):
+    """Verify modify_ctrader_position returns actual failure/rejection instead of falsely claiming AMENDED."""
+    import core.ctrader_executor as ce
+    monkeypatch.setattr(ce, "ENABLE_CTRADER_EXECUTION", True)
+    monkeypatch.setattr(ce, "CTRADER_CLIENT_ID", "real_id")
+    monkeypatch.setattr(ce, "CTRADER_CLIENT_SECRET", "real_sec")
+    monkeypatch.setattr(ce, "CTRADER_ACCESS_TOKEN", "real_tok")
+    monkeypatch.setattr(ce, "CTRADER_ACCOUNT_ID", "12345678")
+    monkeypatch.setattr(ce, "is_test_environment", lambda: False)
+
+    monkeypatch.setattr(
+        ce,
+        "dispatch_ctrader_tls_amend",
+        lambda **kwargs: {"status": "AMEND_REJECTED", "error": "SL out of range"}
+    )
+    res_rej = ce.modify_ctrader_position(position_id=55555, stop_loss=1.08400, account_id=12345678)
+    assert res_rej["status"] == "AMEND_REJECTED"
+    assert "SL out of range" in res_rej["error"]
+
+    def raise_err(**kwargs):
+        raise RuntimeError("Socket reset")
+
+    monkeypatch.setattr(ce, "dispatch_ctrader_tls_amend", raise_err)
+    res_err = ce.modify_ctrader_position(position_id=55555, stop_loss=1.08400, account_id=12345678)
+    assert res_err["status"] == "ERROR"
+    assert "Socket reset" in res_err["error"]
+
+
+def test_close_ctrader_position_does_not_mask_socket_errors(monkeypatch):
+    """Verify close_ctrader_position returns ERROR instead of CLOSED if socket close raises exception."""
+    import core.ctrader_executor as ce
+    monkeypatch.setattr(ce, "ENABLE_CTRADER_EXECUTION", True)
+    monkeypatch.setattr(ce, "CTRADER_CLIENT_ID", "real_id")
+    monkeypatch.setattr(ce, "CTRADER_CLIENT_SECRET", "real_sec")
+    monkeypatch.setattr(ce, "CTRADER_ACCESS_TOKEN", "real_tok")
+    monkeypatch.setattr(ce, "CTRADER_ACCOUNT_ID", "12345678")
+    monkeypatch.setattr(ce, "is_test_environment", lambda: False)
+
+    def raise_net_err(**kwargs):
+        raise ConnectionError("TLS handshake timeout")
+
+    monkeypatch.setattr(ce, "dispatch_ctrader_tls_close", raise_net_err)
+    res = ce.close_ctrader_position(position_id=55555, lots=0.20, pair="EURUSD", account_id=12345678)
+    assert res["status"] == "ERROR"
+    assert "TLS handshake timeout" in res["error"]
+
+
+def test_equity_and_discovery_interlock_during_tests(monkeypatch):
+    """Verify query_authorized_accounts and dispatch_ctrader_tls_equity block real sockets even if PYTEST_CURRENT_TEST is deleted."""
+    import core.ctrader_executor as ce
+    monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)
+    monkeypatch.setattr(ce, "CTRADER_CLIENT_ID", "real_id")
+    monkeypatch.setattr(ce, "CTRADER_CLIENT_SECRET", "real_sec")
+    monkeypatch.setattr(ce, "CTRADER_ACCESS_TOKEN", "real_tok")
+
+    accounts = ce.query_authorized_accounts()
+    assert len(accounts) == 1
+    assert accounts[0]["broker"] == "MOCK_BROKER"
+
+    eq = ce.dispatch_ctrader_tls_equity("live.ctraderapi.com", 5035, "real_id", "real_sec", "real_tok", 12345678)
+    assert eq["status"] == "OK"
+    assert eq["broker_name"] == "MOCK"
+
 
 
 

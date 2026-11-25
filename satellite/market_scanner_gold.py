@@ -178,8 +178,12 @@ def sync_gold_worker(records: Dict[str, Any]) -> None:
         "daily_losses": records.get("daily_losses", {}),
     }
     try:
+        headers = {"User-Agent": "GoldMarketScanner/1.0"}
+        worker_secret = (os.environ.get("WORKER_ADMIN_SECRET") or os.environ.get("WEBHOOK_SECRET") or "").strip()
+        if worker_secret:
+            headers["Authorization"] = f"Bearer {worker_secret}"
         with httpx.Client(timeout=8.0) as client:
-            r = client.post(WORKER_SYNC_URL, json=payload, headers={"User-Agent": "GoldMarketScanner/1.0"})
+            r = client.post(WORKER_SYNC_URL, json=payload, headers=headers)
             if r.status_code == 200:
                 logger.info("Gold Worker sync successful.")
             else:
@@ -818,7 +822,12 @@ def run_gold_scan_cycle() -> None:
         from core.ctrader_executor import get_ctrader_account_equity
         live_eq = get_ctrader_account_equity()
         if live_eq.get("status") in ("OK", "SIMULATED"):
-            equity = float(live_eq.get("equity", REFERENCE_ACCOUNT_EQUITY))
+            live_bal = float(live_eq.get("balance", 0.0))
+            live_eq_val = float(live_eq.get("equity", REFERENCE_ACCOUNT_EQUITY))
+            if live_bal > 0.0:
+                equity = min(live_bal, live_eq_val) if (live_eq_val > 0.0 and live_eq_val < live_bal) else live_bal
+            else:
+                equity = live_eq_val
             is_trading_allowed = live_eq.get("is_trading_allowed", True)
             access_rights_name = live_eq.get("access_rights_name", "FULL_ACCESS")
             broker_name = live_eq.get("broker_name", "Broker")

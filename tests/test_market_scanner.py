@@ -2482,3 +2482,100 @@ def test_format_exit_message_manual_and_cancelled():
     assert "TRADE CANCELLED (ZERO LOSS)" in msg_cancel
     assert "🚫" in msg_cancel
 
+
+def test_multi_account_distinct_slot_risk_counting():
+    """Verify mirrored positions across 3+ accounts count as 1 logical slot, not 3."""
+    from market_scanner import _count_distinct_unprotected_slots, count_usd_direction_exposure
+
+    active_multi = {
+        "EURUSD_15M_1001": {"pair": "EURUSD", "timeframe": "15M", "direction": "LONG", "be_active": False},
+        "EURUSD_15M_1002": {"pair": "EURUSD", "timeframe": "15M", "direction": "LONG", "be_active": False},
+        "EURUSD_15M_1003": {"pair": "EURUSD", "timeframe": "15M", "direction": "LONG", "be_active": False},
+        "USDCHF_15M_1001": {"pair": "USDCHF", "timeframe": "15M", "direction": "LONG", "be_active": True},  # protected
+    }
+    assert _count_distinct_unprotected_slots(active_multi) == 1
+    assert count_usd_direction_exposure(active_multi, -1) == 1
+
+
+def test_broker_truth_guard_prevents_false_yahoo_close_and_syncs_closed_positions(monkeypatch):
+    """Verify live broker open status prevents false third-party SL/TP closes and syncs already-closed broker trades."""
+    import pandas as pd
+    from datetime import datetime, timezone, timedelta
+    from market_scanner import check_active_trades, reconcile_and_close_orphaned_ctrader_positions
+
+    now_utc = datetime.now(timezone.utc)
+    t_entry = now_utc - timedelta(hours=1)
+    # 5m bar that looks like SL hit on Yahoo
+    mock_df = pd.DataFrame({
+        "time": [now_utc - timedelta(minutes=15), now_utc - timedelta(minutes=5)],
+        "open": [1.08500, 1.08400],
+        "high": [1.08510, 1.08420],
+        "low": [1.08350, 1.08250],  # Touches SL 1.08300 on Yahoo
+        "close": [1.08400, 1.08380],
+        "volume": [100, 100],
+    })
+
+    close_calls = []
+    monkeypatch.setattr("market_scanner.ENABLE_CTRADER_EXECUTION", True)
+    monkeypatch.setattr("market_scanner.is_ctrader_test_env", lambda: False)
+    monkeypatch.setattr("market_scanner.is_forex_market_open", lambda *a, **kw: True)
+    monkeypatch.setattr("market_scanner.fetch_candles", lambda *a, **kw: mock_df)
+    monkeypatch.setattr("market_scanner.send_telegram_alert", lambda *a, **kw: True)
+    monkeypatch.setattr("market_scanner.sync_worker", lambda *a, **kw: None)
+    monkeypatch.setattr("market_scanner.save_trade_records", lambda *a, **kw: None)
+    monkeypatch.setattr("market_scanner.record_trade_post_mortem", lambda *a, **kw: None)
+    monkeypatch.setattr("market_scanner.close_ctrader_position", lambda **kw: close_calls.append(kw) or {"status": "CLOSED"})
+
+    # Case 1: Broker confirms position #777001 is STILL OPEN -> MUST NOT prematurely close!
+    monkeypatch.setattr("market_scanner.get_open_ctrader_positions", lambda **kw: [{"position_id": 777001}])
+    rec_open = {
+        "active_trades": {
+            "EURUSD_15M": {
+                "trade_id": "EURUSD_GUARD_1",
+                "pair": "EURUSD",
+                "symbol": "EURUSD",
+                "ticker": "EURUSD=X",
+                "direction": "LONG",
+                "timeframe": "15M",
+                "entry": 1.08500,
+                "stop_loss": 1.08300,
+                "take_profit": 1.08800,
+                "sl_pips": 20.0,
+                "tp_pips": 30.0,
+                "pip": 0.0001,
+                "ctrader_position_id": 777001,
+                "status": "OPEN",
+                "opened_at": t_entry.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            }
+        },
+        "completed_trades": []
+    }
+    check_active_trades(rec_open)
+    assert "EURUSD_15M" in rec_open["active_trades"]
+    assert len(rec_open["completed_trades"]) == 0
+    assert len(close_calls) == 0
+
+    # Case 2: Broker confirms position #777001 ALREADY CLOSED -> resolve cleanly WITHOUT duplicate close call
+    monkeypatch.setattr("market_scanner.get_open_ctrader_positions", lambda **kw: [])
+    check_active_trades(rec_open)
+    assert "EURUSD_15M" not in rec_open["active_trades"]
+    assert len(rec_open["completed_trades"]) == 1
+    assert rec_open["completed_trades"][0]["ctrader_close_receipt"]["status"] == "ALREADY_CLOSED"
+    assert len(close_calls) == 0
+
+    # Case 3: Orphaned watchdog must never attempt to close mock 9990001
+    rec_mock = {
+        "completed_trades": [{
+            "trade_id": "MOCK_TEST_1",
+            "pair": "EURUSD",
+            "closed_at": now_utc.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "ctrader_position_id": 9990001,
+            "outcome": "WIN",
+        }],
+        "alerted_exits": ["MOCK_TEST_1"]
+    }
+    modified = reconcile_and_close_orphaned_ctrader_positions(rec_mock)
+    assert modified is False
+    assert len(close_calls) == 0
+
+

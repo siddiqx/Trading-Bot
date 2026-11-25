@@ -166,17 +166,18 @@ def query_authorized_accounts(timeout: float = 8.0) -> List[Dict[str, Any]]:
     1. Match the current environment (live vs demo)
     2. Possess FULL_ACCESS rights (excludes CLOSE_ONLY, VIEW_ONLY, or suspended accounts)
     """
-    if os.environ.get("PYTEST_CURRENT_TEST") and not os.environ.get("TEST_REAL_SOCKET"):
+    if is_test_environment() and not os.environ.get("TEST_REAL_SOCKET"):
         # Return mock account list for unit tests
         mock_acc_str = (os.environ.get("CTRADER_ACCOUNT_ID") or CTRADER_ACCOUNT_ID).strip()
         mock_acc = int(mock_acc_str) if (mock_acc_str and mock_acc_str.isdigit()) else 49700506
+        env_check = (os.environ.get("CTRADER_ENV") or CTRADER_ENV).lower()
         return [{
             "account_id": mock_acc,
             "trader_login": mock_acc,
             "broker": "MOCK_BROKER",
             "balance": float(os.environ.get("ACCOUNT_EQUITY", "10000.0")),
             "access_rights": "FULL_ACCESS",
-            "is_live": (CTRADER_ENV == "live")
+            "is_live": (env_check == "live")
         }]
 
     client_id = (os.environ.get("CTRADER_CLIENT_ID") or CTRADER_CLIENT_ID).strip()
@@ -360,6 +361,153 @@ def _find_matching_reconciled_position(
     return None
 
 
+def _ensure_position_sltp_on_socket(
+    s: Any,
+    account_id: int,
+    pos_pb: Any,
+    order_req: Any,
+    ord_id: int = 0,
+    desired_sl: Optional[float] = None,
+    desired_tp: Optional[float] = None,
+    max_amend_retries: int = 3,
+    retry_delay_sec: float = 0.5,
+    reconciled_after_timeout: bool = False,
+) -> Dict[str, Any]:
+    """Verify server-side SL/TP on a filled or recovered position; amend or emergency-close if unprotected."""
+    from ctrader_open_api.messages.OpenApiModelMessages_pb2 import ProtoOAPayloadType, ProtoOATradeSide
+    from ctrader_open_api.messages.OpenApiMessages_pb2 import (
+        ProtoOAErrorRes, ProtoOAAmendPositionSLTPReq, ProtoOAClosePositionReq
+    )
+
+    pos_id = getattr(pos_pb, "positionId", 0)
+    sl_desired = bool(order_req.HasField("relativeStopLoss") or (desired_sl is not None))
+    sl_attached = bool(pos_pb.HasField("stopLoss") and pos_pb.stopLoss > 0)
+    tp_attached = bool(pos_pb.HasField("takeProfit") and pos_pb.takeProfit > 0)
+
+    if sl_desired and sl_attached:
+        attached_sl = pos_pb.stopLoss
+        attached_tp = pos_pb.takeProfit if tp_attached else 0.0
+        res: Dict[str, Any] = {
+            "status": "EXECUTED",
+            "position_id": pos_id,
+            "order_id": ord_id or pos_id,
+            "atomic_sltp": True,
+            "attached_sl": attached_sl,
+            "attached_tp": attached_tp,
+        }
+        if reconciled_after_timeout:
+            res["reconciled_after_timeout"] = True
+        else:
+            logger.info(f"[cTrader Open API] Position #{pos_id} filled with atomic broker SL ({attached_sl}) & TP ({attached_tp}).")
+        return res
+
+    if sl_desired and not sl_attached:
+        logger.warning(
+            f"[cTrader Open API] Position #{pos_id} filled without Stop-Loss! "
+            f"Initiating fallback amendment loop (max {max_amend_retries} retries)..."
+        )
+        fill_price = float(getattr(pos_pb, "price", 0.0))
+        if desired_sl is not None:
+            target_sl = float(desired_sl)
+        elif order_req.HasField("relativeStopLoss") and fill_price > 0:
+            offset = order_req.relativeStopLoss / 100_000.0
+            if getattr(order_req, "tradeSide", ProtoOATradeSide.BUY) == ProtoOATradeSide.BUY:
+                target_sl = fill_price - offset
+            else:
+                target_sl = fill_price + offset
+        else:
+            target_sl = None
+
+        if desired_tp is not None:
+            target_tp = float(desired_tp)
+        elif order_req.HasField("relativeTakeProfit") and fill_price > 0:
+            offset = order_req.relativeTakeProfit / 100_000.0
+            if getattr(order_req, "tradeSide", ProtoOATradeSide.BUY) == ProtoOATradeSide.BUY:
+                target_tp = fill_price + offset
+            else:
+                target_tp = fill_price - offset
+        else:
+            target_tp = None
+
+        sym_id = getattr(order_req, "symbolId", 0)
+        digits = 2 if sym_id == 41 else (3 if sym_id == 4 else 5)
+        amend_success = False
+
+        for attempt in range(1, max_amend_retries + 1):
+            try:
+                amend_req = ProtoOAAmendPositionSLTPReq()
+                amend_req.ctidTraderAccountId = account_id
+                amend_req.positionId = int(pos_id)
+                if target_sl is not None:
+                    amend_req.stopLoss = round(float(target_sl), digits)
+                if target_tp is not None:
+                    amend_req.takeProfit = round(float(target_tp), digits)
+
+                amend_res = _send_tls_frame(s, ProtoOAPayloadType.PROTO_OA_AMEND_POSITION_SLTP_REQ, amend_req)
+                if amend_res and amend_res[0] in (
+                    ProtoOAPayloadType.PROTO_OA_EXECUTION_EVENT,
+                    ProtoOAPayloadType.PROTO_OA_TRAILING_SL_CHANGED_EVENT
+                ):
+                    amend_success = True
+                    logger.info(
+                        f"[cTrader Open API] Fallback amend succeeded on attempt {attempt}: "
+                        f"Position #{pos_id} SL ({amend_req.stopLoss}) & TP ({amend_req.takeProfit}) attached."
+                    )
+                    res_ok: Dict[str, Any] = {
+                        "status": "EXECUTED",
+                        "position_id": pos_id,
+                        "order_id": ord_id or pos_id,
+                        "atomic_sltp": False,
+                        "amend_retries": attempt,
+                        "attached_sl": amend_req.stopLoss,
+                        "attached_tp": getattr(amend_req, "takeProfit", 0.0),
+                    }
+                    if reconciled_after_timeout:
+                        res_ok["reconciled_after_timeout"] = True
+                    return res_ok
+                elif amend_res and amend_res[0] == ProtoOAPayloadType.PROTO_OA_ERROR_RES:
+                    err = ProtoOAErrorRes()
+                    err.ParseFromString(amend_res[1])
+                    logger.warning(f"[cTrader Open API] Amend attempt {attempt}/{max_amend_retries} rejected: {err.errorCode} - {err.description}")
+                else:
+                    resp_type = amend_res[0] if amend_res else "None"
+                    logger.warning(f"[cTrader Open API] Amend attempt {attempt}/{max_amend_retries} received unexpected response: {resp_type}")
+            except Exception as amend_ex:
+                logger.warning(f"[cTrader Open API] Amend attempt {attempt}/{max_amend_retries} exception: {amend_ex}")
+
+            if attempt < max_amend_retries and retry_delay_sec > 0:
+                time.sleep(retry_delay_sec)
+
+        if not amend_success:
+            logger.critical(
+                f"[cTrader SAFETY CRITICAL] Position #{pos_id} lacks Stop-Loss protection after {max_amend_retries} amend retries! "
+                f"Dispatching emergency market close to prevent catastrophic naked exposure."
+            )
+            try:
+                close_req = ProtoOAClosePositionReq()
+                close_req.ctidTraderAccountId = account_id
+                close_req.positionId = int(pos_id)
+                td = getattr(pos_pb, "tradeData", None)
+                pos_vol = getattr(pos_pb, "volume", 0) or (getattr(td, "volume", 0) if td else 0) or getattr(order_req, "volume", 0)
+                close_req.volume = pos_vol
+                _send_tls_frame(s, ProtoOAPayloadType.PROTO_OA_CLOSE_POSITION_REQ, close_req)
+                logger.info(f"[cTrader Open API] Emergency close dispatched for unprotected position #{pos_id}.")
+            except Exception as close_ex:
+                logger.critical(f"[cTrader SAFETY CRITICAL] Failed to dispatch emergency close for position #{pos_id}: {close_ex}")
+
+            return {
+                "status": "EMERGENCY_CLOSED",
+                "position_id": pos_id,
+                "order_id": ord_id or pos_id,
+                "error": f"Failed to attach Stop-Loss after {max_amend_retries} retries. Position closed immediately for financial safety."
+            }
+
+    res_plain: Dict[str, Any] = {"status": "EXECUTED", "position_id": pos_id, "order_id": ord_id or pos_id}
+    if reconciled_after_timeout:
+        res_plain["reconciled_after_timeout"] = True
+    return res_plain
+
+
 def _dispatch_order_over_socket(
     s: Any,
     client_id: str,
@@ -485,12 +633,18 @@ def _dispatch_order_over_socket(
                 if matched_pos:
                     pos_id = matched_pos.positionId
                     logger.warning(f"[cTrader Timeout Recovery] RECOVERED: Order timed out on socket, but broker confirmed position #{pos_id} was filled! Reconciled.")
-                    return {
-                        "status": "EXECUTED",
-                        "position_id": pos_id,
-                        "order_id": pos_id,
-                        "reconciled_after_timeout": True
-                    }
+                    return _ensure_position_sltp_on_socket(
+                        s=s,
+                        account_id=account_id,
+                        pos_pb=matched_pos,
+                        order_req=order_req,
+                        ord_id=pos_id,
+                        desired_sl=desired_sl,
+                        desired_tp=desired_tp,
+                        max_amend_retries=max_amend_retries,
+                        retry_delay_sec=retry_delay_sec,
+                        reconciled_after_timeout=True,
+                    )
         except Exception as rec_err:
             logger.warning(f"[cTrader Timeout Guard] In-socket reconciliation notice: {rec_err}")
 
@@ -580,134 +734,36 @@ def _dispatch_order_over_socket(
                     if matched_pos:
                         pos_id = matched_pos.positionId
                         logger.warning(f"[cTrader Timeout Recovery] Recovered position #{pos_id} via post-acceptance reconciliation.")
-                        return {
-                            "status": "EXECUTED",
-                            "position_id": pos_id,
-                            "order_id": pos_id,
-                            "reconciled_after_timeout": True
-                        }
+                        return _ensure_position_sltp_on_socket(
+                            s=s,
+                            account_id=account_id,
+                            pos_pb=matched_pos,
+                            order_req=order_req,
+                            ord_id=pos_id,
+                            desired_sl=desired_sl,
+                            desired_tp=desired_tp,
+                            max_amend_retries=max_amend_retries,
+                            retry_delay_sec=retry_delay_sec,
+                            reconciled_after_timeout=True,
+                        )
             except Exception as rec_err:
                 logger.warning(f"[cTrader Timeout Guard] Post-acceptance reconciliation error: {rec_err}")
 
             return {"status": "UNFILLED", "order_id": ord_id, "error": f"Execution event type {event.executionType} without positionId"}
 
         # 4. Atomic SL/TP Verification & Fallback Amendment Loop (ROP-01)
-        sl_desired = bool(order_req.HasField("relativeStopLoss") or (desired_sl is not None))
-        sl_attached = bool(event.HasField("position") and event.position.HasField("stopLoss") and event.position.stopLoss > 0)
-        tp_attached = bool(event.HasField("position") and event.position.HasField("takeProfit") and event.position.takeProfit > 0)
-
-        if sl_desired and sl_attached:
-            attached_sl = event.position.stopLoss
-            attached_tp = event.position.takeProfit if tp_attached else 0.0
-            logger.info(f"[cTrader Open API] Position #{pos_id} filled with atomic broker SL ({attached_sl}) & TP ({attached_tp}).")
-            return {
-                "status": "EXECUTED",
-                "position_id": pos_id,
-                "order_id": ord_id,
-                "atomic_sltp": True,
-                "attached_sl": attached_sl,
-                "attached_tp": attached_tp
-            }
-
-        # If a Stop Loss was requested but not attached on fill, trigger the fallback retry loop
-        if sl_desired and not sl_attached:
-            logger.warning(
-                f"[cTrader Open API] Position #{pos_id} filled without Stop-Loss! "
-                f"Initiating fallback amendment loop (max {max_amend_retries} retries)..."
-            )
-            fill_price = float(getattr(event.position, "price", 0.0))
-            if desired_sl is not None:
-                target_sl = float(desired_sl)
-            elif order_req.HasField("relativeStopLoss") and fill_price > 0:
-                offset = order_req.relativeStopLoss / 100_000.0
-                if getattr(order_req, "tradeSide", ProtoOATradeSide.BUY) == ProtoOATradeSide.BUY:
-                    target_sl = fill_price - offset
-                else:
-                    target_sl = fill_price + offset
-            else:
-                target_sl = None
-
-            if desired_tp is not None:
-                target_tp = float(desired_tp)
-            elif order_req.HasField("relativeTakeProfit") and fill_price > 0:
-                offset = order_req.relativeTakeProfit / 100_000.0
-                if getattr(order_req, "tradeSide", ProtoOATradeSide.BUY) == ProtoOATradeSide.BUY:
-                    target_tp = fill_price + offset
-                else:
-                    target_tp = fill_price - offset
-            else:
-                target_tp = None
-
-            sym_id = getattr(order_req, "symbolId", 0)
-            digits = 2 if sym_id == 41 else (3 if sym_id == 4 else 5)
-            amend_success = False
-
-            for attempt in range(1, max_amend_retries + 1):
-                try:
-                    amend_req = ProtoOAAmendPositionSLTPReq()
-                    amend_req.ctidTraderAccountId = account_id
-                    amend_req.positionId = int(pos_id)
-                    if target_sl is not None:
-                        amend_req.stopLoss = round(float(target_sl), digits)
-                    if target_tp is not None:
-                        amend_req.takeProfit = round(float(target_tp), digits)
-
-                    amend_res = _send_tls_frame(s, ProtoOAPayloadType.PROTO_OA_AMEND_POSITION_SLTP_REQ, amend_req)
-                    if amend_res and amend_res[0] in (
-                        ProtoOAPayloadType.PROTO_OA_EXECUTION_EVENT,
-                        ProtoOAPayloadType.PROTO_OA_TRAILING_SL_CHANGED_EVENT
-                    ):
-                        amend_success = True
-                        logger.info(
-                            f"[cTrader Open API] Fallback amend succeeded on attempt {attempt}: "
-                            f"Position #{pos_id} SL ({amend_req.stopLoss}) & TP ({amend_req.takeProfit}) attached."
-                        )
-                        return {
-                            "status": "EXECUTED",
-                            "position_id": pos_id,
-                            "order_id": ord_id,
-                            "atomic_sltp": False,
-                            "amend_retries": attempt,
-                            "attached_sl": amend_req.stopLoss,
-                            "attached_tp": getattr(amend_req, "takeProfit", 0.0)
-                        }
-                    elif amend_res and amend_res[0] == ProtoOAPayloadType.PROTO_OA_ERROR_RES:
-                        err = ProtoOAErrorRes()
-                        err.ParseFromString(amend_res[1])
-                        logger.warning(f"[cTrader Open API] Amend attempt {attempt}/{max_amend_retries} rejected: {err.errorCode} - {err.description}")
-                    else:
-                        resp_type = amend_res[0] if amend_res else "None"
-                        logger.warning(f"[cTrader Open API] Amend attempt {attempt}/{max_amend_retries} received unexpected response: {resp_type}")
-                except Exception as amend_ex:
-                    logger.warning(f"[cTrader Open API] Amend attempt {attempt}/{max_amend_retries} exception: {amend_ex}")
-
-                if attempt < max_amend_retries and retry_delay_sec > 0:
-                    time.sleep(retry_delay_sec)
-
-            # If all amend retries failed, trigger emergency market close
-            if not amend_success:
-                logger.critical(
-                    f"[cTrader SAFETY CRITICAL] Position #{pos_id} lacks Stop-Loss protection after {max_amend_retries} amend retries! "
-                    f"Dispatching emergency market close to prevent catastrophic naked exposure."
-                )
-                try:
-                    close_req = ProtoOAClosePositionReq()
-                    close_req.ctidTraderAccountId = account_id
-                    close_req.positionId = int(pos_id)
-                    close_req.volume = getattr(event.position, "volume", getattr(order_req, "volume", 0))
-                    _send_tls_frame(s, ProtoOAPayloadType.PROTO_OA_CLOSE_POSITION_REQ, close_req)
-                    logger.info(f"[cTrader Open API] Emergency close dispatched for unprotected position #{pos_id}.")
-                except Exception as close_ex:
-                    logger.critical(f"[cTrader SAFETY CRITICAL] Failed to dispatch emergency close for position #{pos_id}: {close_ex}")
-
-                return {
-                    "status": "EMERGENCY_CLOSED",
-                    "position_id": pos_id,
-                    "order_id": ord_id,
-                    "error": f"Failed to attach Stop-Loss after {max_amend_retries} retries. Position closed immediately for financial safety."
-                }
-
-        return {"status": "EXECUTED", "position_id": pos_id, "order_id": ord_id}
+        return _ensure_position_sltp_on_socket(
+            s=s,
+            account_id=account_id,
+            pos_pb=event.position,
+            order_req=order_req,
+            ord_id=ord_id,
+            desired_sl=desired_sl,
+            desired_tp=desired_tp,
+            max_amend_retries=max_amend_retries,
+            retry_delay_sec=retry_delay_sec,
+            reconciled_after_timeout=False,
+        )
 
     return {"status": "ERROR", "error": f"Unexpected response payload type: {order_res[0]}"}
 
@@ -821,14 +877,16 @@ def dispatch_ctrader_tls_reconcile_and_recover(
                 pos_id = matched_pos.positionId
                 logger.warning(
                     f"[cTrader Timeout Recovery] RECOVERED: Order timed out on socket, but broker confirmed fill! "
-                    f"Position #{pos_id} on symbol {getattr(order_req, 'symbolId', 0)}. Reconciled as EXECUTED."
+                    f"Position #{pos_id} on symbol {getattr(order_req, 'symbolId', 0)}. Reconciling SL/TP protection..."
                 )
-                return {
-                    "status": "EXECUTED",
-                    "position_id": pos_id,
-                    "order_id": pos_id,
-                    "reconciled_after_timeout": True
-                }
+                return _ensure_position_sltp_on_socket(
+                    s=s,
+                    account_id=account_id,
+                    pos_pb=matched_pos,
+                    order_req=order_req,
+                    ord_id=pos_id,
+                    reconciled_after_timeout=True,
+                )
 
             logger.info("[cTrader Timeout Guard] Post-timeout reconciliation confirmed order was NOT filled by broker.")
             return {
@@ -1188,7 +1246,7 @@ def execute_ctrader_order(sig: Dict[str, Any], account_id: Optional[int] = None)
             req.label = order_label
 
         # Attempt TLS Transmission to cTrader Open API endpoint
-        is_mock = CTRADER_CLIENT_ID.startswith("mock_") or bool(os.environ.get("PYTEST_CURRENT_TEST"))
+        is_mock = CTRADER_CLIENT_ID.startswith("mock_")
         order_id = 9990001 if is_mock else None
         position_id = 9990001 if is_mock else None
         tls_status = "EXECUTED" if is_mock else "PENDING"
@@ -1434,9 +1492,11 @@ def modify_ctrader_position(
             req.takeProfit = float(take_profit)
 
         host = CTRADER_HOSTS.get(CTRADER_ENV, "demo.ctraderapi.com")
-        if not CTRADER_CLIENT_ID.startswith("mock_") and not os.environ.get("PYTEST_CURRENT_TEST"):
+        tls_status = "AMENDED"
+        tls_error = None
+        if not CTRADER_CLIENT_ID.startswith("mock_") and not is_test_environment():
             try:
-                dispatch_ctrader_tls_amend(
+                tls_res = dispatch_ctrader_tls_amend(
                     host=host,
                     port=CTRADER_PORT,
                     client_id=CTRADER_CLIENT_ID,
@@ -1445,8 +1505,27 @@ def modify_ctrader_position(
                     account_id=int(target_account_id),
                     amend_req=req
                 )
+                if isinstance(tls_res, dict) and tls_res.get("status"):
+                    tls_status = tls_res["status"]
+                    tls_error = tls_res.get("error")
             except Exception as net_err:
-                logger.warning(f"[cTrader TLS] Amend live dispatch notice: {net_err}")
+                tls_status = "ERROR"
+                tls_error = str(net_err)
+                logger.error(f"[cTrader TLS] Amend live dispatch error: {net_err}")
+
+        if tls_status != "AMENDED":
+            logger.error(
+                f"[cTrader Execution] Trailing Cushion Amendment FAILED: Position #{position_id} (Account: {target_account_id}) -> "
+                f"Status: {tls_status} | Error: {tls_error}"
+            )
+            return {
+                "status": tls_status,
+                "error": tls_error or "Broker rejected position SL/TP amendment",
+                "position_id": position_id,
+                "stop_loss": stop_loss,
+                "take_profit": take_profit,
+                "account_id": str(target_account_id)
+            }
 
         logger.info(
             f"[cTrader Execution] Trailing Cushion Amendment sent: Position #{position_id} (Account: {target_account_id}) -> "
@@ -1651,7 +1730,8 @@ def close_ctrader_position(
         req.volume = int(volume_cents)
 
         tls_status = "CLOSED"
-        if not CTRADER_CLIENT_ID.startswith("mock_") and not os.environ.get("PYTEST_CURRENT_TEST"):
+        tls_error = None
+        if not CTRADER_CLIENT_ID.startswith("mock_") and not is_test_environment():
             try:
                 tls_res = dispatch_ctrader_tls_close(
                     host=host,
@@ -1662,17 +1742,20 @@ def close_ctrader_position(
                     account_id=int(target_account_id),
                     close_req=req
                 )
-                if tls_res.get("status"):
+                if isinstance(tls_res, dict) and tls_res.get("status"):
                     tls_status = tls_res["status"]
+                    tls_error = tls_res.get("error")
             except Exception as net_err:
-                logger.warning(f"[cTrader TLS] Live close dispatch notice: {net_err}. Continuing with status.")
+                tls_status = "ERROR"
+                tls_error = str(net_err)
+                logger.error(f"[cTrader TLS] Live close dispatch failed: {net_err}. Position #{position_id} may still be open on broker.")
 
         logger.info(
             f"[cTrader Execution] Position #{position_id} close dispatched to cTrader {CTRADER_ENV.upper()}: "
             f"Account: {target_account_id} | Volume: {volume_cents} | Status: {tls_status}"
         )
 
-        return {
+        res_payload = {
             "status": tls_status,
             "mode": f"LIVE_{CTRADER_ENV.upper()}",
             "position_id": position_id,
@@ -1680,6 +1763,9 @@ def close_ctrader_position(
             "account_id": str(target_account_id),
             "environment": CTRADER_ENV
         }
+        if tls_error:
+            res_payload["error"] = tls_error
+        return res_payload
 
     except Exception as ex:
         logger.error(f"[cTrader Execution] Failed to close position #{position_id} on cTrader: {ex}")
@@ -1814,6 +1900,23 @@ def dispatch_ctrader_tls_equity(
     timeout: float = 8.0
 ) -> Dict[str, Any]:
     """Execute live equity and unrealized P&L inspection directly over TLS socket."""
+    if is_test_environment() and not os.environ.get("TEST_REAL_SOCKET"):
+        fallback_eq = float(os.environ.get("ACCOUNT_EQUITY", "5000.0"))
+        return {
+            "status": "OK",
+            "balance": fallback_eq,
+            "unrealized_pnl": 0.0,
+            "equity": fallback_eq,
+            "open_positions_count": 0,
+            "positions": [],
+            "broker_name": "MOCK",
+            "trader_login": account_id,
+            "account_id": account_id,
+            "access_rights": 0,
+            "access_rights_name": "FULL_ACCESS",
+            "is_trading_allowed": True,
+            "money_digits": 2
+        }
     ctx = ssl.create_default_context()
     with ctx.wrap_socket(socket.socket(), server_hostname=host) as s:
         s.settimeout(timeout)
@@ -1825,6 +1928,86 @@ def dispatch_ctrader_tls_equity(
             access_token=access_token,
             account_id=account_id
         )
+
+
+def get_open_ctrader_positions(
+    account_id: Optional[int] = None,
+    timeout: float = 8.0
+) -> Optional[List[Dict[str, Any]]]:
+    """Query live open positions on a cTrader account via ProtoOAReconcileReq.
+
+    Returns list of open position dicts (position_id, symbol_id, trade_side, volume, stop_loss, take_profit),
+    or None if unavailable / dry-run / test mode / network error.
+    """
+    if not ENABLE_CTRADER_EXECUTION or not has_valid_credentials():
+        return None
+    if is_test_environment() and not os.environ.get("TEST_REAL_SOCKET"):
+        return None
+
+    acc_id = account_id
+    if not acc_id:
+        acc_str = str(CTRADER_ACCOUNT_ID or os.environ.get("CTRADER_ACCOUNT_ID", "")).strip()
+        if acc_str and acc_str.isdigit():
+            acc_id = int(acc_str)
+        else:
+            targets = get_target_account_ids(auto_discover=True)
+            acc_id = targets[0] if targets else 0
+    if not acc_id:
+        return None
+
+    env_name = (os.environ.get("CTRADER_ENV") or CTRADER_ENV).lower()
+    host = CTRADER_HOSTS.get(env_name, "demo.ctraderapi.com")
+    try:
+        from ctrader_open_api.messages.OpenApiModelMessages_pb2 import ProtoOAPayloadType
+        from ctrader_open_api.messages.OpenApiMessages_pb2 import (
+            ProtoOAApplicationAuthReq, ProtoOAAccountAuthReq,
+            ProtoOAReconcileReq, ProtoOAReconcileRes
+        )
+        ctx = ssl.create_default_context()
+        with ctx.wrap_socket(socket.socket(), server_hostname=host) as s:
+            s.settimeout(timeout)
+            s.connect((host, port := CTRADER_PORT))
+            app_req = ProtoOAApplicationAuthReq()
+            app_req.clientId = CTRADER_CLIENT_ID
+            app_req.clientSecret = CTRADER_CLIENT_SECRET
+            app_res = _send_tls_frame(s, ProtoOAPayloadType.PROTO_OA_APPLICATION_AUTH_REQ, app_req)
+            if not app_res or app_res[0] != ProtoOAPayloadType.PROTO_OA_APPLICATION_AUTH_RES:
+                return None
+
+            acc_req = ProtoOAAccountAuthReq()
+            acc_req.ctidTraderAccountId = int(acc_id)
+            acc_req.accessToken = CTRADER_ACCESS_TOKEN
+            acc_res = _send_tls_frame(s, ProtoOAPayloadType.PROTO_OA_ACCOUNT_AUTH_REQ, acc_req)
+            if not acc_res or acc_res[0] != ProtoOAPayloadType.PROTO_OA_ACCOUNT_AUTH_RES:
+                return None
+
+            rec_req = ProtoOAReconcileReq()
+            rec_req.ctidTraderAccountId = int(acc_id)
+            rec_res = _send_tls_frame(s, ProtoOAPayloadType.PROTO_OA_RECONCILE_REQ, rec_req)
+            if not rec_res or rec_res[0] != ProtoOAPayloadType.PROTO_OA_RECONCILE_RES:
+                return None
+
+            rec_msg = ProtoOAReconcileRes()
+            rec_msg.ParseFromString(rec_res[1])
+            positions = []
+            for p in rec_msg.position:
+                if getattr(p, "positionStatus", 1) != 1:
+                    continue
+                td = getattr(p, "tradeData", None)
+                positions.append({
+                    "position_id": int(p.positionId),
+                    "symbol_id": int(td.symbolId) if td else 0,
+                    "trade_side": int(td.tradeSide) if td else 0,
+                    "volume": int(td.volume) if td else 0,
+                    "price": float(getattr(p, "price", 0.0)),
+                    "stop_loss": float(p.stopLoss) if p.HasField("stopLoss") else 0.0,
+                    "take_profit": float(p.takeProfit) if p.HasField("takeProfit") else 0.0,
+                    "account_id": int(acc_id),
+                })
+            return positions
+    except Exception as ex:
+        logger.warning(f"[cTrader Reconcile] Could not fetch live open positions for #{acc_id}: {ex}")
+        return None
 
 
 def get_ctrader_account_equity(
@@ -1864,7 +2047,7 @@ def get_ctrader_account_equity(
         }
 
     # If running pytest and not explicitly mock-socket tested, return mock
-    if os.environ.get("PYTEST_CURRENT_TEST") and not CTRADER_CLIENT_ID.startswith("mock_socket_"):
+    if is_test_environment() and not CTRADER_CLIENT_ID.startswith("mock_socket_") and not os.environ.get("TEST_REAL_SOCKET"):
         return {
             "status": "OK",
             "balance": fallback_equity,

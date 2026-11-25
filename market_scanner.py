@@ -156,7 +156,7 @@ def is_forex_weekend_flat_cutoff(dt: datetime | None = None) -> bool:
     """
     # In testing mode without an explicit dt, do not trigger weekend flat based on live test execution day
     if dt is None:
-        if os.environ.get("PYTEST_CURRENT_TEST"):
+        if os.environ.get("PYTEST_CURRENT_TEST") or "pytest" in sys.modules:
             return False
         dt = datetime.now(timezone.utc)
     elif dt.tzinfo is None:
@@ -191,6 +191,8 @@ from core.ctrader_executor import (
     modify_ctrader_position,
     close_ctrader_position,
     get_ctrader_account_equity,
+    get_open_ctrader_positions,
+    is_test_environment as is_ctrader_test_env,
     CTRADER_ACCOUNT_ID,
     ENABLE_CTRADER_EXECUTION,
 )
@@ -251,10 +253,10 @@ def ensure_telegram_webhook_active() -> bool:
     """
     token = TELEGRAM_BOT_TOKEN
     if not token:
-        if not os.environ.get("PYTEST_CURRENT_TEST"):
+        if not (os.environ.get("PYTEST_CURRENT_TEST") or "pytest" in sys.modules):
             logger.error("Configuration Error: TELEGRAM_BOT_TOKEN is missing. Webhook watchdog cannot verify endpoint.")
         return False
-    if os.environ.get("PYTEST_CURRENT_TEST"):
+    if os.environ.get("PYTEST_CURRENT_TEST") or "pytest" in sys.modules:
         return False
 
     get_url = f"https://api.telegram.org/bot{token}/getWebhookInfo"
@@ -308,20 +310,37 @@ def get_usd_directional_bias(symbol: str, direction: str) -> int:
     return 0
 
 
+def _count_distinct_unprotected_slots(active_trades: dict) -> int:
+    """Count unique logical trade slots (PAIR_TIMEFRAME) that are currently unprotected.
+
+    Prevents multi-account mirrored positions (e.g., EURUSD_15M_acc1, EURUSD_15M_acc2)
+    from artificially inflating the concurrent portfolio cap.
+    """
+    distinct_slots = set()
+    for k, t in active_trades.items():
+        if not isinstance(t, dict) or t.get("be_active", False):
+            continue
+        sym = (t.get("pair") or t.get("symbol") or k.split("_")[0]).strip().upper()
+        tf = (t.get("timeframe") or "15M").strip().upper()
+        distinct_slots.add(f"{sym}_{tf}")
+    return len(distinct_slots)
+
+
 def count_usd_direction_exposure(active_trades: dict, target_bias: int) -> int:
     """
-    Counts active unprotected floating positions that share the target USD bias.
+    Counts distinct unprotected trading slots sharing the target USD bias.
     Positions that have de-risked to Breakeven (+1.0R banked) are excluded from floating risk.
     """
-    count = 0
-    for t in active_trades.values():
-        if t.get("be_active", False):
+    distinct_slots = set()
+    for k, t in active_trades.items():
+        if not isinstance(t, dict) or t.get("be_active", False):
             continue
-        sym = t.get("symbol") or t.get("pair") or ""
+        sym = t.get("symbol") or t.get("pair") or k.split("_")[0]
         dir_str = t.get("direction", "")
         if get_usd_directional_bias(sym, dir_str) == target_bias:
-            count += 1
-    return count
+            tf = (t.get("timeframe") or "15M").strip().upper()
+            distinct_slots.add(f"{sym.strip().upper()}_{tf}")
+    return len(distinct_slots)
 
 
 def is_pair_in_post_loss_cooldown(records: dict, pair_name: str, cooldown_minutes: float = 60.0) -> tuple[bool, float]:
@@ -396,7 +415,7 @@ def load_trade_records() -> dict:
             pass
 
     # Skip external cloud pull during unit test runs
-    if os.environ.get("PYTEST_CURRENT_TEST"):
+    if os.environ.get("PYTEST_CURRENT_TEST") or "pytest" in sys.modules:
         return records
 
     # Cloud-Native Synchronization: Pull latest active & completed trades from 24/7 Cloudflare Worker
@@ -493,10 +512,15 @@ def sync_worker(records, overwrite_active: bool = False):
             "volume_summary": volume_summary,
             "overwrite_active": False  # ALWAYS MERGE, NEVER BLINDLY OVERWRITE
         }
+        headers = {"User-Agent": "MarketScanner/2.0"}
+        worker_secret = (os.environ.get("WORKER_ADMIN_SECRET") or os.environ.get("WEBHOOK_SECRET") or "").strip()
+        if worker_secret:
+            headers["Authorization"] = f"Bearer {worker_secret}"
+
         for attempt in range(2):  # retry once on failure
             try:
                 with httpx.Client(timeout=10.0) as client:
-                    r = client.post(WORKER_SYNC_URL, json=payload, headers={"User-Agent": "MarketScanner/2.0"})
+                    r = client.post(WORKER_SYNC_URL, json=payload, headers=headers)
                     if r.status_code == 200:
                         logger.info("Worker sync successful.")
                         return
@@ -610,6 +634,31 @@ def _safe_close_ctrader_position(
         return close_ctrader_position(**close_kwargs)
 
 
+def _dispatch_trade_close(trade: dict, pair: str, context_label: str, broker_already_closed: bool = False) -> Optional[dict]:
+    """Safely close a trade's live cTrader position if present and not already closed on broker."""
+    pos_id = trade.get("ctrader_position_id") or (trade.get("ctrader_receipt") or {}).get("position_id")
+    if not pos_id or str(pos_id) == "9990001":
+        return None
+    if broker_already_closed:
+        return {"status": "ALREADY_CLOSED", "position_id": int(pos_id)}
+    acc_id = trade.get("account_id") or (trade.get("ctrader_receipt") or {}).get("account_id")
+    try:
+        vol_units = trade.get("units") or (trade.get("ctrader_receipt") or {}).get("units")
+        lots_val = trade.get("lots") or (trade.get("ctrader_receipt") or {}).get("lots")
+        res = _safe_close_ctrader_position(
+            pos_id=int(pos_id),
+            vol_units=int(vol_units) if vol_units else None,
+            lots_val=float(lots_val) if lots_val else None,
+            pair=pair,
+            acc_id=acc_id
+        )
+        logger.info(f"[cTrader Auto-Close] Position #{pos_id} ({context_label}) close response: {res.get('status')}")
+        return res
+    except Exception as ex:
+        logger.error(f"[cTrader Auto-Close] Error closing position #{pos_id} ({context_label}): {ex}")
+        return {"status": "ERROR", "error": str(ex), "position_id": int(pos_id)}
+
+
 def _safe_modify_ctrader_position(
     pos_id: int,
     sl: Optional[float] = None,
@@ -646,6 +695,24 @@ def check_active_trades(records: dict):
 
     resolved_pairs = []
     modified_pairs = []
+    live_open_ids_by_acc: Dict[str, Optional[set]] = {}
+
+    def _get_broker_open_ids(acc_id_val: Any) -> Optional[set]:
+        if not ENABLE_CTRADER_EXECUTION or is_ctrader_test_env():
+            return None
+        key_acc = str(acc_id_val or CTRADER_ACCOUNT_ID or "default")
+        if key_acc not in live_open_ids_by_acc:
+            try:
+                acc_int = int(acc_id_val) if (acc_id_val and str(acc_id_val).isdigit()) else None
+                pos_list = get_open_ctrader_positions(account_id=acc_int)
+                if pos_list is not None:
+                    live_open_ids_by_acc[key_acc] = {int(p["position_id"]) for p in pos_list}
+                else:
+                    live_open_ids_by_acc[key_acc] = None
+            except Exception as ex:
+                logger.warning(f"[cTrader Reconcile] Error checking open positions for #{key_acc}: {ex}")
+                live_open_ids_by_acc[key_acc] = None
+        return live_open_ids_by_acc[key_acc]
 
     for trade_key, trade in list(active.items()):
         ticker = trade.get("ticker", "")
@@ -1059,6 +1126,38 @@ def check_active_trades(records: dict):
             if trade.get("pending_exit_price"):
                 sl = float(trade["pending_exit_price"])
 
+        # Live Broker Truth Reconciliation (prevents Yahoo spread noise from prematurely killing FTMO trades,
+        # and immediately resolves positions already closed on broker by SL/TP or manual cTrader app exit).
+        broker_already_closed = False
+        real_pos_id = trade.get("ctrader_position_id") or (trade.get("ctrader_receipt") or {}).get("position_id")
+        if real_pos_id and str(real_pos_id) != "9990001" and not is_pending:
+            acc_id_chk = trade.get("account_id") or (trade.get("ctrader_receipt") or {}).get("account_id")
+            broker_open_ids = _get_broker_open_ids(acc_id_chk)
+            if broker_open_ids is not None:
+                if int(real_pos_id) in broker_open_ids:
+                    if (hit_tp or hit_sl) and not trade.get("pending_close"):
+                        logger.info(
+                            f"[Broker Guard] {pair} position #{real_pos_id} is still OPEN on cTrader server. "
+                            f"Ignoring third-party candle feed TP/SL touch to protect live trade."
+                        )
+                        hit_tp = False
+                        hit_sl = False
+                else:
+                    broker_already_closed = True
+                    if not (hit_tp or hit_sl or hit_ema_exit or is_pending_cancelled or is_pending_manual):
+                        latest_px = float(df.iloc[-1]["close"]) if not df.empty else float(entry)
+                        if tp and abs(latest_px - float(tp)) <= (2.5 * pip):
+                            hit_tp = True
+                        elif sl and abs(latest_px - float(sl)) <= (2.5 * pip):
+                            hit_sl = True
+                        else:
+                            is_pending_manual = True
+                            trade["pending_exit_price"] = latest_px
+                        logger.info(
+                            f"[Broker Reconcile] {pair} position #{real_pos_id} already CLOSED on cTrader broker "
+                            f"(last px {latest_px}). Syncing ledger resolution."
+                        )
+
         if cancelled_before_fill:
             logger.info(f"==> SETUP CANCELLED (SL breached prior to entry fill): {pair} {trade.get('direction')}")
             completed_record = {
@@ -1114,27 +1213,31 @@ def check_active_trades(records: dict):
             resolved_pairs.append(pair)
 
         elif is_pending_cancelled:
+            fallback_px = float(df.iloc[-1]["close"]) if not df.empty else entry
             logger.info(f"==> TRADE CANCELLED VIA TELEGRAM COMMAND: {pair} {trade.get('direction')}")
-            exit_price = float(trade.get("pending_exit_price") or cur_price or entry)
+            exit_price = float(trade.get("pending_exit_price") or fallback_px)
 
             # Dispatch Market Close to cTrader to liquidate any open position
             pos_id = trade.get("ctrader_position_id") or trade.get("ctrader_receipt", {}).get("position_id")
             acc_id = trade.get("account_id") or trade.get("ctrader_receipt", {}).get("account_id")
             ctrader_close_res = None
-            if pos_id:
-                try:
-                    vol_units = trade.get("units") or trade.get("ctrader_receipt", {}).get("units")
-                    lots_val = trade.get("lots") or trade.get("ctrader_receipt", {}).get("lots")
-                    ctrader_close_res = _safe_close_ctrader_position(
-                        pos_id=int(pos_id),
-                        vol_units=int(vol_units) if vol_units else None,
-                        lots_val=float(lots_val) if lots_val else None,
-                        pair=pair,
-                        acc_id=acc_id
-                    )
-                    logger.info(f"[cTrader Auto-Close] Position #{pos_id} cancelled response: {ctrader_close_res.get('status')}")
-                except Exception as ex:
-                    logger.error(f"[cTrader Auto-Close] Error cancelling position #{pos_id}: {ex}")
+            if pos_id and str(pos_id) != "9990001":
+                if broker_already_closed:
+                    ctrader_close_res = {"status": "ALREADY_CLOSED", "position_id": int(pos_id)}
+                else:
+                    try:
+                        vol_units = trade.get("units") or trade.get("ctrader_receipt", {}).get("units")
+                        lots_val = trade.get("lots") or trade.get("ctrader_receipt", {}).get("lots")
+                        ctrader_close_res = _safe_close_ctrader_position(
+                            pos_id=int(pos_id),
+                            vol_units=int(vol_units) if vol_units else None,
+                            lots_val=float(lots_val) if lots_val else None,
+                            pair=pair,
+                            acc_id=acc_id
+                        )
+                        logger.info(f"[cTrader Auto-Close] Position #{pos_id} cancelled response: {ctrader_close_res.get('status')}")
+                    except Exception as ex:
+                        logger.error(f"[cTrader Auto-Close] Error cancelling position #{pos_id}: {ex}")
 
             completed_record = {
                 **trade,
@@ -1168,7 +1271,8 @@ def check_active_trades(records: dict):
             resolved_pairs.append(pair)
 
         elif is_pending_manual:
-            exit_price = float(trade.get("pending_exit_price") or cur_price or entry)
+            fallback_px = float(df.iloc[-1]["close"]) if not df.empty else entry
+            exit_price = float(trade.get("pending_exit_price") or fallback_px)
             pip = float(trade.get("pip", 0.01 if "JPY" in pair else (0.10 if "XAU" in pair else 0.0001)))
             init_sl_pips = float(trade.get("sl_pips", 20.0))
             partial_taken = trade.get("partial_taken", False)
@@ -1188,23 +1292,7 @@ def check_active_trades(records: dict):
             outcome = "MANUAL_CLOSE"
             logger.info(f"==> TRADE RESOLVED (MANUAL CLOSE): {pair} {trade.get('direction')} ({realized_pips:+.1f} pips, {realized_r:+.2f} R)")
 
-            pos_id = trade.get("ctrader_position_id") or trade.get("ctrader_receipt", {}).get("position_id")
-            acc_id = trade.get("account_id") or trade.get("ctrader_receipt", {}).get("account_id")
-            ctrader_close_res = None
-            if pos_id:
-                try:
-                    vol_units = trade.get("units") or trade.get("ctrader_receipt", {}).get("units")
-                    lots_val = trade.get("lots") or trade.get("ctrader_receipt", {}).get("lots")
-                    ctrader_close_res = _safe_close_ctrader_position(
-                        pos_id=int(pos_id),
-                        vol_units=int(vol_units) if vol_units else None,
-                        lots_val=float(lots_val) if lots_val else None,
-                        pair=pair,
-                        acc_id=acc_id
-                    )
-                    logger.info(f"[cTrader Auto-Close] Position #{pos_id} manual close response: {ctrader_close_res.get('status')}")
-                except Exception as ex:
-                    logger.error(f"[cTrader Auto-Close] Error closing position #{pos_id} on manual close: {ex}")
+            ctrader_close_res = _dispatch_trade_close(trade, pair, "manual close", broker_already_closed)
 
             completed_record = {
                 **trade,
@@ -1248,23 +1336,7 @@ def check_active_trades(records: dict):
             logger.info(f"==> TRADE RESOLVED (FULL TARGET REACHED): {pair} {trade.get('direction')} (+{realized_pips} pips, +{realized_r} R)")
 
             # Dispatch Market Close to cTrader to prevent orphaned live positions
-            pos_id = trade.get("ctrader_position_id") or trade.get("ctrader_receipt", {}).get("position_id")
-            acc_id = trade.get("account_id") or trade.get("ctrader_receipt", {}).get("account_id")
-            ctrader_close_res = None
-            if pos_id:
-                try:
-                    vol_units = trade.get("units") or trade.get("ctrader_receipt", {}).get("units")
-                    lots_val = trade.get("lots") or trade.get("ctrader_receipt", {}).get("lots")
-                    ctrader_close_res = _safe_close_ctrader_position(
-                        pos_id=int(pos_id),
-                        vol_units=int(vol_units) if vol_units else None,
-                        lots_val=float(lots_val) if lots_val else None,
-                        pair=pair,
-                        acc_id=acc_id
-                    )
-                    logger.info(f"[cTrader Auto-Close] Position #{pos_id} close response: {ctrader_close_res.get('status')}")
-                except Exception as ex:
-                    logger.error(f"[cTrader Auto-Close] Error closing position #{pos_id} on TP: {ex}")
+            ctrader_close_res = _dispatch_trade_close(trade, pair, "TP", broker_already_closed)
 
             completed_record = {
                 **trade,
@@ -1308,23 +1380,7 @@ def check_active_trades(records: dict):
             logger.info(f"==> TRADE RESOLVED (STOP LOSS HIT): {pair} {trade.get('direction')} ({realized_pips} pips, {realized_r} R)")
 
             # Dispatch Market Close to cTrader to prevent orphaned live positions
-            pos_id = trade.get("ctrader_position_id") or trade.get("ctrader_receipt", {}).get("position_id")
-            acc_id = trade.get("account_id") or trade.get("ctrader_receipt", {}).get("account_id")
-            ctrader_close_res = None
-            if pos_id:
-                try:
-                    vol_units = trade.get("units") or trade.get("ctrader_receipt", {}).get("units")
-                    lots_val = trade.get("lots") or trade.get("ctrader_receipt", {}).get("lots")
-                    ctrader_close_res = _safe_close_ctrader_position(
-                        pos_id=int(pos_id),
-                        vol_units=int(vol_units) if vol_units else None,
-                        lots_val=float(lots_val) if lots_val else None,
-                        pair=pair,
-                        acc_id=acc_id
-                    )
-                    logger.info(f"[cTrader Auto-Close] Position #{pos_id} close response: {ctrader_close_res.get('status')}")
-                except Exception as ex:
-                    logger.error(f"[cTrader Auto-Close] Error closing position #{pos_id} on SL: {ex}")
+            ctrader_close_res = _dispatch_trade_close(trade, pair, "SL", broker_already_closed)
 
             completed_record = {
                 **trade,
@@ -1380,23 +1436,7 @@ def check_active_trades(records: dict):
             logger.info(f"==> TRADE RESOLVED (EMA INVALIDATION): {pair} {trade.get('direction')} ({realized_pips:+.1f} pips, {realized_r:+.2f}R)")
 
             # Dispatch Market Close to cTrader to prevent orphaned live positions
-            pos_id = trade.get("ctrader_position_id") or trade.get("ctrader_receipt", {}).get("position_id")
-            acc_id = trade.get("account_id") or trade.get("ctrader_receipt", {}).get("account_id")
-            ctrader_close_res = None
-            if pos_id:
-                try:
-                    vol_units = trade.get("units") or trade.get("ctrader_receipt", {}).get("units")
-                    lots_val = trade.get("lots") or trade.get("ctrader_receipt", {}).get("lots")
-                    ctrader_close_res = _safe_close_ctrader_position(
-                        pos_id=int(pos_id),
-                        vol_units=int(vol_units) if vol_units else None,
-                        lots_val=float(lots_val) if lots_val else None,
-                        pair=pair,
-                        acc_id=acc_id
-                    )
-                    logger.info(f"[cTrader Auto-Close] Position #{pos_id} close response: {ctrader_close_res.get('status')}")
-                except Exception as ex:
-                    logger.error(f"[cTrader Auto-Close] Error closing position #{pos_id} on EMA invalidation: {ex}")
+            ctrader_close_res = _dispatch_trade_close(trade, pair, "EMA invalidation", broker_already_closed)
 
             completed_record = {
                 **trade,
@@ -1470,7 +1510,7 @@ def reconcile_and_close_orphaned_ctrader_positions(records: dict) -> bool:
         pos_id = tr.get("ctrader_position_id") or (tr.get("ctrader_receipt") or {}).get("position_id")
         acc_id = tr.get("account_id") or (tr.get("ctrader_receipt") or {}).get("account_id")
         close_receipt = tr.get("ctrader_close_receipt") or {}
-        if pos_id and close_receipt.get("status") not in ("CLOSED", "SIMULATED_CLOSE", "ALREADY_CLOSED"):
+        if pos_id and str(pos_id) != "9990001" and close_receipt.get("status") not in ("CLOSED", "SIMULATED_CLOSE", "ALREADY_CLOSED"):
             logger.warning(f"[Broker Watchdog] Found completed trade {tr.get('trade_id')} with unclosed cTrader position #{pos_id}. Dispatching close order...")
             try:
                 vol_units = tr.get("units") or (tr.get("ctrader_receipt") or {}).get("units")
@@ -3890,11 +3930,11 @@ def run_scan_cycle():
         write_step_summary(telemetry, scan_start)
         return 0
 
-    # 3. Floating Risk Guard: Limit simultaneous at-risk positions (cap at 3 across 6 assets)
-    unprotected_positions = [t for t in active_trades_map.values() if not t.get("be_active", False)]
-    if len(unprotected_positions) >= 3:
-        logger.info(f"Prop Firm Floating Risk Guard: {len(unprotected_positions)} active trades currently at risk. Standing down until existing positions de-risk to Breakeven.")
-        telemetry["circuit_breaker"] = f"RISK_GUARD_HALT ({len(unprotected_positions)} unprotected positions)"
+    # 3. Floating Risk Guard: Limit simultaneous at-risk positions (cap at 3 unique slots across assets)
+    unprotected_count = _count_distinct_unprotected_slots(active_trades_map)
+    if unprotected_count >= 3:
+        logger.info(f"Prop Firm Floating Risk Guard: {unprotected_count} active trade slot(s) currently at risk. Standing down until existing positions de-risk to Breakeven.")
+        telemetry["circuit_breaker"] = f"RISK_GUARD_HALT ({unprotected_count} unprotected positions)"
         save_state(state)
         save_trade_records(records)
         sync_worker(records)
@@ -3926,9 +3966,8 @@ def run_scan_cycle():
                 continue
 
             # In-cycle dynamic risk checks:
-            # 1. Total simultaneous unprotected positions cap (max 3 across all pairs)
-            current_unprotected = [t for t in active_trades_map.values() if not t.get("be_active", False)]
-            if len(current_unprotected) >= 3:
+            # 1. Total simultaneous unprotected positions cap (max 3 distinct slots across all pairs)
+            if _count_distinct_unprotected_slots(active_trades_map) >= 3:
                 logger.info(f"Skipping {pair_name} ({tf}): Simultaneous unprotected position cap (3) reached.")
                 telemetry["slots_scanned"].append({"pair": pair_name, "tf": tf, "status": "SKIPPED_RISK_CAP", "detail": "Unprotected cap (3) reached"})
                 continue
@@ -3954,8 +3993,7 @@ def run_scan_cycle():
 
                 for sig in signals:
                     # In-cycle guard: Re-verify unprotected cap before accepting new trade
-                    current_unprotected = [t for t in active_trades_map.values() if not t.get("be_active", False)]
-                    if len(current_unprotected) >= 3:
+                    if _count_distinct_unprotected_slots(active_trades_map) >= 3:
                         logger.warning(f"Rejecting signal for {sig['pair']}: Maximum 3 unprotected positions already reached in this cycle.")
                         telemetry["signals_rejected"].append({"pair": sig["pair"], "direction": sig["direction"], "reason": "Max 3 unprotected positions reached"})
                         continue
@@ -4050,7 +4088,7 @@ def run_scan_cycle():
                         new_trade_entry = {
                             "trade_id": trade_id_val,
                             "account_id": acc_id_str,
-                            "ctrader_position_id": pos_id,
+                            "ctrader_position_id": pos_id if (pos_id and str(pos_id) != "9990001" and rec.get("status") == "EXECUTED") else None,
                             "ctrader_receipt": rec,
                             "lots": trade_lots,
                             "units": trade_units,

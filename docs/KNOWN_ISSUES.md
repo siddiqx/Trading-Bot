@@ -460,4 +460,28 @@ This document tracks verified defects, architectural discrepancies, and security
   - **Test Signal Guard:** Added an explicit guard in `execute_ctrader_order()`: any signal containing `is_test: True` or `test: True` immediately returns `SIMULATED_DEMO_FILL` and is never routed to a broker socket.
   - **Test Hardening & Regression Suite:** Removed `delenv("PYTEST_CURRENT_TEST")` from all test suites, added explicit dispatch mocks, and added regression tests `test_safety_interlock_blocks_real_sockets_during_tests` and `test_test_signal_never_touches_broker`. All 209 unit tests pass with zero network activity.
 
+---
+
+### ISSUE-AUDIT-04: Byte-Level Full-Codebase Audit Remediations (Broker Truth Reconciliation, Error Masking, Multi-Account Slot Counting & Edge Auth)
+
+* **Severity:** **Critical / High** (Multi-Layer Execution, State Consistency & Edge Security)
+* **Status:** **REMEDIATED IN CODE & VERIFIED (2026-11-25)** — Validated across 214 unit tests (`pytest`) with zero live broker activity.
+* **Affected Files:** `core/ctrader_executor.py`, `market_scanner.py`, `cloudflare_worker.js`, `satellite/gold_config.py`, `satellite/market_scanner_gold.py`, `.github/workflows/scanner.yml`, `tests/test_ctrader_executor.py`, `tests/test_market_scanner.py`
+* **Root Causes Discovered:**
+  1. **Silent Failure Lying on Close/Amend (`core/ctrader_executor.py`):** `modify_ctrader_position()` ignored the return payload of `dispatch_ctrader_tls_amend()` and returned `AMENDED` on errors; `close_ctrader_position()` defaulted `tls_status = "CLOSED"` even when `dispatch_ctrader_tls_close()` raised a network exception; `query_authorized_accounts()` and `dispatch_ctrader_tls_equity()` did not uniformly enforce `is_test_environment()`.
+  2. **Unprotected Timed-Out Fill Recovery (`core/ctrader_executor.py`):** Timeout recovery (`ProtoOAReconcileRes`) returned `EXECUTED` without verifying or attaching missing SL/TP protection via `_ensure_position_sltp_on_socket()`.
+  3. **Premature Third-Party Feed Close & `cur_price` Crash (`market_scanner.py`, `cloudflare_worker.js`):** Yahoo Finance / TradingView `FX_IDC` spread variance vs FTMO Bid/Ask could trigger false `hit_tp`/`hit_sl` or `pending_close` closures on open cTrader broker positions; additionally, `cur_price` was undefined outside `WEEKEND_FLAT` during `/close` or `/cancel` fallbacks, and mock `9990001` IDs were written to `ctrader_position_id`.
+  4. **Multi-Account Slot Cap Inflation (`market_scanner.py`, `cloudflare_worker.js`):** Mirroring one signal across 3+ accounts (`EURUSD_15M_acc1..acc3`) counted 3 unprotected slots instead of 1 logical slot, halting fresh trading after 1 trade; `/close` and `/cancel` only resolved the first matching key instead of all accounts for that pair.
+  5. **Edge Worker Sync Authentication Gap (`cloudflare_worker.js`):** `sync_trades` / `sync_gold_trades` lacked `ADMIN_SECRET` / `WEBHOOK_SECRET` bearer verification.
+* **Remediation Implemented:**
+  - Enforced `is_test_environment()` uniformly across all broker socket paths (discovery, equity, order, amend, close) and eliminated remaining unsafe `delenv("PYTEST_CURRENT_TEST")` test patterns.
+  - Propagated real amend/close error statuses cleanly (`ERROR` / `AMEND_REJECTED`) instead of falsely reporting success.
+  - Extracted `_ensure_position_sltp_on_socket()` to guarantee SL/TP protection even after socket timeout recovery.
+  - Added live broker truth reconciliation (`get_open_ctrader_positions()`) inside `check_active_trades()`: live broker positions still open on FTMO ignore third-party feed ticks, and positions already closed on broker resolve cleanly as `ALREADY_CLOSED`.
+  - Implemented `_count_distinct_unprotected_slots()` so multi-account mirrors count as 1 logical slot; updated `/close` and `/cancel` in `cloudflare_worker.js` to handle all accounts holding the target symbol, and guarded `sync_trades` / `sync_gold_trades` behind `ADMIN_SECRET` / `WEBHOOK_SECRET` verification.
+  - Fixed Gold fallback default `RISK_PCT` from `1.00` to `0.75` and aligned Gold live balance equity sizing.
+  - Added 5 new regression tests; complete suite (214 tests) passes 100%.
+
+
+
 
