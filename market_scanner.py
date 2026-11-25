@@ -193,7 +193,7 @@ from core.ctrader_executor import (
 )
 
 DEFAULT_ACCOUNT_EQUITY: float = float(os.environ.get("ACCOUNT_EQUITY", "5000.0"))
-DEFAULT_RISK_PCT: float = float(os.environ.get("RISK_PCT", "1.00"))
+DEFAULT_RISK_PCT: float = float(os.environ.get("RISK_PCT", "0.75"))
 
 # Monitored Pairs and Ticker Mapping - Standard Institutional Forex Only (Zero Gold)
 SYMBOLS = {
@@ -3745,16 +3745,27 @@ def run_scan_cycle():
     try:
         live_equity_info = get_ctrader_account_equity()
         if live_equity_info.get("status") in ("OK", "SIMULATED"):
-            current_eq = float(live_equity_info.get("equity", DEFAULT_ACCOUNT_EQUITY))
+            live_balance = float(live_equity_info.get("balance", 0.0))
+            live_equity = float(live_equity_info.get("equity", 0.0))
+            # Dynamic Live Balance Adaptation:
+            # Base risk sizing on live balance, scaling down to equity if in floating drawdown
+            if live_balance > 0.0:
+                current_eq = min(live_balance, live_equity) if (live_equity > 0.0 and live_equity < live_balance) else live_balance
+            elif live_equity > 0.0:
+                current_eq = live_equity
+            else:
+                current_eq = DEFAULT_ACCOUNT_EQUITY
+
             is_trading_allowed = live_equity_info.get("is_trading_allowed", True)
             access_rights_name = live_equity_info.get("access_rights_name", "FULL_ACCESS")
             broker_name = live_equity_info.get("broker_name", "Broker")
             trader_login = live_equity_info.get("trader_login", CTRADER_ACCOUNT_ID)
             logger.info(
                 f"[Prop Firm Equity Guard] Broker: {broker_name} | "
-                f"Balance: ${live_equity_info.get('balance', 0.0):,.2f} | "
+                f"Balance: ${live_balance:,.2f} | "
                 f"Floating PnL: ${live_equity_info.get('unrealized_pnl', 0.0):+,.2f} | "
-                f"Live Equity: ${current_eq:,.2f} | "
+                f"Live Equity: ${live_equity:,.2f} | "
+                f"Dynamic Sizing Capital: ${current_eq:,.2f} | "
                 f"Access: {access_rights_name}"
             )
     except Exception as eq_err:

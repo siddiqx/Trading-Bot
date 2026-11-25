@@ -112,9 +112,9 @@ NIGHT_MIN_TP_PIPS: float = 5.0
 # ==============================================================================
 REFERENCE_ACCOUNT_EQUITY: float = 5000.0  # Reference Prop Firm Account ($5,000 USD)
 REFERENCE_RISK_PCT: float = 1.0           # 1.0% per trade reference ceiling
-PROP_FIRM_RISK_PCT: float = 1.00          # 1.00% per trade prop firm calibrated risk
+PROP_FIRM_RISK_PCT: float = 0.75          # 0.75% per trade prop firm calibrated risk
 REFERENCE_RISK_BUDGET_USD: float = 50.0   # $5,000.00 * 0.01 = $50.00 max nominal ceiling
-PROP_FIRM_RISK_BUDGET_USD: float = 50.0   # $5,000.00 * 0.01 = $50.00 prop budget
+PROP_FIRM_RISK_BUDGET_USD: float = 37.5   # $5,000.00 * 0.0075 = $37.50 prop budget
 
 STANDARD_LOT_SIZE: float = 100_000.0      # 1 Standard Lot = 100,000 Base Currency units
 DEFAULT_MIN_LOT: float = 0.01             # Broker minimum lot constraint (micro-lot)

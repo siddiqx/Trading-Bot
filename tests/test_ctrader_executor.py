@@ -313,6 +313,44 @@ def test_dynamic_equity_fluctuations_adaptive_sizing(monkeypatch):
     assert res_profit["units"] == 23_000
 
 
+def test_dynamic_075_live_broker_balance_adaptation(monkeypatch):
+    """Verify that execution automatically discovers live balance directly from broker query
+    and dynamically sizes orders to 0.75% risk without hardcoded balance values."""
+    import core.ctrader_executor as ce
+    monkeypatch.setattr(ce, "ENABLE_CTRADER_EXECUTION", True)
+    monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)
+    monkeypatch.delenv("ACCOUNT_EQUITY", raising=False)
+    monkeypatch.setenv("RISK_PCT", "0.75")
+
+    # Mock live broker response returning $10,350.50 settled balance
+    monkeypatch.setattr(ce, "get_ctrader_account_equity", lambda *args, **kwargs: {
+        "status": "OK",
+        "balance": 10350.50,
+        "unrealized_pnl": 0.0,
+        "equity": 10350.50,
+        "is_trading_allowed": True
+    })
+
+    # Incoming signal from 15M scanner
+    sig = {
+        "pair": "EURUSD",
+        "direction": "LONG",
+        "entry": 1.08500,
+        "stop_loss": 1.08340,
+        "take_profit": 1.08740,
+        "sl_pips": 16.0,
+        "account_equity": 0.0,
+        "suggested_lots": 0.0
+    }
+
+    # Target budget: 10350.50 * 0.0075 = $77.63
+    # Sized lots for 16p stop ($160/lot): floor(77.63 / 160) = 0.48 lots ($76.80 risk)
+    res = ce.execute_ctrader_order(sig)
+    assert res["lots"] == 0.48
+    assert res["units"] == 48_000
+    assert res["lots"] * 16.0 * 10.0 <= (10350.50 * 0.0075)
+
+
 def test_stealth_comment_and_label_configuration(monkeypatch):
     """Verify stealth comment and label configuration for prop firm anti-ban safety."""
     monkeypatch.setenv("ENABLE_CTRADER_EXECUTION", "true")

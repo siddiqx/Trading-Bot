@@ -680,25 +680,30 @@ def execute_ctrader_order(sig: Dict[str, Any]) -> Dict[str, Any]:
 
     # Dynamic Account Equity & Risk Resolution for cTrader Execution
     env_equity = float(os.environ.get("ACCOUNT_EQUITY", "5000.0"))
-    env_risk_pct = float(os.environ.get("RISK_PCT", "1.00"))
+    env_risk_pct = float(os.environ.get("RISK_PCT", "0.75"))
     sig_equity = float(sig.get("account_equity") or sig.get("equity") or 0.0)
     sig_risk_pct = float(sig.get("risk_pct") or 0.0)
 
-    # In live broker execution, query live broker equity if available
+    # In live broker execution, query live broker balance/equity immediately before execution
     live_broker_equity = 0.0
     if ENABLE_CTRADER_EXECUTION and not os.environ.get("PYTEST_CURRENT_TEST"):
         try:
             live_info = get_ctrader_account_equity()
             if live_info and live_info.get("status") in ("OK", "SIMULATED"):
-                live_broker_equity = float(live_info.get("equity", 0.0))
+                b_val = float(live_info.get("balance", 0.0))
+                e_val = float(live_info.get("equity", 0.0))
+                if b_val > 0.0:
+                    live_broker_equity = min(b_val, e_val) if (e_val > 0.0 and e_val < b_val) else b_val
+                elif e_val > 0.0:
+                    live_broker_equity = e_val
         except Exception as eq_err:
-            logger.warning(f"Failed to fetch live broker equity for order sizing: {eq_err}")
+            logger.warning(f"Failed to fetch live broker balance for order sizing: {eq_err}")
 
-    # Sizing equity resolution hierarchy:
-    # 1. Live broker equity (if connected & live execution enabled)
-    # 2. Explicit ACCOUNT_EQUITY environment override if set by user
-    # 3. Signal equity (embedded at scan time from scanner cycle)
-    # 4. Fallback default ($5,000 reference prop firm challenge)
+    # Dynamic Sizing Capital resolution hierarchy:
+    # 1. Live broker balance/equity (sub-second query from cTrader Open API if live execution enabled)
+    # 2. Explicit ACCOUNT_EQUITY environment variable (fallback override if set or during mock testing)
+    # 3. Signal equity (dynamically evaluated from live broker balance at scan time)
+    # 4. Conservative baseline default ($5,000)
     if live_broker_equity > 0.0:
         effective_equity = live_broker_equity
     elif "ACCOUNT_EQUITY" in os.environ and float(os.environ["ACCOUNT_EQUITY"]) > 0:
