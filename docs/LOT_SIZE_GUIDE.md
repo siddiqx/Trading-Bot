@@ -122,3 +122,38 @@ ENABLE_CTRADER_EXECUTION=true
 Navigate to **GitHub Repository $\rightarrow$ Settings $\rightarrow$ Secrets and variables $\rightarrow$ Actions** and configure:
 * `ACCOUNT_EQUITY`: `5000.0`
 * `RISK_PCT`: `1.00`
+
+---
+
+## 6. Rank 3 Phase-Asymmetric Dynamic Sizing Architecture (Production Default)
+
+To maximize evaluation speed while prioritizing funded capital survival, the bot implements **Rank 3 Phase-Asymmetric Dynamic Drawdown Sizing** in `core/config.py` (`resolve_effective_risk_pct`) and `core/ctrader_executor.py`.
+
+### 6.1 Drawdown Tier Matrix
+
+$$\text{Drawdown \%} = \frac{\text{Live Equity} - \text{Initial Balance}}{\text{Initial Balance}} \times 100$$
+
+| Account Stage | Current Drawdown Range | Effective Risk % | $5,000 Risk Budget | Win Payout (+1.59R) | Strategic Rationale |
+| :--- | :--- | :---: | :---: | :---: | :--- |
+| **`EVALUATION`** | **DD $\ge -1.50\%$** (Profit or mild DD) | **`1.25%`** | **$62.50** | **+$99.38** | Fast-tracks Step 1 (8–10% target in ~5–6 net wins) and Step 2 (5% in ~3 net wins). |
+| **`EVALUATION`** | **$-1.50\% > \text{DD} \ge -4.00\%$** (Moderate DD) | **`0.75%`** | **$37.50** | **+$59.63** | Preserves buffer below 5.0% max daily loss ceiling. |
+| **`EVALUATION`** | **$\text{DD} < -4.00\%$** (Near Max DD) | **`0.40%`** | **$20.00** | **+$31.80** | Crash guard: requires 15 consecutive stop-outs to breach 10.0% max limit. |
+| **`FUNDED`** | **DD $\ge -3.00\%$** (Buffer zone) | **`0.75%`** | **$37.50** | **+$59.63** | Balanced risk maximizing monthly payout expectancy while ensuring long-term funded survival. |
+| **`FUNDED`** | **$\text{DD} < -3.00\%$** (Defense zone) | **`0.50%`** | **$25.00** | **+$39.75** | Maximum safety dampener protecting funded account status. |
+
+### 6.2 Sizing Configuration Parameters
+
+```bash
+# In .env or GitHub Actions Secrets:
+RISK_MODE=dynamic_rank3       # "dynamic_rank3" (default) or "flat" (fallback to fixed RISK_PCT)
+ACCOUNT_STAGE=EVALUATION      # "EVALUATION" (1.25%/0.75%/0.40%) or "FUNDED" (0.75%/0.50%)
+INITIAL_BALANCE=5000.0        # Initial starting account tier (auto-inferred from live equity if omitted)
+```
+
+### 6.3 Dynamic Broker Pre-Flight Recalculation
+Before any market order is transmitted to Spotware cTrader Open API over TLS:
+1. `_dispatch_order_over_socket()` queries current live equity directly from broker.
+2. `resolve_effective_risk_pct()` dynamically computes the exact risk percentage for the current drawdown tier.
+3. Lots are dynamically recalculated:
+   $$\text{Lots} = \text{floor}\left( \frac{\text{Live Equity} \times \text{Risk \%}}{\text{SL Pips} \times \text{Pip Value USD} \times 0.01} \right) \times 0.01$$
+4. Capital Defense Hard Clamp verifies `monetary_risk <= target_budget * 1.05`. If compliant, the order is dispatched immediately.

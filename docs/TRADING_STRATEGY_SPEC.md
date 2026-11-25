@@ -10,8 +10,8 @@
 ## 1. Asset Universe & Architecture Overview
 
 The production engine operates two decoupled, specialized execution modules running concurrently every 15 minutes during global market hours:
-1. **Core Institutional Forex Engine (`market_scanner.py`):** 5 Active Major Forex Pairs (15M precision execution, 1H 7-currency CCRS macro bias).
-2. **Dedicated Gold Satellite Engine (`satellite/market_scanner_gold.py`):** Spot Gold commodity alpha engine (1H precision execution, 1H single-factor CCRS USD bias, cross-engine USD correlation interlock).
+1. **Core Institutional Forex Engine (`market_scanner.py`):** 4 Active Institutional Forex Pairs (`EURUSD`, `USDCAD`, `USDCHF`, `AUDUSD`) with 15M precision execution and 1H 7-currency CCRS macro bias.
+2. **Dedicated Gold Satellite Engine (`satellite/market_scanner_gold.py`):** Spot Gold commodity tracking module (`XAUUSD`). De-whitelisted from active automated trading execution (`GOLD_TRADING_ENABLED=false`) per empirical 2-year look-ahead-free audit; quotes tracked for reference surveillance and synthetic basket mathematics.
 
 ### Active Forex Instrument Specifications
 
@@ -115,15 +115,18 @@ $$\text{SL} = \text{clamp}\Big(\text{SL}_{\text{Floor}}, \, \text{SL}_{\text{Cap
 ## 5. Portfolio Risk Controls & Prop Firm Safeguards
 
 1. **Reference Equity Account:** $\$5,000.00\text{ USD}$ reference equity (scalable to $\$25k, \$50k, \$100k$).
-2. **Nominal Risk Allocation:** $0.50\% - 1.00\%$ per trade ($\le \$50.00$ max risk on $\$5,000$ account).
+2. **Nominal Risk Allocation:** Governed by Rank 3 Phase-Asymmetric Dynamic Drawdown Sizing (`RISK_MODE=dynamic_rank3`):
+   - **Evaluation Stage:** `1.25%` above `-1.5%` DD (accelerates challenge target), `0.75%` between `-1.5%` and `-4.0%` DD, and `0.40%` below `-4.0%` DD (capital crash guard).
+   - **Funded Stage:** `0.75%` above `-3.0%` DD and `0.50%` below `-3.0%` DD (preserves funded capital and payouts).
+   - Fixed fallback: `RISK_MODE=flat` with `RISK_PCT=0.75` (or custom).
 3. **Position Sizing Formula:**
-   $$\text{Lots} = \text{floor}\left(\frac{\text{AccountEquity} \times \text{RiskPct}}{\text{SL\_Distance} \times \text{UnitCostPerLot}}, \, \text{Step}=0.01\right)$$
+   $$\text{Lots} = \text{floor}\left(\frac{\text{Live Broker Equity} \times \text{EffectiveRiskPct}}{\text{SL\_Distance} \times \text{UnitCostPerLot}}, \, \text{Step}=0.01\right)$$
+   - Evaluated dynamically over TLS against live broker equity prior to order submission.
    - Conservative lot flooring guarantees monetary risk $\le \text{Budget}$ on every single trade.
+   - Capital Defense Hard Clamp strictly blocks/clamps orders if monetary risk exceeds $1.05\times$ target budget.
    - If minimum permitted lot ($0.01$) breaches risk budget, the trade is safely skipped (`0.0` lots).
 4. **Daily Loss Circuit Breaker:** Execution halts until next UTC session if today's net realized loss $\le -2.00\text{R}$ or if $\ge 2$ stop-outs occur in a single day.
-5. **USD Correlation Interlock:** Maximum of 2 concurrent positions sharing the same net USD directional bias across **both** Forex and Gold ledgers:
-   - Long USD (+1): `EURUSD` Short, `GBPUSD` Short, `AUDUSD` Short, `USDCAD` Long, `USDCHF` Long, `XAUUSD` Short.
-   - Short USD (-1): Inverse of above.
+5. **USD Correlation Interlock:** Maximum of 1 concurrent position sharing the same net USD directional bias (`MAX_CONCURRENT_USD_EXPOSURE = 1`), eliminating correlated news cascade wipeouts.
 6. **Post-Loss Lockout:** 60-minute mandatory lockout for an instrument after a stop-out.
 
 ---

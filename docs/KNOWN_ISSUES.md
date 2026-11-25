@@ -482,6 +482,63 @@ This document tracks verified defects, architectural discrepancies, and security
   - Fixed Gold fallback default `RISK_PCT` from `1.00` to `0.75` and aligned Gold live balance equity sizing.
   - Added 5 new regression tests; complete suite (214 tests) passes 100%.
 
+---
+
+### ISSUE-RISK-04: Rank 3 Phase-Asymmetric Dynamic Drawdown Sizing Model
+
+* **Severity:** **Medium / Enhancement** (Risk Velocity vs Capital Preservation Alignment)
+* **Status:** **REMEDIATED IN CODE & VERIFIED (2026-11-25)** — Validated in `tests/test_ctrader_executor.py` (216 tests passing).
+* **Affected Files:** `core/config.py`, `core/ctrader_executor.py`, `market_scanner.py`, `.github/workflows/scanner.yml`, `docs/LOT_SIZE_GUIDE.md`
+* **Context:** A flat 0.75% or 0.50% risk profile throughout both evaluation and funded phases unnecessarily prolongs challenge pass times, while a static 1.00% or 1.25% risk profile creates unnecessary tail risk on funded accounts.
+* **Remediation Implemented:**
+  - Implemented `resolve_effective_risk_pct()` in `core/config.py`:
+    - **`EVALUATION`:** `1.25%` above `-1.5%` DD (accelerates Step 1 pass to ~5–6 net wins), `0.75%` between `-1.5%` and `-4.0%` DD, `0.40%` below `-4.0%` DD (crash guard).
+    - **`FUNDED`:** `0.75%` above `-3.0%` DD and `0.50%` below `-3.0%` DD.
+    - Fallback: `RISK_MODE=flat` respects static `RISK_PCT`.
+  - Account Tier Auto-Inference: Automatically infers starting balance ($5k, $10k, $25k, $50k, $100k, $200k) from live equity if `INITIAL_BALANCE` is omitted.
+  - Dynamic Pre-Flight Re-evaluation: Evaluates live equity over TLS right before order dispatch, recalculates lots, and validates against Capital Defense Hard Clamp.
+
+---
+
+### ISSUE-RECON-01: Intra-Trade Extrema Evaluation on Broker-Closed Positions
+
+* **Severity:** **High** (False Loss Outcome Classification on Winning Trades)
+* **Status:** **REMEDIATED IN CODE & VERIFIED (2026-11-25)** — Validated in `market_scanner.py` and live FTMO USDCHF WIN reconciliation (+31.8p, +1.59R).
+* **Affected Files:** `market_scanner.py`, `trade_records.json`
+* **Root Cause:** When a trade was closed server-side by cTrader (e.g. USDCHF hitting TP at 0.81156), the next scanner cycle reconciled the trade as closed on broker. However, the outcome evaluator compared the entry price against `latest_px` (the open/close of the current bar). If the market had bounced back after hitting TP, the trade was misclassified as a LOSS or partial loss instead of recognizing the full TP win.
+* **Remediation Implemented:**
+  - Enhanced `check_active_trades()` in `market_scanner.py`: when `broker_already_closed` is detected, the engine queries the intra-trade candle bar extrema (`min_low` and `max_high`) from Yahoo Finance / broker history over the entire lifespan of the position.
+  - If a SHORT trade reached `min_low <= target_tp` (or LONG reached `max_high >= target_tp`), it correctly marks the outcome as `WIN`, realizing the full target pips and +1.59R.
+
+---
+
+### ISSUE-WORKER-01: Cloudflare KV Early-Return Fix & Dual-Mode History Pagination
+
+* **Severity:** **Medium** (Edge Latency & UI Display Truncation)
+* **Status:** **REMEDIATED & DEPLOYED TO EDGE (2026-11-25)** — Deployed to Cloudflare Edge Worker (`f30dd246`).
+* **Affected Files:** `cloudflare_worker.js`
+* **Root Cause:**
+  1. *KV Early-Return Fallthrough:* In `getLedger(env)`, the condition `hasActive || (active !== null && hasExplicitGold)` returned `false` when active trades was `{}` and Gold active was null, forcing an unnecessary and slow fetch to the raw GitHub API fallback.
+  2. *Hardcoded History Truncation:* `sendHistoryMessage()` had a hardcoded `slice(-5)` cap, preventing the "All Time" button from showing more than 5 historical trades.
+* **Remediation Implemented:**
+  - Fast-pathed KV: `const hasKvCompleted = (completed !== null); if (hasActive || hasKvCompleted)` guarantees instant edge response when an account has zero open positions.
+  - Dual-Mode History Architecture:
+    - Default `/history` (and menu button) opens in `RECENT (5)` mode for rapid mobile review.
+    - `All Time` button unlocks full paginated records (10 trades/page with `⬅️ Newer` and `Older ➡️` navigation).
+    - Added instant filter toggles: `[Recent (5)]`, `[Today]`, `[7 Days]`, `[All Time]`, and individual pair buttons.
+
+---
+
+### ISSUE-OPS-02: GitHub Actions Scanner Workflow State Management & Edge Failure Alerting
+
+* **Severity:** **Medium** (Operational Visibility)
+* **Status:** **REMEDIATED & ACTIVE (2026-11-25)** — Workflow enabled; Cloudflare alert dispatch verified.
+* **Affected Files:** `cloudflare_worker.js`, `.github/workflows/scanner.yml`
+* **Root Cause:** When `scanner.yml` was manually disabled in GitHub Actions, edge cron triggers dispatched HTTP 422 requests silently without notifying the bot owner.
+* **Remediation Implemented:**
+  - Added workflow dispatch error trap in `cloudflare_worker.js`: if GitHub API returns HTTP 422 (workflow disabled) or non-204, an immediate alert is sent to Telegram with diagnostic remediation commands.
+  - Re-enabled workflow `368693909` via GitHub API, resuming autonomous 15-minute scans.
+
 
 
 
