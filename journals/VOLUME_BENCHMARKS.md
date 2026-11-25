@@ -2,15 +2,15 @@
 
 Comparative analytics evaluating performance across sequential 100-trade volumes to measure strategy improvements.
 
-- **Global Trades Evaluated**: `18`
-- **Global Win Rate**: `22.9%` (8 Wins / 27 Losses)
+- **Global Trades Evaluated**: `19`
+- **Global Win Rate**: `25.0%` (9 Wins / 27 Losses)
 - **Active Volume**: `VOL_01`
 
 ### 📈 Comparative Volume Benchmark Table
 
 | Volume | Range | Completed | Win Rate | Net Pips | Net R | Profit Factor | Avg Loss MFE | Top Failure Mode | Status |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| **Volume 01** | #1 – #100 | `35/100` | **22.9%** | `-231.8p` | `-16.74R` | `0.47` | `+4.9p` | `STRUCTURAL_INVALIDATION` | `IN_PROGRESS` |
+| **Volume 01** | #1 – #100 | `36/100` | **25.0%** | `-200.0p` | `-15.15R` | `0.55` | `+4.9p` | `STRUCTURAL_INVALIDATION` | `IN_PROGRESS` |
 
 ---
 

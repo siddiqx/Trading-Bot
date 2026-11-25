@@ -457,3 +457,28 @@
 
 ---
 
+### #19 · USDCHF (15M) — 🎯 WIN (+1.75R)
+
+- **Global Sequence**: Trade `#19`
+- **Direction**: `SHORT` | **Outcome**: `WIN` (`+31.8 pips` / `1.59R`)
+- **Execution Range**: Entry ` 0.83598 ` ➔ Exit ` 0.8328 `
+- **Targets**: Stop Loss ` 0.83798 ` | Take Profit ` 0.8328 `
+- **Holding Time**: `4.16 hours` (17 bars)
+- **Window**: `2026-11-25 07:15:00 UTC` ➔ `2026-11-25 11:24:50 UTC`
+
+#### 📊 Excursion & Market Regime
+| Metric | Value | Detail |
+| :--- | :--- | :--- |
+| **Max Favorable Excursion (MFE)** | `+44.9 pips` | Reached `+2.25R` (100.0% of TP) |
+| **Max Adverse Excursion (MAE)** | `-2.7 pips` | Deepest drawdown `-0.14R` |
+| **Session** | `London Session` | Institutional Market Timing |
+| **Entry RSI (14)** | `50.0` | Momentum Baseline |
+| **EMA Alignment** | `BEARISH_EXPANDING` | Structural Trend Bias |
+
+#### 🔬 Post-Mortem Diagnosis: `CLEAN_MOMENTUM_EXPANSION`
+> **Analysis**: Flawless directional expansion with negligible adverse drawdown (0.14R). Institutional order flow propelled price directly to target.
+>
+> **Actionable Takeaway**: Prime candidate setup for runner scaling or full 1.75R capture.
+
+---
+

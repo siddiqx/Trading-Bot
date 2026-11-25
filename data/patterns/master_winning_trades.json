@@ -358,5 +358,50 @@
       "summary": "Take-profit hit within 1 bar(s). High momentum impulse confirmed structural breakout conviction.",
       "actionable_insight": "Validates the 20-period Donchian channel breakout trigger."
     }
+  },
+  {
+    "tracking": {
+      "global_trade_no": 19,
+      "volume_no": 1,
+      "volume_trade_no": 19,
+      "volume_id": "VOL_01",
+      "volume_label": "Volume 1 (Trades 1\u2013100)"
+    },
+    "trade_id": "USDCHF_15M_2026-11-25T07:15:00Z_SHORT_CCRS",
+    "pair": "USDCHF",
+    "symbol": "USDCHF",
+    "timeframe": "15M",
+    "direction": "SHORT",
+    "entry_price": 0.83598,
+    "exit_price": 0.8328,
+    "stop_loss": 0.83798,
+    "take_profit": 0.8328,
+    "opened_at": "2026-11-25T07:15:00Z",
+    "closed_at": "2026-11-25T11:24:50Z",
+    "duration_hours": 4.16,
+    "duration_bars": 17,
+    "outcome": "WIN",
+    "realized_pips": 31.8,
+    "realized_r": 1.59,
+    "excursion_metrics": {
+      "mfe_pips": 44.9,
+      "mfe_r": 2.25,
+      "mae_pips": -2.7,
+      "mae_r": -0.14,
+      "tp_distance_pct_reached": 100.0
+    },
+    "market_regime": {
+      "trading_session": "London Session",
+      "rsi_at_entry": 50.0,
+      "atr_14": 0.0015,
+      "volatility_regime": "NORMAL",
+      "ema_alignment": "BEARISH_EXPANDING",
+      "breakout_candle_wick_ratio": 0.28
+    },
+    "diagnostic": {
+      "primary_factor": "CLEAN_MOMENTUM_EXPANSION",
+      "summary": "Flawless directional expansion with negligible adverse drawdown (0.14R). Institutional order flow propelled price directly to target.",
+      "actionable_insight": "Prime candidate setup for runner scaling or full 1.75R capture."
+    }
   }
 ]
