@@ -3562,13 +3562,29 @@ def check_daily_circuit_breaker(records: dict, live_equity_info: Optional[dict] 
         current_balance = float(live_equity_info.get("balance", current_equity))
 
     if current_equity is not None and current_equity > 0:
-        if last_baseline_date != cycle_date:
+        account_id = str(live_equity_info.get("account_id") or live_equity_info.get("trader_login") or os.environ.get("CTRADER_ACCOUNT_ID", ""))
+        last_account_id = str(baseline.get("account_id", ""))
+        starting_equity = float(baseline.get("starting_equity") or baseline.get("starting_balance") or 0.0)
+
+        # Re-initialize baseline if new calendar cycle, account switched, empty baseline, or large discrepancy with legacy baseline
+        should_reset_baseline = (
+            last_baseline_date != cycle_date or
+            starting_equity <= 0.0 or
+            (account_id and last_account_id and last_account_id != account_id) or
+            (account_id and not last_account_id and abs(starting_equity - current_balance) / max(current_balance, 1.0) > 0.15)
+        )
+
+        if should_reset_baseline:
             starting_cap = max(current_balance, current_equity)
             baseline["date"] = cycle_date
+            if account_id:
+                baseline["account_id"] = account_id
             baseline["starting_equity"] = starting_cap
             baseline["starting_balance"] = current_balance
             baseline["recorded_at"] = now_utc.isoformat()
-            logger.info(f"[Prop Firm Baseline] Initialized daily equity baseline for {cycle_date}: ${starting_cap:,.2f}")
+            logger.info(f"[Prop Firm Baseline] Initialized daily equity baseline for {cycle_date} (Account: {account_id or 'default'}): ${starting_cap:,.2f}")
+        elif account_id and not last_account_id:
+            baseline["account_id"] = account_id
 
         # 3. Live Floating Equity Drawdown Check (ROP-03 Primary Guardrail)
         starting_cap = float(baseline.get("starting_equity") or baseline.get("starting_balance") or current_equity)
@@ -3586,6 +3602,14 @@ def check_daily_circuit_breaker(records: dict, live_equity_info: Optional[dict] 
         t for t in completed 
         if str(t.get("closed_at", "")).startswith(cycle_date) and t.get("outcome") in ["WIN", "LOSS", "BREAK_EVEN"]
     ]
+    
+    # Isolate closed trades to the active account to prevent cross-account contamination upon account migration
+    active_account_id = str(live_equity_info.get("account_id") or os.environ.get("CTRADER_ACCOUNT_ID", "")) if live_equity_info else str(os.environ.get("CTRADER_ACCOUNT_ID", ""))
+    if active_account_id:
+        today_trades = [
+            t for t in today_trades
+            if not (t.get("ctrader_receipt", {}).get("account_id") and str(t.get("ctrader_receipt", {}).get("account_id")) != active_account_id)
+        ]
     
     today_r = sum(float(t.get("realized_r", 0.0)) for t in today_trades)
     loss_count = sum(1 for t in today_trades if t.get("outcome") == "LOSS")

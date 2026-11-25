@@ -878,6 +878,71 @@ def test_rop03_daily_circuit_breaker_floating_equity(monkeypatch):
     assert "3.50%" in reason
 
 
+def test_check_daily_circuit_breaker_account_switch_reset(monkeypatch):
+    """Verify check_daily_circuit_breaker resets baseline upon account migration and does not falsely trip."""
+    from datetime import datetime, timezone
+    from market_scanner import check_daily_circuit_breaker
+    import market_scanner as ms
+    monkeypatch.setattr(ms, "BOT_HALT_DAILY_LOSS_PCT", 3.0)
+
+    # Simulated state from retiring a 25k account and activating a 10k account on the same day
+    records = {
+        "daily_equity_baseline": {
+            "date": datetime.now(timezone.utc).strftime("%Y-%m-%d"),
+            "account_id": "49435680",
+            "starting_equity": 24847.77,
+            "starting_balance": 24847.77
+        },
+        "completed_trades": []
+    }
+
+    live_new_account = {
+        "status": "OK",
+        "account_id": "49700506",
+        "balance": 10000.0,
+        "unrealized_pnl": 0.0,
+        "equity": 10000.0
+    }
+
+    tripped, reason = check_daily_circuit_breaker(records, live_new_account)
+    assert tripped is False
+    assert reason == ""
+    assert records["daily_equity_baseline"]["account_id"] == "49700506"
+    assert records["daily_equity_baseline"]["starting_equity"] == 10000.0
+
+
+def test_check_daily_circuit_breaker_legacy_baseline_discrepancy_reset(monkeypatch):
+    """Verify check_daily_circuit_breaker resets legacy baseline missing account_id when equity changes sharply."""
+    from datetime import datetime, timezone
+    from market_scanner import check_daily_circuit_breaker
+    import market_scanner as ms
+    monkeypatch.setattr(ms, "BOT_HALT_DAILY_LOSS_PCT", 3.0)
+
+    # Legacy baseline without account_id
+    records = {
+        "daily_equity_baseline": {
+            "date": datetime.now(timezone.utc).strftime("%Y-%m-%d"),
+            "starting_equity": 24847.77,
+            "starting_balance": 24847.77
+        },
+        "completed_trades": []
+    }
+
+    live_new_account = {
+        "status": "OK",
+        "account_id": "49700506",
+        "balance": 10000.0,
+        "unrealized_pnl": 0.0,
+        "equity": 10000.0
+    }
+
+    tripped, reason = check_daily_circuit_breaker(records, live_new_account)
+    assert tripped is False
+    assert reason == ""
+    assert records["daily_equity_baseline"]["account_id"] == "49700506"
+    assert records["daily_equity_baseline"]["starting_equity"] == 10000.0
+
+
 def _build_test_reconcile_response(positions=None):
     import time
     from ctrader_open_api.messages.OpenApiModelMessages_pb2 import ProtoOAPayloadType

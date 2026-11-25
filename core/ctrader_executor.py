@@ -1496,6 +1496,7 @@ def _query_equity_over_socket(
         "positions": positions_pnl,
         "broker_name": broker_name,
         "trader_login": trader_login,
+        "account_id": account_id,
         "access_rights": access_rights,
         "access_rights_name": rights_name,
         "is_trading_allowed": (access_rights == ProtoOAAccessRights.FULL_ACCESS),
@@ -1548,7 +1549,8 @@ def get_ctrader_account_equity(
             "open_positions_count": 0,
             "positions": [],
             "broker_name": "SIMULATED",
-            "trader_login": 0,
+            "trader_login": acc_id,
+            "account_id": acc_id,
             "access_rights": 0,
             "money_digits": 2,
             "environment": env_name
@@ -1565,6 +1567,7 @@ def get_ctrader_account_equity(
             "positions": [],
             "broker_name": "MOCK",
             "trader_login": acc_id,
+            "account_id": acc_id,
             "access_rights": 0,
             "money_digits": 2,
             "environment": env_name
