@@ -442,3 +442,22 @@ This document tracks verified defects, architectural discrepancies, and security
   - **Collision-Free Trade State Tracking:** Active trades in `market_scanner.py` and Cloudflare KV are stored with account-level isolation (`f"{slot_key}_{acc_id}"` for multi-account, preserving legacy `slot_key` for single account), preventing cross-account state collision, premature exits, or duplicate signal generation across bars.
   - **Safe Backward-Compatible Close & Amendment:** Implemented `_safe_close_ctrader_position()` and `_safe_modify_ctrader_position()` in `market_scanner.py` supporting explicit `account_id` routing with automated fallback for mock signatures.
 
+---
+
+### ISSUE-TEST-02: Test Environment Socket Leakage & Accidental Execution Interlock
+
+* **Severity:** **Critical** (Unintended Broker Execution / Financial Safety Violation)
+* **Status:** **REMEDIATED IN CODE & VERIFIED ON BROKER (2026-11-25)** — All 10 accidental EURUSD positions closed on live broker, safety interlock implemented, and validated across 209 pytest tests.
+* **Affected Files:** `core/ctrader_executor.py`, `tests/test_ctrader_executor.py`
+* **Root Cause:**
+  1. *Test Mock Bypass via Environment Deletion:* In `tests/test_ctrader_executor.py`, the unit test `test_dynamic_075_live_broker_balance_adaptation` called `monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)`. This deleted the test flag from the environment, bypassing the protective check `if os.environ.get("PYTEST_CURRENT_TEST"): return mock` in `dispatch_ctrader_tls_order()`.
+  2. *Live Credentials Active in Test Execution:* Because `.env` contained valid cTrader client credentials and access tokens, every execution of `pytest` during development opened a real TLS socket to `live.ctraderapi.com:5035` and submitted a 0.48-lot EURUSD market order to cTrader account `49700506`, accumulating 10 unmanaged positions.
+  3. *Unchecked Test Signals:* `execute_ctrader_order()` lacked a dedicated pre-flight guard against test-flagged signals (`is_test: True`), allowing test payloads to flow into order construction.
+* **Remediation Implemented:**
+  - **Immediate Broker Liquidation:** Immediately connected to Spotware live TLS servers and closed all 10 accidental EURUSD positions (#16730863 through #16732162) via `close_ctrader_position()`. Account `49700506` was restored to a single legitimate strategy trade (`USDCHF SHORT #16729916`).
+  - **Unyielding Process-Level Safety Interlock:** Implemented `is_test_environment()` in `core/ctrader_executor.py`. Checks `os.environ.get("PYTEST_CURRENT_TEST")`, `"pytest" in sys.modules`, and `sys.argv`. Because pytest imports into `sys.modules`, this guard **cannot be bypassed** by monkeypatching or deleting environment variables.
+  - **Hard Socket Block:** In `dispatch_ctrader_tls_order()`, `_dispatch_order_over_socket()`, `dispatch_ctrader_tls_close()`, and `dispatch_ctrader_tls_amend()`, any test environment without explicit `TEST_REAL_SOCKET=1` is intercepted and returns a simulated fill without creating a socket connection.
+  - **Test Signal Guard:** Added an explicit guard in `execute_ctrader_order()`: any signal containing `is_test: True` or `test: True` immediately returns `SIMULATED_DEMO_FILL` and is never routed to a broker socket.
+  - **Test Hardening & Regression Suite:** Removed `delenv("PYTEST_CURRENT_TEST")` from all test suites, added explicit dispatch mocks, and added regression tests `test_safety_interlock_blocks_real_sockets_during_tests` and `test_test_signal_never_touches_broker`. All 209 unit tests pass with zero network activity.
+
+

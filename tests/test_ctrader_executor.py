@@ -318,7 +318,6 @@ def test_dynamic_075_live_broker_balance_adaptation(monkeypatch):
     and dynamically sizes orders to 0.75% risk without hardcoded balance values."""
     import core.ctrader_executor as ce
     monkeypatch.setattr(ce, "ENABLE_CTRADER_EXECUTION", True)
-    monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)
     monkeypatch.delenv("ACCOUNT_EQUITY", raising=False)
     monkeypatch.setenv("RISK_PCT", "0.75")
 
@@ -329,6 +328,11 @@ def test_dynamic_075_live_broker_balance_adaptation(monkeypatch):
         "unrealized_pnl": 0.0,
         "equity": 10350.50,
         "is_trading_allowed": True
+    })
+
+    # Explicitly mock dispatch_ctrader_tls_order to guarantee zero network activity
+    monkeypatch.setattr(ce, "dispatch_ctrader_tls_order", lambda *args, **kwargs: {
+        "status": "EXECUTED", "position_id": 9990001, "order_id": 9990001
     })
 
     # Incoming signal from 15M scanner
@@ -1371,6 +1375,11 @@ def test_execute_multi_account_concurrent_dispatch(monkeypatch):
 
     monkeypatch.setattr(ce, "get_ctrader_account_equity", mock_get_equity)
 
+    # Explicitly mock dispatch_ctrader_tls_order to guarantee zero network activity
+    monkeypatch.setattr(ce, "dispatch_ctrader_tls_order", lambda *args, **kwargs: {
+        "status": "EXECUTED", "position_id": 9990001, "order_id": 9990001
+    })
+
     sig = {
         "id": "USDCHF_15M_TEST",
         "pair": "USDCHF",
@@ -1420,8 +1429,55 @@ def test_modify_and_close_with_account_id(monkeypatch):
     assert res_close["account_id"] == "98765432"
 
 
+def test_safety_interlock_blocks_real_sockets_during_tests(monkeypatch):
+    """Verify that dispatch_ctrader_tls_order blocks real socket creation when in test environment,
+    even if PYTEST_CURRENT_TEST is deleted from environment."""
+    import core.ctrader_executor as ce
+    from core.ctrader_executor import dispatch_ctrader_tls_order, is_test_environment
+
+    assert is_test_environment() is True
+
+    # Even if someone deliberately deletes PYTEST_CURRENT_TEST
+    monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)
+    assert is_test_environment() is True  # Protected via "pytest" in sys.modules
+
+    # Ensure dispatch blocks real network connection and returns safe mock
+    res = dispatch_ctrader_tls_order(
+        host="live.ctraderapi.com",
+        port=5035,
+        client_id="dummy",
+        client_secret="dummy",
+        access_token="dummy",
+        account_id=12345,
+        order_req=None
+    )
+    assert res["status"] == "EXECUTED"
+    assert res["position_id"] == 9990001
+    assert res["order_id"] == 9990001
 
 
+def test_test_signal_never_touches_broker(monkeypatch):
+    """Verify that any signal with is_test: True returns SIMULATED_DEMO_FILL without executing."""
+    import core.ctrader_executor as ce
+    from core.ctrader_executor import execute_ctrader_order
+
+    monkeypatch.setattr(ce, "ENABLE_CTRADER_EXECUTION", True)
+
+    sig = {
+        "id": "EURUSD_15M_TEST_LONG",
+        "pair": "EURUSD",
+        "direction": "LONG",
+        "entry": 1.08500,
+        "stop_loss": 1.08300,
+        "take_profit": 1.08800,
+        "suggested_lots": 0.50,
+        "is_test": True
+    }
+
+    res = execute_ctrader_order(sig)
+    assert res["status"] == "SIMULATED_DEMO_FILL"
+    assert res["is_test"] is True
+    assert res["position_id"] == 9990001
 
 
 

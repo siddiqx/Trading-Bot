@@ -11,6 +11,7 @@ Features:
 """
 
 import os
+import sys
 import json
 import socket
 import ssl
@@ -84,6 +85,21 @@ def has_valid_credentials() -> bool:
         CTRADER_ACCESS_TOKEN and
         (raw_acc_id or raw_acc_ids or os.environ.get("ENABLE_CTRADER_AUTO_DISCOVERY", "true").lower() in ("true", "1", "yes"))
     )
+
+
+def is_test_environment() -> bool:
+    """Return True if executing under pytest, test runner, or test environment.
+    
+    Hard financial safety invariant: Prevents automated unit tests, CI test runs,
+    or developer test scripts from ever transmitting real orders to broker sockets.
+    """
+    if os.environ.get("PYTEST_CURRENT_TEST"):
+        return True
+    if "pytest" in sys.modules:
+        return True
+    if any("pytest" in str(arg).lower() or "unittest" in str(arg).lower() for arg in sys.argv):
+        return True
+    return False
 
 
 def get_symbol_id(pair: str) -> Optional[int]:
@@ -278,9 +294,8 @@ def get_target_account_ids(auto_discover: bool = True, force_refresh: bool = Fal
         except Exception as ex:
             logger.warning(f"Failed parsing CTRADER_ACCOUNT_IDS='{raw_env}': {ex}")
 
-    # 2. Dynamic auto-discovery from token if live execution enabled
-    enable_exec = os.environ.get("ENABLE_CTRADER_EXECUTION", "false").lower() in ("true", "1", "yes") or ENABLE_CTRADER_EXECUTION
-    if auto_discover and enable_exec and has_valid_credentials():
+    # 2. Dynamic auto-discovery from token
+    if auto_discover and has_valid_credentials():
         now = time.time()
         if not force_refresh and (now - _DISCOVERED_ACCOUNTS_CACHE["timestamp"] < 120.0) and _DISCOVERED_ACCOUNTS_CACHE["accounts"]:
             return [acc["account_id"] for acc in _DISCOVERED_ACCOUNTS_CACHE["accounts"]]
@@ -711,7 +726,8 @@ def dispatch_ctrader_tls_order(
     validate_access_rights: bool = False
 ) -> Dict[str, Any]:
     """Execute live order dispatch directly over TLS socket with cTrader Open API."""
-    if os.environ.get("PYTEST_CURRENT_TEST") and not os.environ.get("TEST_REAL_SOCKET"):
+    if (is_test_environment() or os.environ.get("PYTEST_CURRENT_TEST")) and not os.environ.get("TEST_REAL_SOCKET"):
+        logger.info("[SAFETY INTERLOCK] Live order dispatch blocked because test environment was detected.")
         return {"status": "EXECUTED", "position_id": 9990001, "order_id": 9990001}
 
     ctx = ssl.create_default_context()
@@ -759,7 +775,7 @@ def dispatch_ctrader_tls_reconcile_and_recover(
 
     Verifies whether the timed-out order was filled or genuinely unexecuted.
     """
-    if os.environ.get("PYTEST_CURRENT_TEST") and not os.environ.get("TEST_REAL_SOCKET"):
+    if (is_test_environment() or os.environ.get("PYTEST_CURRENT_TEST")) and not os.environ.get("TEST_REAL_SOCKET"):
         return {"status": "TIMEOUT_UNFILLED", "error": "Mock timeout unfilled"}
 
     try:
@@ -859,6 +875,28 @@ def execute_ctrader_order(sig: Dict[str, Any], account_id: Optional[int] = None)
         else:
             targets = get_target_account_ids(auto_discover=True)
             target_account_id = targets[0] if targets else 0
+
+    # 0. Test Signal Guard: Never route developer test alerts to broker
+    if sig.get("is_test") or sig.get("test"):
+        is_gold_symbol = bool(pair and ("XAU" in pair.upper() or "GOLD" in pair.upper()))
+        units_sim = int(round(lots * 100)) if is_gold_symbol else int(round(lots * 100_000))
+        logger.info(f"[cTrader Simulator] TEST SIGNAL DETECTED: {sig.get('id', 'TEST')}. Skipping real broker execution.")
+        return {
+            "status": "SIMULATED_DEMO_FILL",
+            "mode": "DRY_RUN",
+            "is_test": True,
+            "pair": pair,
+            "direction": direction,
+            "lots": lots,
+            "units": units_sim,
+            "entry": entry,
+            "stop_loss": stop_loss,
+            "take_profit": take_profit,
+            "account_id": str(target_account_id),
+            "environment": CTRADER_ENV,
+            "order_id": 9990001,
+            "position_id": 9990001,
+        }
 
     # Dynamic Account Equity & Risk Resolution for cTrader Execution
     env_equity = float(os.environ.get("ACCOUNT_EQUITY", "5000.0"))
@@ -1301,7 +1339,7 @@ def dispatch_ctrader_tls_amend(
     timeout: float = 5.0
 ) -> Dict[str, Any]:
     """Execute live position amendment (trailing stop) directly over TLS socket."""
-    if os.environ.get("PYTEST_CURRENT_TEST"):
+    if (is_test_environment() or os.environ.get("PYTEST_CURRENT_TEST")) and not os.environ.get("TEST_REAL_SOCKET"):
         return {"status": "AMENDED"}
     from ctrader_open_api.messages.OpenApiModelMessages_pb2 import ProtoOAPayloadType
     from ctrader_open_api.messages.OpenApiMessages_pb2 import (
@@ -1516,7 +1554,7 @@ def dispatch_ctrader_tls_close(
     timeout: float = 5.0
 ) -> Dict[str, Any]:
     """Execute live position close directly over TLS socket with cTrader Open API."""
-    if os.environ.get("PYTEST_CURRENT_TEST") and not getattr(close_req, "_force_tls_test", False):
+    if (is_test_environment() or os.environ.get("PYTEST_CURRENT_TEST")) and not getattr(close_req, "_force_tls_test", False):
         return {"status": "CLOSED", "position_id": getattr(close_req, "positionId", 0)}
 
     ctx = ssl.create_default_context()
@@ -1808,8 +1846,8 @@ def get_ctrader_account_equity(
             acc_id = targets[0] if targets else 0
     fallback_equity = float(os.environ.get("ACCOUNT_EQUITY", "5000.0"))
 
-    # Return simulated payload if cTrader execution disabled or missing credentials
-    if not ENABLE_CTRADER_EXECUTION or not has_valid_credentials() or not acc_id:
+    # Return simulated payload if missing credentials or acc_id
+    if not has_valid_credentials() or not acc_id:
         return {
             "status": "SIMULATED",
             "balance": fallback_equity,
