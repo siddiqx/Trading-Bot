@@ -91,6 +91,7 @@ jobs:
           ACCOUNT_STAGE: ${{ secrets.ACCOUNT_STAGE || 'EVALUATION' }}
           INITIAL_BALANCE: ${{ secrets.INITIAL_BALANCE || '' }}
           RISK_PCT: ${{ secrets.RISK_PCT || '' }}
+          CTRADER_PROXY: ${{ secrets.CTRADER_PROXY || '' }}
           WEBHOOK_SECRET: ${{ secrets.WEBHOOK_SECRET }}
           WORKER_ADMIN_SECRET: ${{ secrets.WORKER_ADMIN_SECRET }}
         run: |
