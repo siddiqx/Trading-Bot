@@ -669,6 +669,35 @@ async function triggerGitHubScanner(env) {
     } else {
       const errBody = await res.text().catch(() => "");
       console.error(`[GitHub Dispatch] Workflow dispatch rejected (HTTP ${res.status}): ${errBody}`);
+      try {
+        const kv = getKv(env);
+        const notifyChatId = getTelegramChatId(env);
+        if (notifyChatId) {
+          let alertedRecently = false;
+          if (kv) {
+            alertedRecently = !!(await kv.get("gh_dispatch_error_alert"));
+          }
+          if (!alertedRecently) {
+            if (kv) {
+              await kv.put("gh_dispatch_error_alert", "1", { expirationTtl: 3600 });
+            }
+            const hint = res.status === 422
+              ? "GitHub Actions workflow <code>scanner.yml</code> appears disabled or un-dispatchable. Re-enable it in GitHub -> Actions -> <b>24/7 Cloud Market Scanner</b>."
+              : "Check <code>GITHUB_TOKEN</code> permissions or workflow status in GitHub Actions.";
+            await sendTelegramMessage(
+              notifyChatId,
+              `⚠️ <b>[CLOUD RECONCILIATION ALERT]</b>\n\n` +
+              `• <b>Dispatch Status:</b> HTTP ${res.status}\n` +
+              `• <b>Impact:</b> Automated Python scan & cTrader broker position reconciliation cannot run until re-enabled.\n` +
+              `• <b>Action:</b> ${hint}`,
+              null,
+              env
+            );
+          }
+        }
+      } catch (notifyErr) {
+        console.error("Failed to send workflow dispatch alert:", notifyErr);
+      }
       return false;
     }
   } catch (e) {

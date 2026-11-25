@@ -1147,16 +1147,32 @@ def check_active_trades(records: dict):
                     broker_already_closed = True
                     if not (hit_tp or hit_sl or hit_ema_exit or is_pending_cancelled or is_pending_manual):
                         latest_px = float(df.iloc[-1]["close"]) if not df.empty else float(entry)
-                        if tp and abs(latest_px - float(tp)) <= (2.5 * pip):
-                            hit_tp = True
-                        elif sl and abs(latest_px - float(sl)) <= (2.5 * pip):
+                        min_low = float(df_trade["low"].min()) if not df_trade.empty else latest_px
+                        max_high = float(df_trade["high"].max()) if not df_trade.empty else latest_px
+
+                        # Check both latest price and full intra-trade price extrema against SL/TP
+                        # (handles cases where cTrader fills TP/SL and price bounces before Yahoo 5m updates
+                        # or touches exact TP without clearing the 1.0 pip third-party spread buffer).
+                        sl_touched = bool(sl and (
+                            (is_long and min_low <= float(sl)) or
+                            ((not is_long) and max_high >= float(sl)) or
+                            abs(latest_px - float(sl)) <= (2.5 * pip)
+                        ))
+                        tp_touched = bool(tp and (
+                            (is_long and max_high >= float(tp)) or
+                            ((not is_long) and min_low <= float(tp)) or
+                            abs(latest_px - float(tp)) <= (2.5 * pip)
+                        ))
+                        if sl_touched:
                             hit_sl = True
+                        elif tp_touched:
+                            hit_tp = True
                         else:
                             is_pending_manual = True
                             trade["pending_exit_price"] = latest_px
                         logger.info(
                             f"[Broker Reconcile] {pair} position #{real_pos_id} already CLOSED on cTrader broker "
-                            f"(last px {latest_px}). Syncing ledger resolution."
+                            f"(last px {latest_px}, range {min_low}-{max_high}). Syncing ledger resolution."
                         )
 
         if cancelled_before_fill:

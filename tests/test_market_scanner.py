@@ -2578,4 +2578,46 @@ def test_broker_truth_guard_prevents_false_yahoo_close_and_syncs_closed_position
     assert modified is False
     assert len(close_calls) == 0
 
+    # Case 4: Broker filled exact SHORT TP (0.83280) without clearing 1.0p Yahoo spread buffer (0.83270)
+    # and bounced +8 pips back to 0.83360 -> must classify as WIN, not MANUAL_CLOSE
+    df_bounce = pd.DataFrame({
+        "time": [t_entry, t_entry + timedelta(minutes=5), t_entry + timedelta(minutes=10)],
+        "open": [0.83598, 0.83350, 0.83285],
+        "high": [0.83610, 0.83360, 0.83370],
+        "low": [0.83340, 0.83275, 0.83282],  # 0.83275 <= 0.83280 TP, > 0.83270 buffer
+        "close": [0.83350, 0.83285, 0.83360],
+        "volume": [100, 100, 100],
+    })
+    monkeypatch.setattr("market_scanner.fetch_candles", lambda *a, **kw: df_bounce)
+    monkeypatch.setattr("market_scanner.get_open_ctrader_positions", lambda **kw: [])
+    rec_short = {
+        "active_trades": {
+            "USDCHF_15M": {
+                "trade_id": "USDCHF_BOUNCE_TP_TEST",
+                "pair": "USDCHF",
+                "symbol": "USDCHF",
+                "ticker": "USDCHF=X",
+                "direction": "SHORT",
+                "timeframe": "15M",
+                "entry": 0.83598,
+                "stop_loss": 0.83798,
+                "take_profit": 0.83280,
+                "sl_pips": 20.0,
+                "tp_pips": 31.8,
+                "rr": 1.59,
+                "pip": 0.0001,
+                "ctrader_position_id": 16729916,
+                "status": "OPEN",
+                "opened_at": t_entry.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            }
+        },
+        "completed_trades": []
+    }
+    check_active_trades(rec_short)
+    assert "USDCHF_15M" not in rec_short["active_trades"]
+    assert len(rec_short["completed_trades"]) == 1
+    assert rec_short["completed_trades"][0]["outcome"] == "WIN"
+    assert rec_short["completed_trades"][0]["exit_price"] == 0.83280
+
+
 
