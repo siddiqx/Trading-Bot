@@ -7,7 +7,7 @@
 ![cTrader Open API](https://img.shields.io/badge/cTrader-Automated_Execution-green?logo=tradingview)
 ![License](https://img.shields.io/badge/License-Proprietary-red)
 ![System Version](https://img.shields.io/badge/System-v3.3.0--Production-success)
-![Test Suite](https://img.shields.io/badge/Tests-216%20Passing-brightgreen)
+![Test Suite](https://img.shields.io/badge/Tests-217%20Passing-brightgreen)
 
 An institutional-grade, **24/7 autonomous systematic algorithmic trading bot, trade journal, and execution gateway** engineered for Forex markets.
 

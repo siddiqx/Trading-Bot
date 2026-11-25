@@ -1643,6 +1643,54 @@ def test_rank3_executor_dynamic_lot_recalculation_across_stages(monkeypatch):
     assert rec_crash["lots"] == 0.08
 
 
+def test_create_connected_tls_socket_direct_and_proxy(monkeypatch):
+    """Verify create_connected_tls_socket handles direct and SOCKS5 proxy configurations cleanly."""
+    import core.ctrader_executor as ce
+
+    # 1. Direct socket path (no proxy configured)
+    monkeypatch.delenv("CTRADER_PROXY", raising=False)
+    monkeypatch.delenv("ALL_PROXY", raising=False)
+
+    connected_calls = []
+    class DummySocket:
+        def settimeout(self, t): pass
+        def connect(self, addr):
+            connected_calls.append(addr)
+        def close(self): pass
+
+    class DummyContext:
+        def wrap_socket(self, s, server_hostname=None):
+            return {"wrapped": s, "host": server_hostname}
+
+    monkeypatch.setattr(ce.socket, "socket", lambda *args, **kwargs: DummySocket())
+    monkeypatch.setattr(ce.ssl, "create_default_context", lambda: DummyContext())
+
+    sock = ce.create_connected_tls_socket("demo.ctraderapi.com", 5035, timeout=5.0)
+    assert connected_calls == [("demo.ctraderapi.com", 5035)]
+    assert sock["host"] == "demo.ctraderapi.com"
+
+    # 2. Proxy path (SOCKS5 proxy configured)
+    monkeypatch.setenv("CTRADER_PROXY", "socks5://testuser:testpass@127.0.0.1:1080")
+    proxy_calls = []
+
+    class DummySocksSocket:
+        def set_proxy(self, proxy_type, addr, port, username, password):
+            proxy_calls.append((proxy_type, addr, port, username, password))
+        def settimeout(self, t): pass
+        def connect(self, addr):
+            proxy_calls.append(("connect", addr))
+        def close(self): pass
+
+    import socks
+    monkeypatch.setattr(socks, "socksocket", lambda *args, **kwargs: DummySocksSocket())
+
+    sock_proxy = ce.create_connected_tls_socket("live.ctraderapi.com", 5035, timeout=8.0)
+    assert len(proxy_calls) == 2
+    assert proxy_calls[0] == (socks.PROXY_TYPE_SOCKS5, "127.0.0.1", 1080, "testuser", "testpass")
+    assert proxy_calls[1] == ("connect", ("live.ctraderapi.com", 5035))
+    assert sock_proxy["host"] == "live.ctraderapi.com"
+
+
 
 
 

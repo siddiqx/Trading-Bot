@@ -125,6 +125,49 @@ def get_symbol_id(pair: str) -> Optional[int]:
     return SYMBOL_MAP.get(clean)
 
 
+def create_connected_tls_socket(host: str, port: int, timeout: float = 10.0) -> ssl.SSLSocket:
+    """
+    Creates and returns a connected TLS socket to the target host and port.
+    Supports optional static proxy routing via CTRADER_PROXY or ALL_PROXY
+    (e.g., 'socks5://user:pass@host:port' or 'http://host:port') to guarantee
+    a single, fixed, static IP address for prop firm anti-ban compliance.
+    """
+    proxy_url = (os.environ.get("CTRADER_PROXY") or os.environ.get("ALL_PROXY") or "").strip()
+    ctx = ssl.create_default_context()
+
+    if proxy_url:
+        try:
+            import socks
+            from urllib.parse import urlparse
+
+            parsed = urlparse(proxy_url)
+            scheme = (parsed.scheme or "socks5").lower()
+            proxy_type = socks.PROXY_TYPE_SOCKS5
+            if "socks4" in scheme:
+                proxy_type = socks.PROXY_TYPE_SOCKS4
+            elif "http" in scheme:
+                proxy_type = socks.PROXY_TYPE_HTTP
+
+            s = socks.socksocket()
+            s.set_proxy(
+                proxy_type=proxy_type,
+                addr=parsed.hostname,
+                port=parsed.port or (1080 if "socks" in scheme else 8080),
+                username=parsed.username,
+                password=parsed.password
+            )
+            s.settimeout(timeout)
+            s.connect((host, port))
+            return ctx.wrap_socket(s, server_hostname=host)
+        except Exception as e:
+            logger.warning(f"[PROXY] Failed to connect via proxy {proxy_url}: {e}. Falling back to direct TLS socket.")
+
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.settimeout(timeout)
+    s.connect((host, port))
+    return ctx.wrap_socket(s, server_hostname=host)
+
+
 def _read_exact(sock: ssl.SSLSocket, num_bytes: int) -> Optional[bytes]:
     """Read exact number of bytes from SSL socket, looping until complete or closed."""
     buf = bytearray()
@@ -210,11 +253,7 @@ def query_authorized_accounts(timeout: float = 8.0) -> List[Dict[str, Any]]:
     active_accounts = []
 
     try:
-        ctx = ssl.create_default_context()
-        with ctx.wrap_socket(socket.socket(), server_hostname=host) as s:
-            s.settimeout(timeout)
-            s.connect((host, CTRADER_PORT))
-
+        with create_connected_tls_socket(host, CTRADER_PORT, timeout) as s:
             # 1. Application Auth
             app_req = ProtoOAApplicationAuthReq()
             app_req.clientId = client_id
@@ -797,10 +836,7 @@ def dispatch_ctrader_tls_order(
         logger.info("[SAFETY INTERLOCK] Live order dispatch blocked because test environment was detected.")
         return {"status": "EXECUTED", "position_id": 9990001, "order_id": 9990001}
 
-    ctx = ssl.create_default_context()
-    with ctx.wrap_socket(socket.socket(), server_hostname=host) as s:
-        s.settimeout(timeout)
-        s.connect((host, port))
+    with create_connected_tls_socket(host, port, timeout) as s:
         try:
             return _dispatch_order_over_socket(
                 s=s,
@@ -852,11 +888,7 @@ def dispatch_ctrader_tls_reconcile_and_recover(
             ProtoOAReconcileReq, ProtoOAReconcileRes
         )
 
-        ctx = ssl.create_default_context()
-        with ctx.wrap_socket(socket.socket(), server_hostname=host) as s:
-            s.settimeout(timeout)
-            s.connect((host, port))
-
+        with create_connected_tls_socket(host, port, timeout) as s:
             # 1. App Auth
             app_req = ProtoOAApplicationAuthReq()
             app_req.clientId = client_id
@@ -1445,11 +1477,7 @@ def dispatch_ctrader_tls_amend(
         ProtoOAExecutionEvent, ProtoOAErrorRes
     )
 
-    ctx = ssl.create_default_context()
-    with ctx.wrap_socket(socket.socket(), server_hostname=host) as s:
-        s.settimeout(timeout)
-        s.connect((host, port))
-
+    with create_connected_tls_socket(host, port, timeout) as s:
         # 1. Application Authentication
         app_req = ProtoOAApplicationAuthReq()
         app_req.clientId = client_id
@@ -1676,10 +1704,7 @@ def dispatch_ctrader_tls_close(
     if (is_test_environment() or os.environ.get("PYTEST_CURRENT_TEST")) and not getattr(close_req, "_force_tls_test", False):
         return {"status": "CLOSED", "position_id": getattr(close_req, "positionId", 0)}
 
-    ctx = ssl.create_default_context()
-    with ctx.wrap_socket(socket.socket(), server_hostname=host) as s:
-        s.settimeout(timeout)
-        s.connect((host, port))
+    with create_connected_tls_socket(host, port, timeout) as s:
         return _dispatch_close_over_socket(
             s=s,
             client_id=client_id,
@@ -1957,10 +1982,7 @@ def dispatch_ctrader_tls_equity(
             "is_trading_allowed": True,
             "money_digits": 2
         }
-    ctx = ssl.create_default_context()
-    with ctx.wrap_socket(socket.socket(), server_hostname=host) as s:
-        s.settimeout(timeout)
-        s.connect((host, port))
+    with create_connected_tls_socket(host, port, timeout) as s:
         return _query_equity_over_socket(
             s=s,
             client_id=client_id,
@@ -2003,10 +2025,7 @@ def get_open_ctrader_positions(
             ProtoOAApplicationAuthReq, ProtoOAAccountAuthReq,
             ProtoOAReconcileReq, ProtoOAReconcileRes
         )
-        ctx = ssl.create_default_context()
-        with ctx.wrap_socket(socket.socket(), server_hostname=host) as s:
-            s.settimeout(timeout)
-            s.connect((host, port := CTRADER_PORT))
+        with create_connected_tls_socket(host, CTRADER_PORT, timeout) as s:
             app_req = ProtoOAApplicationAuthReq()
             app_req.clientId = CTRADER_CLIENT_ID
             app_req.clientSecret = CTRADER_CLIENT_SECRET
