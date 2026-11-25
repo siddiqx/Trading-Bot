@@ -1122,7 +1122,7 @@ async function handleTelegramUpdate(update, env) {
     else if (action === "cmd_active") await sendActiveMessage(chatId, env);
     else if (action === "cmd_prices") await sendPricesMessage(chatId);
     else if (action === "cmd_gold") await sendRadarMessage(chatId, env);
-    else if (action === "cmd_history") await sendHistoryMessage(chatId, "ALL", "ALL", env, 1);
+    else if (action === "cmd_history") await sendHistoryMessage(chatId, "ALL", "recent", env, 1);
     else if (action === "cmd_performance") await sendPerformanceMessage(chatId, "ALL", env);
     else if (action === "cmd_patterns") await sendPatternsMessage(chatId, env);
     else if (action === "cmd_status") await sendStatusMessage(chatId, env);
@@ -1131,14 +1131,14 @@ async function handleTelegramUpdate(update, env) {
     else if (action.startsWith("hist_page_")) {
       const segs = action.split("_"); // hist_page_<PAIR>_<RANGE>_<PAGE>
       const p = (segs[2] || "ALL").toUpperCase();
-      const r = segs[3] || "ALL";
+      const r = (segs[3] || "recent").toLowerCase();
       const pg = Math.max(1, parseInt(segs[4] || "1", 10) || 1);
       await sendHistoryMessage(chatId, p, r, env, pg);
     } else if (action.startsWith("hist_pair_")) {
       const p = action.replace("hist_pair_", "");
-      await sendHistoryMessage(chatId, p, "ALL", env, 1);
+      await sendHistoryMessage(chatId, p, "recent", env, 1);
     } else if (action.startsWith("hist_range_")) {
-      const r = action.replace("hist_range_", "");
+      const r = action.replace("hist_range_", "").toLowerCase();
       await sendHistoryMessage(chatId, "ALL", r, env, 1);
     } else if (action.startsWith("perf_pair_")) {
       const p = action.replace("perf_pair_", "");
@@ -1186,8 +1186,8 @@ async function handleTelegramUpdate(update, env) {
       await sendRadarMessage(chatId, env);
     } else if (cmd === "/history") {
       let filterPair = "ALL";
-      let filterRange = "ALL";
-      const validRanges = ["today", "1d", "7d", "30d", "all"];
+      let filterRange = "recent";
+      const validRanges = ["today", "1d", "7d", "30d", "all", "recent"];
 
       for (let i = 1; i < parts.length; i++) {
         const val = parts[i].toLowerCase();
@@ -1197,7 +1197,7 @@ async function handleTelegramUpdate(update, env) {
           filterPair = parts[i].toUpperCase().replace("/", "");
         }
       }
-      await sendHistoryMessage(chatId, filterPair, filterRange, env);
+      await sendHistoryMessage(chatId, filterPair, filterRange, env, 1);
     } else if (cmd === "/performance" || cmd === "/stats") {
       const filterPair = parts[1] ? parts[1].toUpperCase().replace("/", "") : "ALL";
       await sendPerformanceMessage(chatId, filterPair, env);
@@ -1954,7 +1954,7 @@ async function sendActiveMessage(chatId, env) {
 /**
  * /history - Historical completed trade records ONLY with pair & date range filters
  */
-async function sendHistoryMessage(chatId, filterPair = "ALL", filterRange = "ALL", env, page = 1) {
+async function sendHistoryMessage(chatId, filterPair = "ALL", filterRange = "recent", env, page = 1) {
   const utcNow = new Date().toISOString().replace("T", " ").substring(0, 16) + " UTC";
   const nowMs = Date.now();
   const { completed } = await getLedger(env);
@@ -1968,8 +1968,10 @@ async function sendHistoryMessage(chatId, filterPair = "ALL", filterRange = "ALL
   }
 
   // 2. Filter by Date Range
-  const normRange = String(filterRange || "ALL").toLowerCase();
-  let rangeLabel = "ALL TIME";
+  let normRange = String(filterRange || "recent").toLowerCase();
+  let rangeLabel = "RECENT (Last 5)";
+  let isRecent = false;
+
   if (normRange === "today" || normRange === "1d") {
     rangeLabel = "TODAY";
     const todayStr = new Date().toISOString().substring(0, 10);
@@ -1982,15 +1984,24 @@ async function sendHistoryMessage(chatId, filterPair = "ALL", filterRange = "ALL
     rangeLabel = "LAST 30 DAYS";
     const cutoff = nowMs - (30 * 24 * 60 * 60 * 1000);
     closedTrades = closedTrades.filter(t => new Date(t.closed_at || t.opened_at).getTime() >= cutoff);
+  } else if (normRange === "all") {
+    rangeLabel = "ALL TIME";
+    // Show all trades, paginated
+  } else {
+    normRange = "recent";
+    rangeLabel = "RECENT (Last 5)";
+    isRecent = true;
   }
 
-  // Sort newest-first so latest trades appear at top (#1) and all trades are paginated cleanly
+  // Sort newest-first so latest trades appear at top (#1)
   closedTrades.sort((a, b) => new Date(b.closed_at || b.opened_at || 0).getTime() - new Date(a.closed_at || a.opened_at || 0).getTime());
 
-  const PAGE_SIZE = 12; // Fits safely below Telegram 4096-char limit while showing 10+ trades on Page 1
+  // Default /history view shows strictly the 5 most recent trades.
+  // "All Time", "Today", "7 Days" show full paginated records (10 per page).
+  const PAGE_SIZE = isRecent ? 5 : 10;
   const totalTrades = closedTrades.length;
-  const totalPages = Math.max(1, Math.ceil(totalTrades / PAGE_SIZE));
-  const curPage = Math.min(Math.max(1, parseInt(page || 1, 10) || 1), totalPages);
+  const totalPages = isRecent ? 1 : Math.max(1, Math.ceil(totalTrades / PAGE_SIZE));
+  const curPage = isRecent ? 1 : Math.min(Math.max(1, parseInt(page || 1, 10) || 1), totalPages);
   const startIdx = (curPage - 1) * PAGE_SIZE;
   const pageTrades = closedTrades.slice(startIdx, startIdx + PAGE_SIZE);
 
@@ -2037,11 +2048,15 @@ async function sendHistoryMessage(chatId, filterPair = "ALL", filterRange = "ALL
   }
 
   const pageTag = totalPages > 1 ? ` | Page <b>${curPage}/${totalPages}</b>` : "";
+  const subtitle = isRecent
+    ? `Total Completed: <b>${totalTrades} Trades</b> · <i>Showing latest ${Math.min(PAGE_SIZE, totalTrades)}</i>\n`
+    : `Total Completed: <b>${totalTrades} Trades</b>\n`;
+
   const text = 
     `📜 <b>COMPLETED TRADE HISTORY</b>\n` +
     `━━━━━━━━━━━━━━━━━━\n` +
     `Scope: <b>${normPair}</b> | Range: <b>${rangeLabel}</b>${pageTag}\n` +
-    `Total Completed: <b>${totalTrades} Trades</b>\n` +
+    subtitle +
     `━━━━━━━━━━━━━━━━━━\n\n` +
     bodyText +
     `━━━━━━━━━━━━━━━━━━\n` +
@@ -2049,25 +2064,26 @@ async function sendHistoryMessage(chatId, filterPair = "ALL", filterRange = "ALL
 
   const inlineRows = [
     [
+      { text: "Recent (5)", callback_data: `hist_page_${normPair}_recent_1` },
       { text: "Today", callback_data: `hist_page_${normPair}_today_1` },
       { text: "7 Days", callback_data: `hist_page_${normPair}_7d_1` },
       { text: "All Time", callback_data: `hist_page_${normPair}_all_1` }
     ],
     [
-      { text: "EUR/USD", callback_data: "hist_pair_EURUSD" },
-      { text: "USD/CAD", callback_data: "hist_pair_USDCAD" }
+      { text: "EUR/USD", callback_data: `hist_page_EURUSD_${normRange}_1` },
+      { text: "USD/CAD", callback_data: `hist_page_USDCAD_${normRange}_1` }
     ],
     [
-      { text: "USD/CHF", callback_data: "hist_pair_USDCHF" },
-      { text: "AUD/USD", callback_data: "hist_pair_AUDUSD" }
+      { text: "USD/CHF", callback_data: `hist_page_USDCHF_${normRange}_1` },
+      { text: "AUD/USD", callback_data: `hist_page_AUDUSD_${normRange}_1` }
     ]
   ];
 
-  if (totalPages > 1 || normPair !== "ALL") {
+  if ((!isRecent && totalPages > 1) || normPair !== "ALL") {
     const navRow = [];
-    if (curPage > 1) navRow.push({ text: "⬅️ Newer", callback_data: `hist_page_${normPair}_${normRange}_${curPage - 1}` });
+    if (!isRecent && curPage > 1) navRow.push({ text: "⬅️ Newer", callback_data: `hist_page_${normPair}_${normRange}_${curPage - 1}` });
     if (normPair !== "ALL") navRow.push({ text: "🌐 All Pairs", callback_data: `hist_page_ALL_${normRange}_1` });
-    if (curPage < totalPages) navRow.push({ text: "Older ➡️", callback_data: `hist_page_${normPair}_${normRange}_${curPage + 1}` });
+    if (!isRecent && curPage < totalPages) navRow.push({ text: "Older ➡️", callback_data: `hist_page_${normPair}_${normRange}_${curPage + 1}` });
     if (navRow.length > 0) inlineRows.push(navRow);
   }
 
