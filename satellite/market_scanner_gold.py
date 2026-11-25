@@ -101,7 +101,7 @@ WORKER_SYNC_URL = "https://tradingview-telegram-relay.siddiqsiddiq00012.workers.
 
 def send_telegram_alert(text: str, max_retries: int = 3) -> bool:
     """Dispatches Telegram notifications for Gold signals and exits with 429 backoff."""
-    if os.environ.get("PYTEST_CURRENT_TEST"):
+    if os.environ.get("PYTEST_CURRENT_TEST") or "pytest" in sys.modules:
         logger.info(f"[TELEGRAM SUPPRESSED — test mode] {text[:120]}")
         return True
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:

@@ -1291,7 +1291,7 @@ def execute_multi_account_orders(
     Guarantees sub-second simultaneous execution across all accounts with zero sequential lag.
     Each account dynamically queries its own live balance and sizes its lots independently.
     """
-    targets = account_ids or get_target_account_ids()
+    targets = account_ids if account_ids is not None else get_target_account_ids()
     if not targets:
         return [execute_ctrader_order(sig)]
 

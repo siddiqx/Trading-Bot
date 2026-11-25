@@ -1516,7 +1516,7 @@ def reconcile_and_close_orphaned_ctrader_positions(records: dict) -> bool:
 
 def send_telegram_alert(text: str, max_retries: int = 3) -> bool:
     """Send Telegram message with exponential backoff on rate limit (HTTP 429)."""
-    if os.environ.get("PYTEST_CURRENT_TEST"):
+    if os.environ.get("PYTEST_CURRENT_TEST") or "pytest" in sys.modules:
         logger.info(f"[TELEGRAM SUPPRESSED — test mode] {text[:120]}")
         return True
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
@@ -3697,7 +3697,10 @@ def check_daily_circuit_breaker(records: dict, live_equity_info: Optional[dict] 
     if active_account_id:
         today_trades = [
             t for t in today_trades
-            if not (t.get("ctrader_receipt", {}).get("account_id") and str(t.get("ctrader_receipt", {}).get("account_id")) != active_account_id)
+            if not (
+                (t.get("account_id") or t.get("ctrader_receipt", {}).get("account_id"))
+                and str(t.get("account_id") or t.get("ctrader_receipt", {}).get("account_id")) != active_account_id
+            )
         ]
     
     today_r = sum(float(t.get("realized_r", 0.0)) for t in today_trades)

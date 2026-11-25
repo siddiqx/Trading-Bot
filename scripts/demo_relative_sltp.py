@@ -310,9 +310,8 @@ def run_live_demo_verification(symbol: str, lots: float, keep_open: bool = False
                     account_is_live = acc.isLive
                     break
 
-        # In cTrader Open API, broker-hosted evaluation/trial accounts (e.g. FTMO) are flagged with isLive=True
-        # because they reside on the broker's live server cluster rather than Spotware's sandbox.
-        is_prop_eval = broker_name.lower() in ("ftmo", "the5ers", "fundednext") or allow_prop_trial
+        # Hard Financial Safety Block: Require explicit --allow-prop-trial flag even on FTMO / prop accounts
+        is_prop_eval = bool(allow_prop_trial)
 
         if account_is_live is True and not is_prop_eval:
             print("\n" + "!" * 70)
