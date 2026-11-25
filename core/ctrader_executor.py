@@ -137,28 +137,50 @@ def create_connected_tls_socket(host: str, port: int, timeout: float = 10.0) -> 
 
     if proxy_url:
         try:
-            import socks
             from urllib.parse import urlparse
+            import base64
 
             parsed = urlparse(proxy_url)
             scheme = (parsed.scheme or "socks5").lower()
-            proxy_type = socks.PROXY_TYPE_SOCKS5
-            if "socks4" in scheme:
-                proxy_type = socks.PROXY_TYPE_SOCKS4
-            elif "http" in scheme:
-                proxy_type = socks.PROXY_TYPE_HTTP
 
-            s = socks.socksocket()
-            s.set_proxy(
-                proxy_type=proxy_type,
-                addr=parsed.hostname,
-                port=parsed.port or (1080 if "socks" in scheme else 8080),
-                username=parsed.username,
-                password=parsed.password
-            )
-            s.settimeout(timeout)
-            s.connect((host, port))
-            return ctx.wrap_socket(s, server_hostname=host)
+            if scheme.startswith("http"):
+                # High-reliability HTTP CONNECT tunnel with Basic Proxy-Authorization
+                s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                s.settimeout(timeout)
+                s.connect((parsed.hostname, parsed.port or 80))
+
+                headers = [
+                    f"CONNECT {host}:{port} HTTP/1.1",
+                    f"Host: {host}:{port}",
+                ]
+                if parsed.username:
+                    auth_str = f"{parsed.username}:{parsed.password or ''}"
+                    auth_b64 = base64.b64encode(auth_str.encode()).decode()
+                    headers.append(f"Proxy-Authorization: Basic {auth_b64}")
+                headers.append("User-Agent: cTraderProxyClient/1.0\r\n\r\n")
+
+                s.sendall("\r\n".join(headers).encode())
+                connect_resp = s.recv(4096).decode("latin1", errors="ignore")
+                status_line = connect_resp.split("\r\n")[0]
+                if "200" not in status_line:
+                    raise ConnectionError(f"HTTP CONNECT tunnel rejected by proxy: {status_line}")
+
+                return ctx.wrap_socket(s, server_hostname=host)
+            else:
+                # SOCKS4 / SOCKS5 proxy via PySocks
+                import socks
+                proxy_type = socks.PROXY_TYPE_SOCKS4 if "socks4" in scheme else socks.PROXY_TYPE_SOCKS5
+                s = socks.socksocket()
+                s.set_proxy(
+                    proxy_type=proxy_type,
+                    addr=parsed.hostname,
+                    port=parsed.port or 1080,
+                    username=parsed.username,
+                    password=parsed.password
+                )
+                s.settimeout(timeout)
+                s.connect((host, port))
+                return ctx.wrap_socket(s, server_hostname=host)
         except Exception as e:
             logger.warning(f"[PROXY] Failed to connect via proxy {proxy_url}: {e}. Falling back to direct TLS socket.")
 
