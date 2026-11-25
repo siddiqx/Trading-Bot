@@ -17,8 +17,9 @@ Enforces:
 7. Realistic Institutional Transaction Costs (Spread + Commission + Slippage).
 """
 
+import json
 import os
-from typing import Dict, List, Any
+from typing import Any, Dict, List, Optional, Tuple
 
 # ==============================================================================
 # 1. CANONICAL ASSET UNIVERSE (FOREX ONLY - ZERO GOLD / DERIVATIVES)
@@ -238,5 +239,173 @@ MAX_GOLD_SLIPPAGE_POINTS: float = float(os.getenv("MAX_GOLD_SLIPPAGE_POINTS", "5
 # "MARKET": Standard unconditional market execution with atomic relative SL/TP (recommended; immune to broker range rejection)
 # "MARKET_RANGE": Enforces baseSlippagePrice and slippageInPoints boundary (broker rejects if price drifts beyond tolerance)
 CTRADER_ORDER_TYPE: str = os.getenv("CTRADER_ORDER_TYPE", "MARKET").strip().upper()
+
+# ==============================================================================
+# 7. PHASE-ASYMMETRIC DYNAMIC RISK SIZING (RANK 3 PROP ENGINE)
+# ==============================================================================
+RISK_MODE_DEFAULT: str = "dynamic_rank3"
+ACCOUNT_STAGE_DEFAULT: str = "EVALUATION"
+PROP_STANDARD_TIER_BALANCES: Tuple[float, ...] = (
+    2500.0, 5000.0, 10000.0, 15000.0, 20000.0, 25000.0, 50000.0, 100000.0, 200000.0
+)
+
+# Evaluation (Phase 1 & Phase 2): accelerate above -1.5% DD, throttle hard in drawdown
+RANK3_EVAL_BOOST_RISK_PCT: float = 1.25
+RANK3_EVAL_CAUTION_RISK_PCT: float = 0.75
+RANK3_EVAL_CRASH_GUARD_RISK_PCT: float = 0.40
+RANK3_EVAL_CAUTION_DD_PCT: float = -1.5
+RANK3_EVAL_CRASH_DD_PCT: float = -4.0
+
+# Funded Stage: protect payout license with conservative base & drawdown step-down
+RANK3_FUNDED_NORMAL_RISK_PCT: float = 0.75
+RANK3_FUNDED_DD_GUARD_RISK_PCT: float = 0.50
+RANK3_FUNDED_GUARD_DD_PCT: float = -3.0
+
+
+def _lookup_account_env_override(env_var: str, account_id: Optional[Any]) -> Optional[str]:
+    """Look up a per-account JSON map override (e.g. ACCOUNT_STAGES, INITIAL_BALANCES)."""
+    raw = (os.environ.get(env_var) or "").strip()
+    if not raw or account_id is None:
+        return None
+    try:
+        mapping = json.loads(raw)
+        if isinstance(mapping, dict):
+            key = str(account_id).strip()
+            if key in mapping:
+                return str(mapping[key]).strip()
+    except Exception:
+        return None
+    return None
+
+
+def infer_prop_initial_balance(current_equity: float, configured_initial: float = 0.0) -> float:
+    """Resolve starting prop balance from explicit setting or nearest standard prop tier."""
+    if configured_initial > 0.0:
+        return float(configured_initial)
+    if current_equity <= 0.0:
+        return REFERENCE_ACCOUNT_EQUITY
+
+    best_tier: Optional[float] = None
+    best_rel_dist = float("inf")
+    for tier in PROP_STANDARD_TIER_BALANCES:
+        if 0.88 * tier <= current_equity <= 1.12 * tier:
+            rel_dist = abs(current_equity - tier) / tier
+            if rel_dist < best_rel_dist:
+                best_rel_dist = rel_dist
+                best_tier = tier
+
+    return float(best_tier) if best_tier is not None else float(current_equity)
+
+
+def resolve_rank3_risk_pct(
+    current_equity: float,
+    initial_balance: float = 0.0,
+    account_stage: str = ACCOUNT_STAGE_DEFAULT,
+) -> Tuple[float, Dict[str, Any]]:
+    """Compute Rank 3 Phase-Asymmetric Drawdown-Gated Risk % and diagnostic metadata."""
+    base_bal = infer_prop_initial_balance(current_equity, initial_balance)
+    dd_pct = ((current_equity - base_bal) / base_bal) * 100.0 if base_bal > 0.0 else 0.0
+
+    raw_stage = str(account_stage or ACCOUNT_STAGE_DEFAULT).strip().upper()
+    if raw_stage in ("FUNDED", "LIVE", "PAYOUT"):
+        norm_stage = "FUNDED"
+        if dd_pct >= RANK3_FUNDED_GUARD_DD_PCT:
+            risk_pct = RANK3_FUNDED_NORMAL_RISK_PCT
+            tier = "FUNDED_NORMAL"
+        else:
+            risk_pct = RANK3_FUNDED_DD_GUARD_RISK_PCT
+            tier = "FUNDED_DD_GUARD"
+    else:
+        norm_stage = "EVALUATION"
+        if dd_pct >= RANK3_EVAL_CAUTION_DD_PCT:
+            risk_pct = RANK3_EVAL_BOOST_RISK_PCT
+            tier = "EVAL_BOOST"
+        elif dd_pct >= RANK3_EVAL_CRASH_DD_PCT:
+            risk_pct = RANK3_EVAL_CAUTION_RISK_PCT
+            tier = "EVAL_CAUTION"
+        else:
+            risk_pct = RANK3_EVAL_CRASH_GUARD_RISK_PCT
+            tier = "EVAL_CRASH_GUARD"
+
+    return risk_pct, {
+        "mode": RISK_MODE_DEFAULT,
+        "stage": norm_stage,
+        "tier": tier,
+        "initial_balance": round(base_bal, 2),
+        "dd_pct": round(dd_pct, 2),
+    }
+
+
+def resolve_effective_risk_pct(
+    current_equity: float,
+    explicit_risk_pct: Optional[float] = None,
+    account_id: Optional[Any] = None,
+    default_risk_pct: float = PROP_FIRM_RISK_PCT,
+    prefer_dynamic_over_signal: bool = False,
+) -> Tuple[float, Dict[str, Any]]:
+    """Resolve effective risk % dynamically for live equity, honoring explicit flat overrides.
+
+    Precedence:
+    1. Caller-supplied explicit flat risk (`explicit_risk_pct > 0` when `prefer_dynamic_over_signal=False`).
+    2. Explicit flat mode (`RISK_MODE=flat` or `ENABLE_DYNAMIC_RISK=false`).
+    3. Dynamic Rank 3 mode when `RISK_MODE` is `dynamic`/`dynamic_rank3`/`rank3`.
+    4. When `RISK_MODE` is unset: honor explicit `RISK_PCT` env pin if provided; otherwise run Rank 3.
+    """
+    if explicit_risk_pct is not None and float(explicit_risk_pct) > 0.0 and not prefer_dynamic_over_signal:
+        return float(explicit_risk_pct), {
+            "mode": "explicit_signal",
+            "stage": "CUSTOM",
+            "tier": "EXPLICIT",
+            "initial_balance": float(current_equity),
+            "dd_pct": 0.0,
+        }
+
+    enable_dyn = (os.environ.get("ENABLE_DYNAMIC_RISK") or "true").strip().lower() in ("true", "1", "yes")
+    risk_mode = (os.environ.get("RISK_MODE") or "").strip().lower()
+    env_risk_raw = (os.environ.get("RISK_PCT") or "").strip()
+
+    try:
+        env_risk_val = float(env_risk_raw) if env_risk_raw else 0.0
+    except ValueError:
+        env_risk_val = 0.0
+
+    use_flat = (not enable_dyn) or (risk_mode in ("flat", "fixed", "manual"))
+    if not use_flat and not risk_mode and env_risk_val > 0.0:
+        # Honor explicit RISK_PCT env pin when RISK_MODE is not explicitly dynamic
+        return env_risk_val, {
+            "mode": "flat_env_override",
+            "stage": "CUSTOM",
+            "tier": "ENV_RISK_PCT",
+            "initial_balance": float(current_equity),
+            "dd_pct": 0.0,
+        }
+
+    if use_flat:
+        flat_val = env_risk_val if env_risk_val > 0.0 else float(default_risk_pct)
+        return flat_val, {
+            "mode": "flat",
+            "stage": "CUSTOM",
+            "tier": "FLAT",
+            "initial_balance": float(current_equity),
+            "dd_pct": 0.0,
+        }
+
+    # Resolve per-account or global INITIAL_BALANCE & ACCOUNT_STAGE
+    stage_override = _lookup_account_env_override("ACCOUNT_STAGES", account_id)
+    account_stage = stage_override or os.environ.get("ACCOUNT_STAGE") or ACCOUNT_STAGE_DEFAULT
+
+    init_override = _lookup_account_env_override("INITIAL_BALANCES", account_id)
+    raw_init = init_override if init_override is not None else (os.environ.get("INITIAL_BALANCE") or "")
+    try:
+        configured_init = float(raw_init) if str(raw_init).strip() else 0.0
+    except ValueError:
+        configured_init = 0.0
+
+    return resolve_rank3_risk_pct(
+        current_equity=float(current_equity),
+        initial_balance=configured_init,
+        account_stage=account_stage,
+    )
+
 
 

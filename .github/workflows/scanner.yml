@@ -87,7 +87,10 @@ jobs:
           CTRADER_ACCOUNT_IDS: ${{ secrets.CTRADER_ACCOUNT_IDS || 'auto' }}
           ENABLE_CTRADER_EXECUTION: ${{ secrets.ENABLE_CTRADER_EXECUTION || 'false' }}
           ACCOUNT_EQUITY: ${{ secrets.ACCOUNT_EQUITY || '5000.0' }}
-          RISK_PCT: ${{ secrets.RISK_PCT || '0.75' }}
+          RISK_MODE: ${{ secrets.RISK_MODE || 'dynamic_rank3' }}
+          ACCOUNT_STAGE: ${{ secrets.ACCOUNT_STAGE || 'EVALUATION' }}
+          INITIAL_BALANCE: ${{ secrets.INITIAL_BALANCE || '' }}
+          RISK_PCT: ${{ secrets.RISK_PCT || '' }}
           WEBHOOK_SECRET: ${{ secrets.WEBHOOK_SECRET }}
           WORKER_ADMIN_SECRET: ${{ secrets.WORKER_ADMIN_SECRET }}
         run: |

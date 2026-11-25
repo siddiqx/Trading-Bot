@@ -115,6 +115,7 @@ from core.config import (
     REFERENCE_RISK_BUDGET_USD,
     PROP_FIRM_RISK_PCT,
     PROP_FIRM_RISK_BUDGET_USD,
+    resolve_effective_risk_pct,
     STRATEGY_NAME,
     STRATEGY_VERSION,
     VOLATILITY_CUSHION_ENABLED,
@@ -2596,7 +2597,10 @@ def scan_pair_timeframe(
     """Scans a single pair and timeframe for confirmed Two-Phase Pullback & Rejection setups."""
     now_utc = datetime.now(timezone.utc)
     eff_equity = float(account_equity if (account_equity is not None and account_equity > 0) else DEFAULT_ACCOUNT_EQUITY)
-    eff_risk_pct = float(risk_pct if (risk_pct is not None and risk_pct > 0) else DEFAULT_RISK_PCT)
+    if risk_pct is not None and risk_pct > 0:
+        eff_risk_pct = float(risk_pct)
+    else:
+        eff_risk_pct, _ = resolve_effective_risk_pct(current_equity=eff_equity, default_risk_pct=DEFAULT_RISK_PCT)
 
     # De-whitelisted Pair Guard: USDJPY is de-whitelisted from active trading due to negative statistical expectancy (BoJ intervention chop)
     if pair_name in DEWHITELISTED_PAIRS and not os.environ.get("FORCE_ENABLE_DEWHITELISTED"):
@@ -3604,13 +3608,15 @@ def format_alert_message(sig: dict) -> str:
 
     lots = sig.get("suggested_lots") if sig.get("suggested_lots") is not None else sig.get("calc_lots")
     risk_usd = sig.get("risk_usd") if sig.get("risk_usd") is not None else sig.get("monetary_risk_usd")
+    risk_tier = sig.get("risk_tier")
+    tier_tag = f" · {risk_tier}" if (risk_tier and risk_tier not in ("EXPLICIT", "FALLBACK", "ENV_RISK_PCT")) else ""
 
     if lots is not None and risk_usd is not None:
         lots = float(lots)
         risk_usd = float(risk_usd)
-        risk_line = f"• <b>Position Size:</b> <b>{lots:.2f} Lots</b> (<code>${risk_usd:.2f} USD</code> · ${equity:,.2f} Equity · {pct:.2f}% Risk)\n"
+        risk_line = f"• <b>Position Size:</b> <b>{lots:.2f} Lots</b> (<code>${risk_usd:.2f} USD</code> · ${equity:,.2f} Equity · {pct:.2f}% Risk{tier_tag})\n"
     else:
-        risk_line = f"• <b>Position Size:</b> <b>0.50 Lots</b> (<code>${budget_usd:.2f} USD</code> · ${equity:,.2f} Equity · {pct:.2f}% Risk)\n"
+        risk_line = f"• <b>Position Size:</b> <b>0.50 Lots</b> (<code>${budget_usd:.2f} USD</code> · ${equity:,.2f} Equity · {pct:.2f}% Risk{tier_tag})\n"
 
     # Broker Execution Status
     ctrader_line = ""
@@ -3980,11 +3986,16 @@ def run_scan_cycle():
                 continue
 
             try:
+                active_risk_pct, active_risk_meta = resolve_effective_risk_pct(
+                    current_equity=current_eq,
+                    account_id=CTRADER_ACCOUNT_ID or None,
+                    default_risk_pct=DEFAULT_RISK_PCT,
+                )
                 signals = scan_pair_timeframe(
                     pair_name, cfg, tf, state,
                     ccrs_matrix=ccrs_matrix,
                     account_equity=current_eq,
-                    risk_pct=DEFAULT_RISK_PCT
+                    risk_pct=active_risk_pct
                 )
                 if not signals:
                     telemetry["slots_scanned"].append({"pair": pair_name, "tf": tf, "status": "NO_SETUP", "detail": "Conditions not met"})
@@ -4015,9 +4026,15 @@ def run_scan_cycle():
                     telemetry["signals_generated"] += 1
                     logger.info(f"==> NEW SIGNAL: {sig['pair']} {sig['timeframe']} {sig['direction']} @ {sig['entry']}")
 
-                    # Dynamic Risk Sizing against Live Broker Equity (ROP-03)
+                    # Dynamic Rank 3 Phase-Asymmetric Risk Sizing against Live Broker Equity
                     sig["account_equity"] = current_eq
-                    sig["risk_budget_usd"] = current_eq * (DEFAULT_RISK_PCT / 100.0)
+                    sig["risk_pct"] = active_risk_pct
+                    sig["risk_budget_usd"] = current_eq * (active_risk_pct / 100.0)
+                    sig["risk_mode"] = active_risk_meta.get("mode")
+                    sig["risk_tier"] = active_risk_meta.get("tier")
+                    sig["account_stage"] = active_risk_meta.get("stage")
+                    sig["initial_balance"] = active_risk_meta.get("initial_balance")
+                    sig["drawdown_pct"] = active_risk_meta.get("dd_pct")
                     sig["is_trading_allowed"] = is_trading_allowed
                     sig["access_rights_name"] = access_rights_name
 
@@ -4060,8 +4077,21 @@ def run_scan_cycle():
                         logger.error(f"[Forex Scanner] Aborting trade recording for {sig['pair']}: zero accounts executed successfully.")
                         continue
 
-                    # Attach primary receipt for message formatting
-                    sig["ctrader_receipt"] = successful_receipts[0]
+                    # Attach primary receipt for message formatting and sync resolved dynamic sizing fields
+                    primary_rec = successful_receipts[0]
+                    sig["ctrader_receipt"] = primary_rec
+                    if primary_rec.get("lots"):
+                        sig["suggested_lots"] = float(primary_rec["lots"])
+                    if primary_rec.get("monetary_risk") is not None:
+                        sig["risk_usd"] = float(primary_rec["monetary_risk"])
+                    if primary_rec.get("risk_pct"):
+                        sig["risk_pct"] = float(primary_rec["risk_pct"])
+                    if primary_rec.get("account_equity"):
+                        sig["account_equity"] = float(primary_rec["account_equity"])
+                    if primary_rec.get("risk_tier"):
+                        sig["risk_tier"] = primary_rec["risk_tier"]
+                    if primary_rec.get("account_stage"):
+                        sig["account_stage"] = primary_rec["account_stage"]
                     msg = format_alert_message(sig)
                     if len(successful_receipts) > 1:
                         acc_pills = ", ".join([f"#{r.get('account_id')} ({float(r.get('lots', 0.1)):.2f}L)" for r in successful_receipts])

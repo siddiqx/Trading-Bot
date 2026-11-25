@@ -67,11 +67,22 @@ else:
     SYMBOL_MAP = DEFAULT_SYMBOL_MAP
 
 try:
-    from core.config import MAX_SLIPPAGE_PIPS, MAX_GOLD_SLIPPAGE_POINTS, CTRADER_ORDER_TYPE
+    from core.config import (
+        MAX_SLIPPAGE_PIPS,
+        MAX_GOLD_SLIPPAGE_POINTS,
+        CTRADER_ORDER_TYPE,
+        PROP_FIRM_RISK_PCT,
+        resolve_effective_risk_pct,
+    )
 except ImportError:
     MAX_SLIPPAGE_PIPS = float(os.environ.get("MAX_SLIPPAGE_PIPS", "3.0"))
     MAX_GOLD_SLIPPAGE_POINTS = float(os.getenv("MAX_GOLD_SLIPPAGE_POINTS", "50.0"))
     CTRADER_ORDER_TYPE = os.getenv("CTRADER_ORDER_TYPE", "MARKET").strip().upper()
+    PROP_FIRM_RISK_PCT = 0.75
+
+    def resolve_effective_risk_pct(current_equity, explicit_risk_pct=None, account_id=None, default_risk_pct=0.75, prefer_dynamic_over_signal=False):
+        val = float(explicit_risk_pct) if (explicit_risk_pct and float(explicit_risk_pct) > 0) else float(os.environ.get("RISK_PCT", default_risk_pct))
+        return val, {"mode": "fallback", "stage": "CUSTOM", "tier": "FALLBACK", "initial_balance": float(current_equity), "dd_pct": 0.0}
 
 
 
@@ -958,7 +969,6 @@ def execute_ctrader_order(sig: Dict[str, Any], account_id: Optional[int] = None)
 
     # Dynamic Account Equity & Risk Resolution for cTrader Execution
     env_equity = float(os.environ.get("ACCOUNT_EQUITY", "5000.0"))
-    env_risk_pct = float(os.environ.get("RISK_PCT", "0.75"))
     sig_equity = float(sig.get("account_equity") or sig.get("equity") or 0.0)
     sig_risk_pct = float(sig.get("risk_pct") or 0.0)
 
@@ -991,8 +1001,19 @@ def execute_ctrader_order(sig: Dict[str, Any], account_id: Optional[int] = None)
     else:
         effective_equity = env_equity
 
-    effective_risk_pct = sig_risk_pct if sig_risk_pct > 0.0 else env_risk_pct
+    effective_risk_pct, risk_meta = resolve_effective_risk_pct(
+        current_equity=effective_equity,
+        explicit_risk_pct=(sig_risk_pct if sig_risk_pct > 0.0 else None),
+        account_id=target_account_id,
+        default_risk_pct=PROP_FIRM_RISK_PCT,
+        prefer_dynamic_over_signal=(sig.get("risk_mode") == "dynamic_rank3"),
+    )
     target_budget = effective_equity * (effective_risk_pct / 100.0)
+    logger.info(
+        f"[cTrader Sizing] Account #{target_account_id}: Equity=${effective_equity:,.2f} "
+        f"(Base=${risk_meta.get('initial_balance', effective_equity):,.2f}, DD={risk_meta.get('dd_pct', 0.0):+.2f}%) | "
+        f"Stage={risk_meta.get('stage')} | Tier={risk_meta.get('tier')} | Risk={effective_risk_pct:.2f}% (${target_budget:.2f})"
+    )
 
     symbol_id = get_symbol_id(pair)
     is_gold = "XAU" in pair.upper() or "GOLD" in pair.upper()
@@ -1014,13 +1035,15 @@ def execute_ctrader_order(sig: Dict[str, Any], account_id: Optional[int] = None)
 
     # If lots is missing/zero, or if existing lots breaches target risk budget,
     # or if sig was generated on a mismatched reference equity (e.g. 5,000 vs 25,000),
-    # or if the signal was explicitly under-sized below target risk budget:
-    # Dynamically recalculate lots to guarantee execution risk matches live account equity & risk configuration
-    sig_budget = float(sig.get("risk_budget_usd") or (sig_equity * (effective_risk_pct / 100.0)) if sig_equity > 0 else 0.0)
+    # or if dynamic tier / risk % shifted for this account, or signal was under-sized:
+    # Dynamically recalculate lots to guarantee execution risk matches live account equity & risk tier.
+    sig_budget_pct = sig_risk_pct if sig_risk_pct > 0.0 else effective_risk_pct
+    sig_budget = float(sig.get("risk_budget_usd") or (sig_equity * (sig_budget_pct / 100.0)) if sig_equity > 0 else 0.0)
     need_recalc = (
         lots <= 0.0 or
         estimated_risk > (target_budget * 1.05) or
         (sig_equity > 0 and abs(sig_equity - effective_equity) > 1.0) or
+        (sig_risk_pct > 0.0 and abs(sig_risk_pct - effective_risk_pct) > 0.01) or
         (sig_budget > 0.0 and sig_budget < (target_budget * 0.85))
     )
     if need_recalc:
@@ -1140,11 +1163,20 @@ def execute_ctrader_order(sig: Dict[str, Any], account_id: Optional[int] = None)
             "entry": entry,
             "stop_loss": stop_loss,
             "take_profit": take_profit,
+            "risk_pct": effective_risk_pct,
+            "monetary_risk": round(final_risk, 2),
+            "account_equity": effective_equity,
+            "risk_mode": risk_meta.get("mode"),
+            "risk_tier": risk_meta.get("tier"),
+            "account_stage": risk_meta.get("stage"),
+            "initial_balance": risk_meta.get("initial_balance"),
+            "drawdown_pct": risk_meta.get("dd_pct"),
             "order_type": "MARKET_RANGE" if is_market_range else "MARKET",
             "base_slippage_price": (entry if entry > 0 else None) if is_market_range else None,
             "slippage_in_points": (int(round(float(sig.get("max_gold_slippage_points", MAX_GOLD_SLIPPAGE_POINTS)))) if is_gold else int(round(float(sig.get("max_slippage_pips", MAX_SLIPPAGE_PIPS)) * 10))) if is_market_range else None,
             "order_id": 9990001,
             "position_id": 9990001,
+            "account_id": str(target_account_id),
             "environment": CTRADER_ENV
         }
 
@@ -1321,6 +1353,14 @@ def execute_ctrader_order(sig: Dict[str, Any], account_id: Optional[int] = None)
             "entry": entry,
             "stop_loss": stop_loss,
             "take_profit": take_profit,
+            "risk_pct": effective_risk_pct,
+            "monetary_risk": round(final_risk, 2),
+            "account_equity": effective_equity,
+            "risk_mode": risk_meta.get("mode"),
+            "risk_tier": risk_meta.get("tier"),
+            "account_stage": risk_meta.get("stage"),
+            "initial_balance": risk_meta.get("initial_balance"),
+            "drawdown_pct": risk_meta.get("dd_pct"),
             "order_id": order_id,
             "position_id": position_id,
             "account_id": str(target_account_id),

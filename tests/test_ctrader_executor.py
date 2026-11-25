@@ -1541,5 +1541,108 @@ def test_equity_and_discovery_interlock_during_tests(monkeypatch):
     assert eq["broker_name"] == "MOCK"
 
 
+def test_rank3_phase_asymmetric_tiers_and_initial_inference(monkeypatch):
+    """Verify Rank 3 Evaluation & Funded risk percentages, DD thresholds, and prop tier snapping."""
+    from core.config import infer_prop_initial_balance, resolve_rank3_risk_pct, resolve_effective_risk_pct
+
+    # Standard prop tier auto-inference
+    assert infer_prop_initial_balance(5000.0) == 5000.0
+    assert infer_prop_initial_balance(4780.0) == 5000.0
+    assert infer_prop_initial_balance(5390.0) == 5000.0
+    assert infer_prop_initial_balance(9650.0) == 10000.0
+    assert infer_prop_initial_balance(24100.0) == 25000.0
+    assert infer_prop_initial_balance(4820.0, configured_initial=10000.0) == 10000.0
+
+    # EVALUATION stage boundaries ($5,000 initial):
+    # >= -1.5% DD ($4,925+) -> 1.25% EVAL_BOOST
+    pct, meta = resolve_rank3_risk_pct(5200.0, initial_balance=5000.0, account_stage="EVALUATION")
+    assert pct == 1.25 and meta["tier"] == "EVAL_BOOST" and meta["stage"] == "EVALUATION"
+    pct, meta = resolve_rank3_risk_pct(4925.0, initial_balance=5000.0, account_stage="EVALUATION")
+    assert pct == 1.25 and meta["tier"] == "EVAL_BOOST"
+
+    # -1.51% to -4.0% DD ($4,800 to $4,924.99) -> 0.75% EVAL_CAUTION
+    pct, meta = resolve_rank3_risk_pct(4924.0, initial_balance=5000.0, account_stage="EVALUATION")
+    assert pct == 0.75 and meta["tier"] == "EVAL_CAUTION"
+    pct, meta = resolve_rank3_risk_pct(4800.0, initial_balance=5000.0, account_stage="EVALUATION")
+    assert pct == 0.75 and meta["tier"] == "EVAL_CAUTION"
+
+    # < -4.0% DD (< $4,800) -> 0.40% EVAL_CRASH_GUARD
+    pct, meta = resolve_rank3_risk_pct(4799.0, initial_balance=5000.0, account_stage="EVALUATION")
+    assert pct == 0.40 and meta["tier"] == "EVAL_CRASH_GUARD"
+
+    # FUNDED stage boundaries ($5,000 initial):
+    # >= -3.0% DD ($4,850+) -> 0.75% FUNDED_NORMAL
+    pct, meta = resolve_rank3_risk_pct(5400.0, initial_balance=5000.0, account_stage="FUNDED")
+    assert pct == 0.75 and meta["tier"] == "FUNDED_NORMAL" and meta["stage"] == "FUNDED"
+    pct, meta = resolve_rank3_risk_pct(4850.0, initial_balance=5000.0, account_stage="FUNDED")
+    assert pct == 0.75 and meta["tier"] == "FUNDED_NORMAL"
+
+    # < -3.0% DD (< $4,850) -> 0.50% FUNDED_DD_GUARD
+    pct, meta = resolve_rank3_risk_pct(4849.0, initial_balance=5000.0, account_stage="FUNDED")
+    assert pct == 0.50 and meta["tier"] == "FUNDED_DD_GUARD"
+
+    # Flat override via RISK_MODE=flat + RISK_PCT=0.75
+    monkeypatch.setenv("RISK_MODE", "flat")
+    monkeypatch.setenv("RISK_PCT", "0.75")
+    pct_flat, meta_flat = resolve_effective_risk_pct(5200.0)
+    assert pct_flat == 0.75 and meta_flat["mode"] == "flat"
+
+
+def test_rank3_executor_dynamic_lot_recalculation_across_stages(monkeypatch):
+    """Verify execute_ctrader_order resolves Rank 3 risk dynamically from live account equity & stage."""
+    import core.ctrader_executor as ce
+    monkeypatch.setattr(ce, "ENABLE_CTRADER_EXECUTION", True)
+    monkeypatch.setattr(ce, "CTRADER_CLIENT_ID", "mock_id")
+    monkeypatch.setattr(ce, "CTRADER_CLIENT_SECRET", "mock_sec")
+    monkeypatch.setattr(ce, "CTRADER_ACCESS_TOKEN", "mock_tok")
+    monkeypatch.setenv("RISK_MODE", "dynamic_rank3")
+    monkeypatch.delenv("RISK_PCT", raising=False)
+    monkeypatch.setenv("ACCOUNT_STAGES", '{"1001": "EVALUATION", "1002": "FUNDED"}')
+    monkeypatch.setenv("INITIAL_BALANCES", '{"1001": 5000, "1002": 5000}')
+
+    balances = {1001: 5000.0, 1002: 5000.0}
+    monkeypatch.setattr(ce, "get_ctrader_account_equity", lambda account_id=None: {
+        "status": "OK",
+        "balance": balances[account_id],
+        "equity": balances[account_id],
+        "is_trading_allowed": True,
+    })
+
+    # Scanner passed EVAL_BOOST (1.25%, 0.28 lots) signal metadata with risk_mode='dynamic_rank3'
+    sig = {
+        "pair": "EURUSD",
+        "direction": "LONG",
+        "entry": 1.08500,
+        "stop_loss": 1.08280,
+        "take_profit": 1.08850,
+        "sl_pips": 22.0,
+        "account_equity": 5000.0,
+        "risk_pct": 1.25,
+        "risk_mode": "dynamic_rank3",
+        "suggested_lots": 0.28,
+    }
+
+    receipts = ce.execute_multi_account_orders(sig, account_ids=[1001, 1002])
+    by_acc = {r["account_id"]: r for r in receipts}
+
+    # Account 1001 (EVALUATION at $5,000): 1.25% = $62.50 budget / $220 per lot = 0.28 lots
+    assert by_acc["1001"]["risk_pct"] == 1.25
+    assert by_acc["1001"]["risk_tier"] == "EVAL_BOOST"
+    assert by_acc["1001"]["lots"] == 0.28
+
+    # Account 1002 (FUNDED at $5,000): 0.75% = $37.50 budget / $220 per lot = 0.17 lots
+    assert by_acc["1002"]["risk_pct"] == 0.75
+    assert by_acc["1002"]["risk_tier"] == "FUNDED_NORMAL"
+    assert by_acc["1002"]["lots"] == 0.17
+
+    # Simulate Account 1001 falling to -4.5% DD ($4,775): must crash-guard down to 0.40% ($19.10 / $220 = 0.08 lots)
+    balances[1001] = 4775.0
+    rec_crash = ce.execute_ctrader_order(sig.copy(), account_id=1001)
+    assert rec_crash["risk_pct"] == 0.40
+    assert rec_crash["risk_tier"] == "EVAL_CRASH_GUARD"
+    assert rec_crash["lots"] == 0.08
+
+
+
 
 
