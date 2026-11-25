@@ -351,9 +351,12 @@ async function getLedger(env) {
       }
 
       // If we found active trades in KV, OR if both active and goldActive were explicitly populated in KV
-      const hasExplicitGold = (goldActive !== null && typeof goldActive === "object");
+      // Return from KV if: we have active trades, OR the completed_trades key exists in KV (even if active is empty)
+      // This prevents falling through to the slow GitHub fallback when the account is flat (no open positions)
       const hasActive = (Object.keys(mergedActive).length > 0);
-      if (hasActive || (active !== null && hasExplicitGold)) {
+      const hasKvCompleted = (completed !== null);  // key exists in KV (may be empty array)
+      const hasKvData = hasActive || hasKvCompleted;
+      if (hasKvData) {
         return sanitizeLedger({
           active: mergedActive,
           completed: mergedCompleted
