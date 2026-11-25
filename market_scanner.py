@@ -3596,11 +3596,31 @@ def check_daily_circuit_breaker(records: dict, live_equity_info: Optional[dict] 
                     f"Bot Halt Limit {BOT_HALT_DAILY_LOSS_PCT:.1f}%). Standing down to protect {FIRM_DAILY_LOSS_LIMIT_PCT:.1f}% firm limit."
                 )
 
+    # Determine exact cycle window bounds based on reset_hour
+    if reset_hour == 0:
+        cycle_start_dt = now_utc.replace(hour=0, minute=0, second=0, microsecond=0)
+    elif now_utc.hour >= reset_hour:
+        cycle_start_dt = now_utc.replace(hour=reset_hour, minute=0, second=0, microsecond=0)
+    else:
+        cycle_start_dt = (now_utc - timedelta(days=1)).replace(hour=reset_hour, minute=0, second=0, microsecond=0)
+
+    def is_in_current_cycle(closed_at_str: str) -> bool:
+        if not closed_at_str:
+            return False
+        try:
+            cleaned = closed_at_str.replace("Z", "+00:00")
+            c_dt = datetime.fromisoformat(cleaned)
+            if c_dt.tzinfo is None:
+                c_dt = c_dt.replace(tzinfo=timezone.utc)
+            return c_dt >= cycle_start_dt
+        except Exception:
+            return closed_at_str.startswith(cycle_date)
+
     # 4. Closed Trade R-Loss & Count Check (Secondary Safety Shield)
     completed = records.get("completed_trades", [])
     today_trades = [
         t for t in completed 
-        if str(t.get("closed_at", "")).startswith(cycle_date) and t.get("outcome") in ["WIN", "LOSS", "BREAK_EVEN"]
+        if is_in_current_cycle(str(t.get("closed_at", ""))) and t.get("outcome") in ["WIN", "LOSS", "BREAK_EVEN"]
     ]
     
     # Isolate closed trades to the active account to prevent cross-account contamination upon account migration

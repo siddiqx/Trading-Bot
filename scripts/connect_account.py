@@ -139,14 +139,19 @@ def inspect_and_authorize_account(access_token: str, target_login: int) -> Dict[
             msg.ParseFromString(tok_res[1])
 
             target_acc = None
-            for acc in msg.ctidTraderAccount:
-                if acc.traderLogin == target_login:
-                    target_acc = acc
-                    break
+            if target_login:
+                for acc in msg.ctidTraderAccount:
+                    if acc.traderLogin == target_login:
+                        target_acc = acc
+                        break
 
-            if not target_acc and len(msg.ctidTraderAccount) == 1:
-                # If only 1 account in token, inspect it
-                target_acc = msg.ctidTraderAccount[0]
+            if not target_acc:
+                # Prefer isLive == True account, otherwise newest account in token
+                live_accs = [a for a in msg.ctidTraderAccount if a.isLive]
+                if live_accs:
+                    target_acc = live_accs[-1]
+                elif len(msg.ctidTraderAccount) > 0:
+                    target_acc = msg.ctidTraderAccount[-1]
 
             if not target_acc:
                 s.close()
@@ -292,8 +297,12 @@ def main():
             print("  Attempting to use input directly as an Access Token...")
             access_token = code
 
-    print(f"\n[2/4] Inspecting cTrader Accounts for Login {TARGET_LOGIN}...")
-    acc_info = inspect_and_authorize_account(access_token, TARGET_LOGIN)
+    target_login = TARGET_LOGIN
+    if len(sys.argv) > 2 and sys.argv[2].strip().isdigit():
+        target_login = int(sys.argv[2].strip())
+
+    print(f"\n[2/4] Inspecting cTrader Accounts (Target Login: {target_login or 'Auto-Detect'})...")
+    acc_info = inspect_and_authorize_account(access_token, target_login)
     print(f"  ✓ Found Account ID:    {acc_info['account_id']}")
     print(f"  • Trader Login ID:     {acc_info['trader_login']}")
     print(f"  • Environment:         {acc_info['env'].upper()}")
@@ -301,11 +310,12 @@ def main():
     print(f"  • Balance:             ${acc_info['balance']:,.2f}")
     print(f"  • Access Rights:       {acc_info['rights_name']} (Trading Allowed: {acc_info['is_trading_allowed']})")
 
+    resolved_equity = acc_info["balance"] if acc_info.get("balance", 0) > 0 else TARGET_EQUITY
     updates = {
         "CTRADER_ACCESS_TOKEN": access_token,
         "CTRADER_ACCOUNT_ID": str(acc_info["account_id"]),
         "CTRADER_ENV": acc_info["env"],
-        "ACCOUNT_EQUITY": str(TARGET_EQUITY),
+        "ACCOUNT_EQUITY": str(resolved_equity),
         "ENABLE_CTRADER_EXECUTION": "true" if acc_info["is_trading_allowed"] else "false"
     }
 
