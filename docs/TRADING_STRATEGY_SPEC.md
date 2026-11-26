@@ -82,6 +82,7 @@ Surveillance evaluates completed 15M candle bars during institutional volume hou
    - **10-Bar Donchian Liquidity Sweep:** Intra-bar wick sweeps the 10-bar Donchian extreme and closes back inside the channel (liquidity grab).
 3. **Forex Factory News Filter:** Trade is suppressed if high-impact (Red Folder) economic news occurs within $\pm 30$ minutes, or preliminary Flash PMI releases occur within $\pm 45$ minutes (protecting pre-London 07:30 UTC setups against 08:15 UTC European releases).
 4. **Monday Session Filter:** Monday entries restricted strictly to London volume window (06:00–12:00 UTC).
+5. **Bank Holiday & Liquidity Freeze Filter:** Fresh signal entries are strictly suppressed on major US Federal Reserve bank holidays (Thanksgiving, Black Friday, Christmas, New Year, Good Friday, Memorial Day, Labor Day, etc.) and during the annual Year-End interbank freeze (Dec 24–31), protecting prop accounts from thin holiday liquidity, spread blowouts, and erratic drift.
 
 ### Gold Signal Trigger Conditions (1H Closed Candle)
 Surveillance evaluates completed 1H candle bars during institutional active hours (06:00–18:00 UTC):
