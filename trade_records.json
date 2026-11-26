@@ -560,10 +560,10 @@
     "USDCAD_15M_SHORT"
   ],
   "daily_equity_baseline": {
-    "date": "2026-11-25",
+    "date": "2026-11-26",
     "account_id": "49700506",
-    "starting_equity": 10000.0,
-    "starting_balance": 10000.0,
-    "recorded_at": "2026-11-25T01:53:00.000000+00:00"
+    "starting_equity": 10041.47,
+    "starting_balance": 10041.47,
+    "recorded_at": "2026-11-26T00:02:52.554977+00:00"
   }
 }
