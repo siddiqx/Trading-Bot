@@ -2068,5 +2068,50 @@
       "summary": "Order block level was invalidated by institutional flow after 1 bar(s). Stop-loss executed disciplined capital preservation.",
       "actionable_insight": "Trade adhered strictly to risk geometry. Invalidation was clean and preserved capital."
     }
+  },
+  {
+    "tracking": {
+      "global_trade_no": 20,
+      "volume_no": 1,
+      "volume_trade_no": 20,
+      "volume_id": "VOL_01",
+      "volume_label": "Volume 1 (Trades 1\u2013100)"
+    },
+    "trade_id": "USDCHF_15M_2026-11-26T07:00:00Z_SHORT_CCRS",
+    "pair": "USDCHF",
+    "symbol": "USDCHF",
+    "timeframe": "15M",
+    "direction": "SHORT",
+    "entry_price": 0.83185,
+    "exit_price": 0.83385,
+    "stop_loss": 0.83385,
+    "take_profit": 0.82867,
+    "opened_at": "2026-11-26T07:00:00Z",
+    "closed_at": "2026-11-26T10:11:50Z",
+    "duration_hours": 3.2,
+    "duration_bars": 13,
+    "outcome": "LOSS",
+    "realized_pips": -20.0,
+    "realized_r": -1.0,
+    "excursion_metrics": {
+      "mfe_pips": 3.7,
+      "mfe_r": 0.18,
+      "mae_pips": -21.0,
+      "mae_r": -1.05,
+      "tp_distance_pct_reached": 11.6
+    },
+    "market_regime": {
+      "trading_session": "London Session",
+      "rsi_at_entry": 50.0,
+      "atr_14": 0.0015,
+      "volatility_regime": "NORMAL",
+      "ema_alignment": "BEARISH_EXPANDING",
+      "breakout_candle_wick_ratio": 0.28
+    },
+    "diagnostic": {
+      "primary_factor": "STRUCTURAL_INVALIDATION",
+      "summary": "Order block level was invalidated by institutional flow after 1 bar(s). Stop-loss executed disciplined capital preservation.",
+      "actionable_insight": "Trade adhered strictly to risk geometry. Invalidation was clean and preserved capital."
+    }
   }
 ]
