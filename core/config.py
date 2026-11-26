@@ -80,6 +80,15 @@ CANONICAL_STOP_LOSS_PIPS: float = 22.0
 CANONICAL_TAKE_PROFIT_PIPS: float = 35.0  # Calibrated for optimal expectancy (49.6% Win Rate, 1.37 PF, 4.42% Max DD)
 CANONICAL_RISK_REWARD_RATIO: float = 1.59
 
+# Institutional Expectancy Enhancements (CCRS v3.3.0+)
+# Option 1: Dynamic Target Expansion on Extreme Macro Flow (|D| >= 2.50σ)
+DYNAMIC_TARGET_EXPANSION_ENABLED: bool = os.environ.get("DYNAMIC_TARGET_EXPANSION_ENABLED", "true").lower() in ("true", "1", "yes")
+CCRS_EXTREME_DIVERGENCE_THRESHOLD: float = float(os.environ.get("CCRS_EXTREME_DIVERGENCE_THRESHOLD", "2.50"))
+EXPANDED_TAKE_PROFIT_RR: float = float(os.environ.get("EXPANDED_TAKE_PROFIT_RR", "1.75"))
+
+# Option 2: Higher-Timeframe (HTF) 4H Soft Trend Confluence Gate
+HTF_CONFLUENCE_ENABLED: bool = os.environ.get("HTF_CONFLUENCE_ENABLED", "true").lower() in ("true", "1", "yes")
+
 # Volatility-Cushioned Trailing Stop Parameters (Disabled to prevent profit erosion from pullbacks)
 VOLATILITY_CUSHION_ENABLED: bool = False
 VOLATILITY_CUSHION_TIER1_R: float = 1.20       # At +1.2R (+26.4 pips), advance SL to Tier 1

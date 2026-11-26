@@ -83,6 +83,10 @@ Surveillance evaluates completed 15M candle bars during institutional volume hou
 3. **Forex Factory News Filter:** Trade is suppressed if high-impact (Red Folder) economic news occurs within $\pm 30$ minutes, or preliminary Flash PMI releases occur within $\pm 45$ minutes (protecting pre-London 07:30 UTC setups against 08:15 UTC European releases).
 4. **Monday Session Filter:** Monday entries restricted strictly to London volume window (06:00–12:00 UTC).
 5. **Bank Holiday & Liquidity Freeze Filter:** Fresh signal entries are strictly suppressed on major US Federal Reserve bank holidays (Thanksgiving, Black Friday, Christmas, New Year, Good Friday, Memorial Day, Labor Day, etc.) and during the annual Year-End interbank freeze (Dec 24–31), protecting prop accounts from thin holiday liquidity, spread blowouts, and erratic drift.
+6. **Higher-Timeframe (HTF) 4H Soft Trend Confluence Gate (Option 2):** To eliminate false breakout traps counter to the prevailing higher-timeframe trend, 15M setups must satisfy 4H trend confluence:
+   - **For Long:** Current Price $\ge$ 4H 50-EMA OR 4H 20-EMA slope $\ge 0$.
+   - **For Short:** Current Price $\le$ 4H 50-EMA OR 4H 20-EMA slope $\le 0$.
+   - **Macro Flow Override:** If pairwise divergence $|D| \ge 2.50\sigma$, currency divergence momentum overrides local 4H consolidation.
 
 ### Gold Signal Trigger Conditions (1H Closed Candle)
 Surveillance evaluates completed 1H candle bars during institutional active hours (06:00–18:00 UTC):
@@ -103,8 +107,9 @@ $$\text{SL} = \text{clamp}\Big(\text{SL}_{\text{Floor}}, \, \text{SL}_{\text{Cap
 - **Forex SL:** Bounded strictly between $20.0$ and $25.0$ pips (canonical default: $22.0$ pips).
 - **Gold SL:** Bounded strictly between $\$20.00$ and $\$35.00$/oz ($2.0\times$ 1H ATR).
 
-### Calibrated Take Profit & Volatility Cushion Trailing
-- **Base Take Profit:** $1:1.50$ Risk-to-Reward ratio ($33.0 - 35.0$ pips Forex, $\$30.00 - \$52.50$/oz Gold).
+### Calibrated Take Profit & Dynamic Target Expansion
+- **Canonical Take Profit:** $1:1.50$ to $1:1.59$ Risk-to-Reward ratio ($33.0 - 35.0$ pips Forex, $\$30.00 - \$52.50$/oz Gold).
+- **Dynamic Target Expansion (Option 1):** When pairwise divergence reaches extreme institutional flow ($|D| \ge 2.50\sigma$), the profit target expands automatically from $1:1.50\text{R}$ to $1:1.75\text{R}$ (`EXPANDED_TAKE_PROFIT_RR = 1.75`). This allows winning trades riding heavy momentum to capture additional alpha before reversing.
 - **Volatility Cushion Trailing:**
   - **Tier 1 (+1.20R):** SL advanced to $-0.50$R (halves risk while retaining a wide breathing buffer).
   - **Tier 2 (+1.50R):** SL advanced to $+0.50$R (guarantees profit) and runner TP extended to $+2.00$R.
