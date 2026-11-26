@@ -86,6 +86,7 @@ from satellite.gold_validator import (
 )
 from market_scanner import is_forex_market_open
 from core.news_filter import is_news_window_active
+from core.holiday_filter import is_institutional_holiday
 
 logging.basicConfig(
     level=logging.INFO,
@@ -716,6 +717,13 @@ def run_gold_scan_cycle() -> None:
     if news_active:
         logger.warning(f"High-Impact News Blackout Active for Gold ({news_reason}). Fresh entries suppressed.")
         return
+
+    # 5e. Filter: Bank Holiday & Institutional Liquidity Defense
+    if not os.environ.get("PYTEST_CURRENT_TEST") and not os.environ.get("ALLOW_HOLIDAY_TRADING"):
+        is_holiday, holiday_reason = is_institutional_holiday(now_utc, pair=GOLD_SYMBOL)
+        if is_holiday:
+            logger.info(f"Bank Holiday Active ({holiday_reason}). Fresh Gold entries suppressed to protect capital.")
+            return
 
     # 6. Filter: Active Institutional Trading Hours (06:00 - 18:00 UTC)
     if now_utc.hour not in ACTIVE_TRADING_HOURS:

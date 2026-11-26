@@ -184,6 +184,7 @@ RISK_REWARD: float = FIXED_RISK_REWARD_RATIO      # 1:1.5 before costs
 
 # Prop Firm Account Sizing Parameters (Configurable via environment variables)
 from core.news_filter import is_news_window_active
+from core.holiday_filter import is_institutional_holiday
 from core.ctrader_executor import (
     execute_ctrader_order,
     execute_multi_account_orders,
@@ -2633,6 +2634,15 @@ def scan_pair_timeframe(
         logger.info(f"Skipping {pair_name} ({tf}): Sunday opening gap guard active (avoids illiquid spread widening).")
         return []
 
+    # Bank Holiday & Institutional Liquidity Freeze Guard:
+    # Skip fresh signals during major bank holidays (Thanksgiving, Christmas, New Year, etc.)
+    # to protect accounts from wide spreads, thin liquidity, and erratic drift.
+    if not os.environ.get("PYTEST_CURRENT_TEST") and not os.environ.get("ALLOW_HOLIDAY_TRADING"):
+        is_holiday, holiday_reason = is_institutional_holiday(now_utc, pair=pair_name)
+        if is_holiday:
+            logger.info(f"Skipping {pair_name} ({tf}): Institutional Bank Holiday active ({holiday_reason}). Standing down to preserve capital.")
+            return []
+
     # Monday Session Window Guard: Fresh entries permitted strictly during London volume hours (06:00–12:00 UTC)
     # Filters choppy pre-London Asian hours and post-London afternoon drift (+9.06R backtest improvement, avoids all live losses)
     if not os.environ.get("PYTEST_CURRENT_TEST") and now_utc.weekday() == 0:
@@ -3962,6 +3972,19 @@ def run_scan_cycle():
         sync_worker(records)
         write_step_summary(telemetry, scan_start)
         return 0
+
+    # 4. Bank Holiday & Institutional Liquidity Defense
+    now_utc_check = datetime.now(timezone.utc)
+    if not os.environ.get("PYTEST_CURRENT_TEST") and not os.environ.get("ALLOW_HOLIDAY_TRADING"):
+        is_holiday, holiday_reason = is_institutional_holiday(now_utc_check)
+        if is_holiday:
+            logger.info(f"[Holiday Defense] Global interbank liquidity suspended: {holiday_reason}. Fresh signal entries paused to protect capital.")
+            telemetry["circuit_breaker"] = f"BANK_HOLIDAY_PAUSE ({holiday_reason})"
+            save_state(state)
+            save_trade_records(records)
+            sync_worker(records)
+            write_step_summary(telemetry, scan_start)
+            return 0
     
     logger.info(f"Starting scan cycle. Active floating trades: {list(active_trades_map.keys())}")
     

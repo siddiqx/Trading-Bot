@@ -94,6 +94,10 @@ NEWS_FILTER_BUFFER_MINUTES: int = 30
 FLASH_PMI_BUFFER_MINUTES: int = 45  # Extended buffer for preliminary Flash PMIs (protects 07:30 UTC London open setups)
 NEWS_CALENDAR_URL: str = "https://nfs.faireconomy.media/ff_calendar_thisweek.json"
 
+# Institutional Bank Holiday & Liquidity Freeze Defense
+HOLIDAY_FILTER_ENABLED: bool = os.environ.get("HOLIDAY_FILTER_ENABLED", "true").lower() in ("true", "1", "yes")
+ALLOW_HOLIDAY_TRADING: bool = os.environ.get("ALLOW_HOLIDAY_TRADING", "false").lower() in ("true", "1", "yes")
+
 # Aliases for backwards compatibility with existing imports
 FIXED_TAKE_PROFIT_PIPS: float = CANONICAL_TAKE_PROFIT_PIPS
 FIXED_STOP_LOSS_PIPS: float = CANONICAL_STOP_LOSS_PIPS
