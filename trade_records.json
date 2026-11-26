@@ -679,9 +679,9 @@
   ],
   "daily_equity_baseline": {
     "date": "2026-11-26",
-    "account_id": "49700506",
-    "starting_equity": 10041.47,
-    "starting_balance": 10041.47,
-    "recorded_at": "2026-11-26T00:02:52.554977+00:00"
+    "account_id": "49464417",
+    "starting_equity": 1000.0,
+    "starting_balance": 1000.0,
+    "recorded_at": "2026-11-26T14:37:24.019774+00:00"
   }
 }
