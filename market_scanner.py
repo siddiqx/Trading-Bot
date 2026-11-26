@@ -4055,7 +4055,7 @@ def run_scan_cycle():
                     sig["access_rights_name"] = access_rights_name
 
                     # Stage 2 Automated Prop Execution (cTrader Multi-Account Engine)
-                    target_accounts = get_target_account_ids() if ENABLE_CTRADER_EXECUTION else []
+                    target_accounts = get_target_account_ids()
                     receipts = []
                     try:
                         receipts = execute_multi_account_orders(sig, account_ids=target_accounts)
