@@ -1148,9 +1148,39 @@ async function handleTelegramUpdate(update, env) {
     return new Response("OK", { status: 200 });
   }
 
+  // Intercept Channel Posts (when bot is an admin in a private channel)
+  if (update.channel_post) {
+    const postChat = update.channel_post.chat;
+    const kv = env && (env.TRADE_LEDGER || env.TRADES_KV || env.KV);
+    if (kv && postChat && postChat.id) {
+      try {
+        await kv.put("LAST_VIP_CHANNEL_ID", String(postChat.id));
+        await kv.put("LAST_VIP_CHANNEL_INFO", JSON.stringify(postChat));
+      } catch (e) {}
+    }
+    const postText = (update.channel_post.text || "").trim();
+    if (postText === "/id" || postText === "/start" || postText.startsWith("/test")) {
+      await sendTelegramMessage(postChat.id, `🆔 <b>VIP Channel Registered:</b> <code>${postChat.id}</code>\n<b>Title:</b> ${postChat.title}`, null, env);
+    }
+    return new Response("OK", { status: 200 });
+  }
+
   if (update.message && update.message.text) {
     const chatId = update.message.chat.id;
     let text = update.message.text.trim();
+
+    // Check if user forwarded a message from their private channel
+    const fwdChat = update.message.forward_from_chat || (update.message.forward_origin && update.message.forward_origin.chat);
+    if (fwdChat && fwdChat.id) {
+      const kv = env && (env.TRADE_LEDGER || env.TRADES_KV || env.KV);
+      if (kv) {
+        try {
+          await kv.put("LAST_VIP_CHANNEL_ID", String(fwdChat.id));
+        } catch (e) {}
+      }
+      await sendTelegramMessage(chatId, `🆔 <b>Forwarded Channel ID Detected:</b> <code>${fwdChat.id}</code>\n• <b>Title:</b> ${fwdChat.title || 'Private VIP'}\n\n<i>This ID has been logged for VIP signal streaming.</i>`, null, env);
+      return new Response("OK", { status: 200 });
+    }
     
     // Support both / and \ command prefixes
     if (text.startsWith("\\")) {
@@ -1162,6 +1192,11 @@ async function handleTelegramUpdate(update, env) {
     let cmd = parts[0].toLowerCase().split("@")[0];
     let symbol = parts[1] ? parts[1].toUpperCase().replace("/", "") : null;
     let outcomeArg = parts[2] ? parts[2].toUpperCase() : null;
+
+    if (cmd === "/id") {
+      await sendTelegramMessage(chatId, `🆔 <b>Your Chat ID:</b> <code>${chatId}</code>`, null, env);
+      return new Response("OK", { status: 200 });
+    }
 
     if (cmd.startsWith("/close_")) {
       symbol = cmd.replace("/close_", "").toUpperCase().replace("/", "");
