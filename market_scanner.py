@@ -208,6 +208,7 @@ from core.ctrader_executor import (
     CTRADER_ACCOUNT_ID,
     ENABLE_CTRADER_EXECUTION,
 )
+from core.chart_generator import generate_trade_chart
 
 DEFAULT_ACCOUNT_EQUITY: float = float(os.environ.get("ACCOUNT_EQUITY", "5000.0"))
 DEFAULT_RISK_PCT: float = float(os.environ.get("RISK_PCT", "0.75"))
@@ -1671,6 +1672,143 @@ def send_telegram_alert(
     return overall_success
 
 
+def send_telegram_photo(
+    photo_bytes: bytes,
+    caption: str,
+    max_retries: int = 3,
+    specific_chat_id: str | None = None,
+    protect_content: bool | None = None,
+    bypass_test_mode: bool = False
+) -> bool:
+    """Send high-resolution chart photo to Telegram with HTML caption and text fallback."""
+    if not bypass_test_mode and (os.environ.get("PYTEST_CURRENT_TEST") or "pytest" in sys.modules):
+        logger.info(f"[TELEGRAM PHOTO SUPPRESSED — test mode] {caption[:120]}")
+        return True
+
+    if not TELEGRAM_BOT_TOKEN or not photo_bytes:
+        return send_telegram_alert(
+            caption,
+            max_retries=max_retries,
+            specific_chat_id=specific_chat_id,
+            protect_content=protect_content,
+            bypass_test_mode=bypass_test_mode
+        )
+
+    target_chats = [specific_chat_id.strip()] if specific_chat_id else (
+        [c.strip() for c in TELEGRAM_CHAT_ID.split(",") if c.strip()] if TELEGRAM_CHAT_ID else []
+    )
+    if not target_chats:
+        return False
+
+    use_protect = protect_content if protect_content is not None else TELEGRAM_PROTECT_CONTENT
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendPhoto"
+
+    # Telegram sendPhoto caption character limit is 1024
+    if len(caption) <= 1024:
+        send_caption = caption
+        follow_up_msg = None
+    else:
+        first_line = caption.splitlines()[0] if caption.splitlines() else "QuantFlow Institutional Setup"
+        send_caption = f"{first_line}\n\n<i>Full execution parameters attached below:</i>"
+        follow_up_msg = caption
+
+    overall_success = True
+    for chat in target_chats:
+        sent = False
+        for attempt in range(max_retries):
+            try:
+                with httpx.Client(timeout=20.0) as client:
+                    files = {"photo": ("chart.png", photo_bytes, "image/png")}
+                    data = {
+                        "chat_id": chat,
+                        "caption": send_caption,
+                        "parse_mode": "HTML"
+                    }
+                    if use_protect:
+                        data["protect_content"] = True
+                    resp = client.post(url, data=data, files=files)
+
+                    if resp.status_code == 200:
+                        sent = True
+                        if follow_up_msg:
+                            send_telegram_alert(
+                                follow_up_msg,
+                                max_retries=max_retries,
+                                specific_chat_id=chat,
+                                protect_content=use_protect,
+                                bypass_test_mode=bypass_test_mode
+                            )
+                        break
+
+                    # HTML parse error fallback
+                    if resp.status_code == 400 and "can't parse entities" in resp.text:
+                        clean_caption = re.sub(r"<[^>]*>", "", send_caption)
+                        data["caption"] = clean_caption
+                        data.pop("parse_mode", None)
+                        retry_resp = client.post(url, data=data, files={"photo": ("chart.png", photo_bytes, "image/png")})
+                        if retry_resp.status_code == 200:
+                            sent = True
+                            break
+
+                    if resp.status_code == 429:
+                        retry_after = resp.json().get("parameters", {}).get("retry_after", 2 ** attempt)
+                        time.sleep(retry_after)
+                    else:
+                        logger.error(f"Failed to send Telegram photo to {chat}: {resp.status_code} {resp.text[:200]}")
+                        break
+            except Exception as e:
+                logger.error(f"Error sending Telegram photo to {chat} (attempt {attempt+1}): {e}")
+                if attempt < max_retries - 1:
+                    time.sleep(2 ** attempt)
+
+        if not sent:
+            fb_ok = send_telegram_alert(
+                caption,
+                max_retries=max_retries,
+                specific_chat_id=chat,
+                protect_content=use_protect,
+                bypass_test_mode=bypass_test_mode
+            )
+            overall_success = overall_success and fb_ok
+        else:
+            overall_success = overall_success and True
+
+    return overall_success
+
+
+def _safe_send_telegram_photo(
+    photo_bytes: bytes | None,
+    caption: str,
+    max_retries: int = 3,
+    specific_chat_id: str | None = None,
+    protect_content: bool | None = None
+) -> bool:
+    """Safe dispatch wrapper that supports sending chart photo with text fallback."""
+    if not photo_bytes:
+        return _safe_send_telegram_alert(
+            caption,
+            max_retries=max_retries,
+            specific_chat_id=specific_chat_id,
+            protect_content=protect_content
+        )
+    try:
+        return send_telegram_photo(
+            photo_bytes,
+            caption,
+            max_retries=max_retries,
+            specific_chat_id=specific_chat_id,
+            protect_content=protect_content
+        )
+    except Exception as e:
+        logger.warning(f"_safe_send_telegram_photo error: {e}, falling back to text.")
+        return _safe_send_telegram_alert(
+            caption,
+            max_retries=max_retries,
+            specific_chat_id=specific_chat_id,
+            protect_content=protect_content
+        )
+
+
 def format_channel_signal_message(sig: dict) -> str:
     """Format a clean, institutional, jargon-free trade signal for Telegram channels with prop firm anti-copy formatting."""
     pair = sig.get("pair", "")
@@ -1762,12 +1900,12 @@ def _safe_send_telegram_alert(
             return False
 
 
-def broadcast_commercial_signal(sig: dict, state: dict, extra_footer: str = "") -> dict:
+def broadcast_commercial_signal(sig: dict, state: dict, extra_footer: str = "", df: pd.DataFrame | None = None) -> dict:
     """
     Dual-Channel Commercial Signal Dispatcher:
       - Admin: Receives full quant & sizing details for bot monitoring.
-      - VIP (QuantFlow VIP Club): Clean, jargon-free execution order with DRM content protection.
-      - Public Channel (QuantFlow Institutional FX): Capped at max 4 free signals/week. Extra signals post locked teaser.
+      - VIP (QuantFlow VIP Club): Clean, jargon-free execution order with DRM content protection and chart.
+      - Public Channel (QuantFlow Institutional FX): Capped at max 4 free signals/week with chart. Extra signals post locked teaser.
     """
     now_utc = datetime.now(timezone.utc)
     current_week = now_utc.strftime("%Y-W%W")
@@ -1783,16 +1921,35 @@ def broadcast_commercial_signal(sig: dict, state: dict, extra_footer: str = "") 
 
     results = {"admin_sent": False, "vip_sent": False, "public_sent": False}
 
+    # Generate real market projection chart if candle data is available
+    chart_bytes = None
+    if not (os.environ.get("PYTEST_CURRENT_TEST") or "pytest" in sys.modules):
+        if df is None:
+            try:
+                pair = sig.get("pair")
+                tf = str(sig.get("timeframe", "15m")).lower()
+                ticker = SYMBOLS.get(pair, {}).get("ticker")
+                if ticker:
+                    df = fetch_candles(ticker, tf, range_days="3d")
+            except Exception as e:
+                logger.debug(f"Could not auto-fetch candles for chart: {e}")
+
+        if df is not None and not df.empty:
+            try:
+                chart_bytes = generate_trade_chart(df, sig, trade_status="OPEN")
+            except Exception as e:
+                logger.warning(f"Failed to generate chart for commercial signal: {e}")
+
     # 1. Dispatch to Admin / Owner Primary Chat (Unprotected copy for personal archive)
     admin_id = TELEGRAM_CHAT_ID.split(",")[0].strip() if TELEGRAM_CHAT_ID else ""
     if admin_id and not admin_id.startswith("@"):
-        results["admin_sent"] = _safe_send_telegram_alert(admin_msg, specific_chat_id=admin_id, protect_content=False)
+        results["admin_sent"] = _safe_send_telegram_photo(chart_bytes, admin_msg, specific_chat_id=admin_id, protect_content=False)
 
     # 2. Dispatch to VIP Private Channel (100% of signals, anti-forward content protection enabled)
     vip_chat = TELEGRAM_VIP_CHAT_ID or os.environ.get("TELEGRAM_VIP_CHAT_ID", "").strip()
     if vip_chat:
         vip_msg = channel_msg + "\n\n🔒 <i>QuantFlow VIP Club Exclusive · Protected</i>"
-        results["vip_sent"] = _safe_send_telegram_alert(vip_msg, specific_chat_id=vip_chat, protect_content=True)
+        results["vip_sent"] = _safe_send_telegram_photo(chart_bytes, vip_msg, specific_chat_id=vip_chat, protect_content=True)
 
     # 3. Dispatch to Public Channel (QuantFlow Institutional FX)
     pub_chat = TELEGRAM_PUBLIC_CHAT_ID or "@ccrs_forex_signals"
@@ -1804,7 +1961,7 @@ def broadcast_commercial_signal(sig: dict, state: dict, extra_footer: str = "") 
             f"<i>To trade 100% of setups (10–14 trades/week) + real-time execution, join QuantFlow VIP Club.</i>"
         )
         pub_msg = channel_msg + pub_footer
-        results["public_sent"] = _safe_send_telegram_alert(pub_msg, specific_chat_id=pub_chat, protect_content=True)
+        results["public_sent"] = _safe_send_telegram_photo(chart_bytes, pub_msg, specific_chat_id=pub_chat, protect_content=True)
         state["public_signals_count"] = public_count + 1
         save_state(state)
         logger.info(f"Public signal dispatched ({public_count + 1}/{TELEGRAM_MAX_PUBLIC_SIGNALS_PER_WEEK} for week {current_week}).")
@@ -1920,7 +2077,8 @@ def broadcast_trade_exit(
     realized_r: float,
     pm_record: dict = None,
     records: dict = None,
-    custom_msg: str | None = None
+    custom_msg: str | None = None,
+    df: pd.DataFrame | None = None
 ) -> dict:
     """
     Commercial Multi-Channel Exit Dispatcher:
@@ -1955,7 +2113,26 @@ def broadcast_trade_exit(
         streak = calculate_consecutive_wins(completed, current_outcome="WIN", current_trade_id=tid)
         pub_msg = format_public_tp_celebration(trade, realized_pips, realized_r, streak=streak)
         pub_chat = TELEGRAM_PUBLIC_CHAT_ID or "@ccrs_forex_signals"
-        results["public_sent"] = _safe_send_telegram_alert(pub_msg, specific_chat_id=pub_chat, protect_content=False)
+
+        tp_chart_bytes = None
+        if not (os.environ.get("PYTEST_CURRENT_TEST") or "pytest" in sys.modules):
+            if df is None:
+                try:
+                    pair = trade.get("pair")
+                    tf = str(trade.get("timeframe", "15m")).lower()
+                    ticker = SYMBOLS.get(pair, {}).get("ticker")
+                    if ticker:
+                        df = fetch_candles(ticker, tf, range_days="3d")
+                except Exception as e:
+                    logger.debug(f"Could not auto-fetch candles for TP chart: {e}")
+
+            if df is not None and not df.empty:
+                try:
+                    tp_chart_bytes = generate_trade_chart(df, trade, trade_status="TP_HIT")
+                except Exception as e:
+                    logger.warning(f"Failed to generate TP celebration chart: {e}")
+
+        results["public_sent"] = _safe_send_telegram_photo(tp_chart_bytes, pub_msg, specific_chat_id=pub_chat, protect_content=False)
         logger.info(f"Public TP celebration dispatched to {pub_chat} ({trade.get('pair')}: +{realized_pips:.1f}p, +{realized_r:.2f}R, streak={streak}).")
 
     return results
