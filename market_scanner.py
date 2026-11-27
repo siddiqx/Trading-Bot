@@ -1345,7 +1345,7 @@ def check_active_trades(records: dict):
             trade_id = trade.get("trade_id", "")
             alerted_exits = records.setdefault("alerted_exits", [])
             if trade_id not in alerted_exits:
-                broadcast_trade_exit(trade, outcome, exit_price, realized_pips, realized_r, pm_record=pm_record, records=records)
+                broadcast_trade_exit(trade, outcome, exit_price, realized_pips, realized_r, pm_record=pm_record, records=records, df=df)
                 alerted_exits.append(trade_id)
             else:
                 logger.info(f"Exit alert already dispatched for {trade_id}. Suppressing duplicate.")
@@ -1389,7 +1389,7 @@ def check_active_trades(records: dict):
             trade_id = trade.get("trade_id", "")
             alerted_exits = records.setdefault("alerted_exits", [])
             if trade_id not in alerted_exits:
-                broadcast_trade_exit(trade, outcome, exit_price, realized_pips, realized_r, pm_record=pm_record, records=records)
+                broadcast_trade_exit(trade, outcome, exit_price, realized_pips, realized_r, pm_record=pm_record, records=records, df=df)
                 alerted_exits.append(trade_id)
             else:
                 logger.info(f"Exit alert already dispatched for {trade_id}. Suppressing duplicate.")
@@ -1432,7 +1432,7 @@ def check_active_trades(records: dict):
             trade_id = trade.get("trade_id", "")
             alerted_exits = records.setdefault("alerted_exits", [])
             if trade_id not in alerted_exits:
-                broadcast_trade_exit(trade, outcome, exit_price, realized_pips, realized_r, pm_record=pm_record, records=records)
+                broadcast_trade_exit(trade, outcome, exit_price, realized_pips, realized_r, pm_record=pm_record, records=records, df=df)
                 alerted_exits.append(trade_id)
             else:
                 logger.info(f"Exit alert already dispatched for {trade_id}. Suppressing duplicate.")
@@ -1922,6 +1922,8 @@ def broadcast_commercial_signal(sig: dict, state: dict, extra_footer: str = "", 
     # Generate real market projection chart if candle data is available
     chart_bytes = None
     if not (os.environ.get("PYTEST_CURRENT_TEST") or "pytest" in sys.modules):
+        if df is None:
+            df = sig.get("_df")
         if df is None:
             try:
                 pair = sig.get("pair")
@@ -4316,6 +4318,9 @@ def scan_pair_timeframe(
 
             state["alerted_signals"].append(sig_id)
             
+    for s in signals:
+        s["_df"] = df
+
     return signals
 
 
@@ -4871,7 +4876,7 @@ def run_scan_cycle():
                         multi_acc_text = f"⚡ <b>Multi-Account Fills:</b> <code>{acc_pills}</code>"
 
                     telemetry["telegram_attempts"] += 1
-                    dispatch_res = broadcast_commercial_signal(sig, state, extra_footer=multi_acc_text)
+                    dispatch_res = broadcast_commercial_signal(sig, state, extra_footer=multi_acc_text, df=sig.get("_df"))
                     if any(dispatch_res.values()):
                         telemetry["telegram_successes"] += 1
 
