@@ -1,8 +1,9 @@
 """
 Quantitative Trade Chart Generator (v3.3.0)
-Generates clean, institutional TradingView-styled candlestick charts
-with Long/Short position boxes, 20-EMA dynamic equilibrium curves,
-and high-resolution projection overlays for Telegram channel broadcasts.
+Generates authentic TradingView Mobile-styled candlestick charts
+matching real iPhone / TradingView app screenshots with custom
+Monochrome / Deep Blue institutional candles, Long/Short position boxes,
+and full UI shell (floating drawing toolbar, right-axis badges, and bottom app bar).
 """
 
 import io
@@ -13,7 +14,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
 import matplotlib
-matplotlib.use("Agg")  # Non-interactive headless backend
+matplotlib.use("Agg")  # Headless non-interactive backend
 import matplotlib.patches as patches
 import matplotlib.pyplot as plt
 import numpy as np
@@ -26,147 +27,170 @@ def generate_trade_chart(
     df: pd.DataFrame,
     sig: Dict[str, Any],
     trade_status: str = "OPEN",
-    bars_to_display: int = 55,
-    projection_bars: int = 16
+    bars_to_display: int = 58,
+    projection_bars: int = 18
 ) -> Optional[bytes]:
     """
-    Renders an institutional-grade TradingView-style chart with real market candles,
-    20-EMA, and the Long/Short Position projection box.
+    Renders an authentic, 1:1 TradingView Mobile app chart screenshot
+    anchored to real market data with zero red/green cliche colors.
 
-    Args:
-        df: DataFrame with datetime index and columns ['open', 'high', 'low', 'close']
-        sig: Signal dictionary with ['pair', 'direction', 'entry', 'stop_loss', 'take_profit', 'sl_pips', 'tp_pips', 'rr']
-        trade_status: 'OPEN' (entry signal) or 'TP_HIT' (take profit celebration)
-        bars_to_display: Number of historical candles to show
-        projection_bars: Width of the position tool box in candle bars
-
-    Returns:
-        PNG image bytes in memory, or None on error.
+    Aesthetic:
+      - Clean White TradingView Light Theme (#FFFFFF) with subtle grid (#F0F3FA)
+      - Institutional Monochrome & Royal Blue Candlesticks:
+          • Bullish: Hollow white body with sharp dark outline (#131722)
+          • Bearish: Solid Royal Blue / Navy body (#2962FF / #1855D1)
+      - TradingView Position Tool:
+          • Target Zone: Translucent Sky Blue box (#90CAF9 / #2962FF, alpha=0.45)
+          • Stop Loss Zone: Solid Soft Slate Grey box (#D1D4DC, alpha=0.75)
+          • Diagonal dotted trajectory line
+      - TradingView Right Price Axis Badges:
+          • Stop Loss: High-contrast Dark Badge
+          • Entry: Soft Grey Badge
+          • Take Profit: TradingView Royal Blue Badge
+          • Live Price: Black Badge with candle countdown timer
+      - TradingView Mobile UI Frame:
+          • Top iOS status bar & instrument header
+          • Floating dark drawing toolbar (#1E222D)
+          • Bottom TradingView navigation bar & symbol pill
     """
     if df is None or df.empty or len(df) < 5:
         logger.warning("generate_trade_chart: Insufficient candle data provided.")
         return None
 
     try:
-        pair = sig.get("pair", "FOREX")
+        pair = sig.get("pair", "EURUSD").upper()
         display_pair = f"{pair[:3]}/{pair[3:]}" if len(pair) == 6 else pair
         is_long = sig.get("direction", "LONG").upper() == "LONG"
         timeframe = str(sig.get("timeframe", "15M")).upper()
+        tf_lower = timeframe.lower()
 
         entry = float(sig.get("entry", df.iloc[-1]["close"]))
         sl = float(sig.get("stop_loss", entry * (0.998 if is_long else 1.002)))
         tp = float(sig.get("take_profit", entry * (1.003 if is_long else 0.997)))
-        sl_pips = float(sig.get("sl_pips", 20.0))
-        tp_pips = float(sig.get("tp_pips", 35.0))
-        rr_val = float(sig.get("rr", 1.75))
 
-        # Precision formatting
-        is_jpy = "JPY" in pair.upper()
-        digits = 3 if is_jpy else 5
+        # Precision decimals (3 for JPY, 5 for Forex, 2 for Gold)
+        is_jpy = "JPY" in pair
+        is_gold = "XAU" in pair or "GOLD" in pair
+        digits = 3 if is_jpy else (2 if is_gold else 5)
 
-        # Take last N bars
+        # Slice recent historical candles
         plot_df = df.iloc[-bars_to_display:].copy()
         n = len(plot_df)
+        cur_px = float(plot_df.iloc[-1]["close"])
+        first_px = float(plot_df.iloc[0]["open"])
+        net_change = cur_px - first_px
+        net_change_pct = (net_change / (first_px + 1e-9)) * 100.0
+        change_sign = "+" if net_change >= 0 else ""
 
-        # 20-EMA calculation
-        if "ema20" not in plot_df.columns:
-            plot_df["ema20"] = plot_df["close"].ewm(span=20, adjust=False).mean()
+        # Mobile aspect ratio (1170 x 2400 iPhone ratio -> 5.8 x 12.0 inches @ 150 DPI)
+        fig = plt.figure(figsize=(5.8, 12.0), dpi=150, facecolor="#FFFFFF")
+        
+        # Main chart axis [left, bottom, width, height]
+        ax = fig.add_axes([0.02, 0.055, 0.81, 0.87], facecolor="#FFFFFF")
 
-        # Canvas Setup (TradingView Dark Palette)
-        fig, ax = plt.subplots(figsize=(11.5, 6.2), dpi=150, facecolor="#131722")
-        ax.set_facecolor("#131722")
-
-        # Candlestick Geometry
         x = np.arange(n)
-        candle_width = 0.58
-        wick_width = 0.10
+        candle_w = 0.58
+        wick_w = 0.09
 
+        # Filter up and down candles
         up_mask = plot_df["close"] >= plot_df["open"]
         down_mask = plot_df["close"] < plot_df["open"]
 
         up_df = plot_df[up_mask]
         down_df = plot_df[down_mask]
 
-        # Colors: TradingView Emerald (#089981) and Crimson (#F23645)
-        up_color = "#089981"
-        down_color = "#F23645"
-
-        # Plot Bullish Candles
+        # 1. Bullish Candles: White / Hollow body with sharp dark outline (#131722)
         if not up_df.empty:
             up_x = [plot_df.index.get_loc(idx) for idx in up_df.index]
-            ax.bar(up_x, up_df["close"] - up_df["open"], candle_width, bottom=up_df["open"],
-                   color=up_color, edgecolor=up_color, zorder=3)
-            ax.bar(up_x, up_df["high"] - up_df["close"], wick_width, bottom=up_df["close"],
-                   color=up_color, edgecolor=up_color, zorder=3)
-            ax.bar(up_x, up_df["low"] - up_df["open"], wick_width, bottom=up_df["open"],
-                   color=up_color, edgecolor=up_color, zorder=3)
+            ax.bar(up_x, up_df["close"] - up_df["open"], candle_w, bottom=up_df["open"],
+                   color="#FFFFFF", edgecolor="#131722", linewidth=0.8, zorder=4)
+            ax.bar(up_x, up_df["high"] - up_df["close"], wick_w, bottom=up_df["close"],
+                   color="#131722", edgecolor="#131722", linewidth=0.8, zorder=4)
+            ax.bar(up_x, up_df["low"] - up_df["open"], wick_w, bottom=up_df["open"],
+                   color="#131722", edgecolor="#131722", linewidth=0.8, zorder=4)
 
-        # Plot Bearish Candles
+        # 2. Bearish Candles: Solid Royal Blue (#2962FF) with dark borders
         if not down_df.empty:
             down_x = [plot_df.index.get_loc(idx) for idx in down_df.index]
-            ax.bar(down_x, down_df["close"] - down_df["open"], candle_width, bottom=down_df["open"],
-                   color=down_color, edgecolor=down_color, zorder=3)
-            ax.bar(down_x, down_df["high"] - down_df["open"], wick_width, bottom=down_df["open"],
-                   color=down_color, edgecolor=down_color, zorder=3)
-            ax.bar(down_x, down_df["low"] - down_df["close"], wick_width, bottom=down_df["close"],
-                   color=down_color, edgecolor=down_color, zorder=3)
+            ax.bar(down_x, down_df["close"] - down_df["open"], candle_w, bottom=down_df["open"],
+                   color="#2962FF", edgecolor="#131722", linewidth=0.8, zorder=4)
+            ax.bar(down_x, down_df["high"] - down_df["open"], wick_w, bottom=down_df["open"],
+                   color="#131722", edgecolor="#131722", linewidth=0.8, zorder=4)
+            ax.bar(down_x, down_df["low"] - down_df["close"], wick_w, bottom=down_df["close"],
+                   color="#131722", edgecolor="#131722", linewidth=0.8, zorder=4)
 
-        # Plot 20-EMA Dynamic Trendline
-        ax.plot(x, plot_df["ema20"], color="#FF9800", linewidth=1.5, alpha=0.85, zorder=4)
+        # Position Tool Box Geometry
+        # When trade_status == 'OPEN', project into future bars
+        # When trade_status == 'TP_HIT', box starts at trigger candle and extends through resolution
+        if trade_status == "TP_HIT":
+            box_width = min(26, n // 2)
+            box_start = max(0, n - box_width - 2)
+            box_end = box_start + box_width
+        else:
+            box_start = n - 2
+            box_width = projection_bars
+            box_end = box_start + box_width
 
-        # Long / Short Position Tool Geometry (TradingView Style)
-        box_start = n - 1
-        box_end = box_start + projection_bars
-
-        target_color = "#2962FF"   # TradingView Institutional Blue
-        sl_color = "#787B86"       # Subtle Slate Grey
-
+        # Shaded Boxes matching user TradingView mobile photo:
+        # Grey = Stop Loss zone (#D1D4DC), Sky Blue = Target zone (#90CAF9)
         if is_long:
-            target_box = patches.Rectangle(
-                (box_start, entry), projection_bars, tp - entry,
-                linewidth=1.2, edgecolor=target_color, facecolor=target_color, alpha=0.25, zorder=2
+            tp_box = patches.Rectangle(
+                (box_start, entry), box_width, tp - entry,
+                linewidth=0.8, edgecolor="#2962FF", facecolor="#90CAF9", alpha=0.50, zorder=2
             )
             sl_box = patches.Rectangle(
-                (box_start, sl), projection_bars, entry - sl,
-                linewidth=1.2, edgecolor=sl_color, facecolor=sl_color, alpha=0.22, zorder=2
+                (box_start, sl), box_width, entry - sl,
+                linewidth=0.8, edgecolor="#131722", facecolor="#D1D4DC", alpha=0.75, zorder=2
             )
         else:
-            target_box = patches.Rectangle(
-                (box_start, tp), projection_bars, entry - tp,
-                linewidth=1.2, edgecolor=target_color, facecolor=target_color, alpha=0.25, zorder=2
-            )
             sl_box = patches.Rectangle(
-                (box_start, entry), projection_bars, sl - entry,
-                linewidth=1.2, edgecolor=sl_color, facecolor=sl_color, alpha=0.22, zorder=2
+                (box_start, entry), box_width, sl - entry,
+                linewidth=0.8, edgecolor="#131722", facecolor="#D1D4DC", alpha=0.75, zorder=2
+            )
+            tp_box = patches.Rectangle(
+                (box_start, tp), box_width, entry - tp,
+                linewidth=0.8, edgecolor="#2962FF", facecolor="#90CAF9", alpha=0.50, zorder=2
             )
 
-        ax.add_patch(target_box)
         ax.add_patch(sl_box)
+        ax.add_patch(tp_box)
 
-        # Horizontal Key Levels across Box
-        ax.hlines(entry, box_start, box_end, colors="#FFFFFF", linestyles="--", linewidth=1.0, zorder=5)
-        ax.hlines(tp, box_start, box_end, colors="#00E676", linestyles="-", linewidth=1.4, zorder=5)
-        ax.hlines(sl, box_start, box_end, colors="#FF5252", linestyles="-", linewidth=1.4, zorder=5)
+        # Dotted diagonal projection trajectory
+        ax.plot([box_start, box_end], [entry, tp], color="#787B86", linestyle="--", linewidth=1.0, zorder=3)
 
-        # Diagonal Projection Trajectory
-        ax.plot([box_start, box_end], [entry, tp], color=target_color, linestyle=":", linewidth=1.2, alpha=0.7, zorder=4)
+        # Horizontal level lines
+        ax.hlines(entry, box_start, box_end, colors="#131722", linestyles="-", linewidth=1.0, zorder=5)
+        ax.hlines(sl, box_start, box_end, colors="#131722", linestyles="-", linewidth=1.2, zorder=5)
+        ax.hlines(tp, box_start, box_end, colors="#2962FF", linestyles="-", linewidth=1.2, zorder=5)
 
-        # Level Price Badges (Right Margins)
-        ax.text(box_end + 0.6, tp, f" TP: {tp:.{digits}f} (+{tp_pips:.1f}p · +{rr_val:.2f}R)",
-                color="#00E676", fontsize=8.5, va="center", weight="bold")
-        ax.text(box_end + 0.6, entry, f" Entry: {entry:.{digits}f}",
-                color="#FFFFFF", fontsize=8.5, va="center")
-        ax.text(box_end + 0.6, sl, f" SL: {sl:.{digits}f} (-{sl_pips:.1f}p)",
-                color="#FF5252", fontsize=8.5, va="center", weight="bold")
+        # Live market horizontal crosshair line
+        ax.axhline(cur_px, color="#131722", linestyle=":", linewidth=0.8, alpha=0.85, zorder=4)
 
-        # Format Right-Side Price Axis
+        # Format Axes
         ax.yaxis.tick_right()
         ax.yaxis.set_label_position("right")
-        ax.tick_params(colors="#787B86", labelsize=8, length=4)
-        ax.grid(True, color="#2A2E39", linestyle="--", linewidth=0.5, alpha=0.6)
+        ax.tick_params(colors="#131722", labelsize=8.5, length=3, direction="out")
+        ax.grid(True, color="#F0F3FA", linestyle="-", linewidth=0.8)
 
-        # Format Bottom Time Axis
-        step = max(1, n // 6)
+        # TradingView Right Axis Badges (Exact Replica of TradingView Badges)
+        # 1. Stop Loss Badge (Black badge with white text)
+        ax.text(1.012, sl, f" {sl:.{digits}f} ", transform=ax.get_yaxis_transform(),
+                color="#FFFFFF", backgroundcolor="#131722", fontsize=7.5, weight="bold", va="center")
+
+        # 2. Entry Level Badge (Grey badge)
+        ax.text(1.012, entry, f" {entry:.{digits}f} ", transform=ax.get_yaxis_transform(),
+                color="#FFFFFF", backgroundcolor="#787B86", fontsize=7.5, va="center")
+
+        # 3. Take Profit Badge (TradingView Blue badge)
+        ax.text(1.012, tp, f" {tp:.{digits}f} ", transform=ax.get_yaxis_transform(),
+                color="#FFFFFF", backgroundcolor="#2962FF", fontsize=7.5, weight="bold", va="center")
+
+        # 4. Current Live Price Badge (Black badge with countdown timer)
+        ax.text(1.012, cur_px, f" {cur_px:.{digits}f} \n 02:13 ", transform=ax.get_yaxis_transform(),
+                color="#FFFFFF", backgroundcolor="#000000", fontsize=7.0, weight="bold", va="center")
+
+        # Bottom X-Axis Time Ticks
+        step = max(1, n // 5)
         tick_locs = list(range(0, n, step))
         if plot_df.index is not None and hasattr(plot_df.index[0], "strftime"):
             tick_labels = [plot_df.index[i].strftime("%H:%M") for i in tick_locs]
@@ -175,33 +199,41 @@ def generate_trade_chart(
         else:
             ax.set_xticks([])
 
-        # Header Titles & Status
-        ax.text(0.02, 0.95, f"QuantFlow Institutional FX  |  {display_pair}  •  {timeframe}",
-                transform=ax.transAxes, color="#FFFFFF", fontsize=12, weight="bold", va="top")
+        # Top iOS & TradingView Status Header
+        now_time = datetime.now(timezone.utc).strftime("%H:%M")
+        fig.text(0.05, 0.975, now_time, fontsize=10.5, weight="bold", color="#000000")
+        fig.text(0.50, 0.975, "TradingView", fontsize=9.5, weight="bold", color="#000000", ha="center")
+        fig.text(0.95, 0.975, "91%", fontsize=9.0, color="#000000", ha="right")
 
-        if trade_status == "TP_HIT":
-            status_text = f"[TAKE PROFIT RESOLVED] · +{rr_val:.2f}R PROFIT LOCKED"
-            status_color = "#00E676"
-        else:
-            action_desc = "BUY / LONG SETUP" if is_long else "SELL / SHORT SETUP"
-            status_text = f"{action_desc} · Risk/Reward 1:{rr_val:.2f} · 20-EMA Equilibrium Confluence"
-            status_color = "#00E676" if is_long else "#FF5252"
+        # Instrument & Price Line
+        fig.text(0.05, 0.948, f"● {display_pair} · {tf_lower}", fontsize=11, weight="bold", color="#000000")
+        fig.text(0.05, 0.930, f"{cur_px:.{digits}f}  {change_sign}{net_change:.{digits}f} ({change_sign}{net_change_pct:.2f}%)",
+                 fontsize=8.5, color="#787B86")
 
-        ax.text(0.02, 0.89, status_text, transform=ax.transAxes,
-                color=status_color, fontsize=9.5, weight="bold", va="top")
+        # TradingView Top Floating Drawing Toolbar (Dark rounded bar)
+        tb_box = patches.FancyBboxPatch(
+            (0.32, 0.938), 0.62, 0.030, transform=fig.transFigure,
+            boxstyle="round,pad=0.004", facecolor="#1E222D", edgecolor="#2A2E39", zorder=10
+        )
+        fig.patches.append(tb_box)
+        fig.text(0.63, 0.953, "▢   ╱   ⊣⊢   ☰   [✕]   ▼", color="#FFFFFF", fontsize=8.0, ha="center", va="center", zorder=11)
 
-        # Watermark
-        ax.text(0.98, 0.03, "QuantFlow VIP Club · Systematic Alpha Engine", transform=ax.transAxes,
-                color="#787B86", fontsize=7.5, ha="right", va="bottom", style="italic")
+        # TradingView Bottom Navigation Shell
+        fig.text(0.05, 0.020, "17", fontsize=13, weight="bold", color="#000000")
+        bottom_pill = patches.FancyBboxPatch(
+            (0.18, 0.012), 0.38, 0.024, transform=fig.transFigure,
+            boxstyle="round,pad=0.005", facecolor="#F0F3FA", edgecolor="#E0E3EB", zorder=10
+        )
+        fig.patches.append(bottom_pill)
+        fig.text(0.37, 0.024, f"{pair}   {tf_lower}", fontsize=8.0, weight="bold", color="#131722", ha="center", va="center", zorder=11)
+        fig.text(0.85, 0.020, "⚡", fontsize=11, color="#787B86", ha="center")
 
-        # Axis Limits with Padding
-        ax.set_xlim(-1, box_end + 14)
-        min_price = min(plot_df["low"].min(), sl, tp)
-        max_price = max(plot_df["high"].max(), sl, tp)
-        padding = (max_price - min_price) * 0.10
-        ax.set_ylim(min_price - padding, max_price + padding)
-
-        plt.tight_layout()
+        # Limits & Bounds
+        ax.set_xlim(-1, max(n + 3, box_end + 3))
+        min_p = min(plot_df["low"].min(), sl, tp)
+        max_p = max(plot_df["high"].max(), sl, tp)
+        padding = (max_p - min_p) * 0.08
+        ax.set_ylim(min_p - padding, max_p + padding)
 
         # Render to in-memory byte buffer
         buf = io.BytesIO()
