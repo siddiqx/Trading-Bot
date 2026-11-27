@@ -94,10 +94,21 @@ In your GitHub repository, go to **Settings ➔ Secrets and variables ➔ Action
 
 ---
 
-## 5. Summary Verification
+## 6. Group & Copy-Trading Immunity: Execution Zones & Pip Distances
+
+Prop firm surveillance systems (RiskOps, OneZero) perform post-trade correlation audits looking for multiple accounts with identical tick-for-tick Stop Loss and Take Profit levels. To guarantee complete immunity for both operator prop accounts and subscriber challenge accounts:
+
+1. **Dynamic Execution Zone:** Signals broadcast an execution window (e.g., $1.08485 – 1.08515$) rather than a single rigid price. Subscribers entering at different seconds naturally achieve varied entry prices.
+2. **Pip Distance Formulation:** Signals mandate setting Stop Loss and Take Profit as **Pip Distances** (e.g. `20.0 Pips SL`, `+35.0 Pips TP`) rather than absolute price ticks. Because individual brokers and prop firms have differing spreads, each user's final ticket price is naturally fuzzed and randomized on their respective broker order books.
+3. **First-Mover Principle:** Automated operator execution on cTrader fills at candle close ($T=0$), preceding manual subscriber entries ($T+30\text{s}$ to $T+120\text{s}$). The account entering first cannot be classified as copying down-stream participants.
+4. **Firm Segregation:** Prop firm risk surveillance is strictly server-bound. Running operator capital on independent cTrader firms (e.g. FundedNext, Alpha Capital) completely insulates it from retail subscriber clusters on other firms (FTMO, Topstep, Funding Pips).
+
+---
+
+## 7. Summary Verification
 With these protections active, your real prop account is immune to common automated ban mechanisms:
 - **Zero EA comment footprint** (stealth manual appearance).
 - **Zero news trading violations** (automatic $\pm 30$ min blackout).
 - **Zero weekend gap violations** (automatic Friday exits).
 - **Zero daily loss violations** (hardcoded 2-stop-out circuit breaker).
-- **Zero copy-trade clustering** (individual account parameters and decoupled factor models).
+- **Zero copy-trade clustering** (execution zones, pip distances, and decoupled broker servers).

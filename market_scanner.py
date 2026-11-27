@@ -1672,7 +1672,7 @@ def send_telegram_alert(
 
 
 def format_channel_signal_message(sig: dict) -> str:
-    """Format a clean, institutional, jargon-free trade signal for Telegram channels."""
+    """Format a clean, institutional, jargon-free trade signal for Telegram channels with prop firm anti-copy formatting."""
     pair = sig.get("pair", "")
     display_pair = f"{pair[:3]}/{pair[3:]}" if len(pair) == 6 else pair
     is_long = sig.get("direction") == "LONG"
@@ -1682,6 +1682,18 @@ def format_channel_signal_message(sig: dict) -> str:
     tp_sign = "+"
     tf_val = str(sig.get("timeframe", "15M")).upper()
     rr_val = float(sig.get("rr", 1.75))
+
+    pip = float(sig.get("pip", 0.01 if "JPY" in pair else (0.10 if "XAU" in pair else 0.0001)))
+    digits = 3 if "JPY" in pair else (2 if "XAU" in pair else 5)
+
+    try:
+        entry_val = float(sig["entry"])
+        zone_buffer = 1.5 * pip
+        zone_low = entry_val - zone_buffer
+        zone_high = entry_val + zone_buffer
+        zone_str = f"<code>{zone_low:.{digits}f}</code> – <code>{zone_high:.{digits}f}</code>"
+    except (ValueError, TypeError, KeyError):
+        zone_str = f"<code>{sig.get('entry', '')}</code>"
 
     is_test = sig.get("is_test") or "TEST" in str(sig.get("id", "")).upper()
     test_banner = (
@@ -1696,13 +1708,16 @@ def format_channel_signal_message(sig: dict) -> str:
         f"🧭 <b>Order:</b> <b>{action_text}</b>\n"
         f"⏱ <b>Timeframe:</b> <b>{tf_val}</b>\n"
         f"━━━━━━━━━━━━━━━━━━\n\n"
-        f"📋 <b>ORDER EXECUTION</b>\n"
-        f"• <b>Entry:</b> <code>{sig['entry']}</code>\n"
-        f"• <b>Stop Loss:</b> <code>{sig['stop_loss']}</code> <i>({sl_sign}{sig['sl_pips']} pips)</i>\n"
-        f"• <b>Take Profit:</b> <code>{sig['take_profit']}</code> <i>({tp_sign}{sig['tp_pips']} pips · +{rr_val:.2f}R)</i>\n"
+        f"📋 <b>EXECUTION PARAMETERS</b>\n"
+        f"• <b>Execution Zone:</b> {zone_str}\n"
+        f"• <b>Reference Price:</b> <code>{sig['entry']}</code>\n"
+        f"• <b>Stop Loss Distance:</b> <b>{sig['sl_pips']} Pips</b> <i>(approx. <code>{sig['stop_loss']}</code>)</i>\n"
+        f"• <b>Take Profit Distance:</b> <b>+{sig['tp_pips']} Pips</b> <i>(approx. <code>{sig['take_profit']}</code> · +{rr_val:.2f}R)</i>\n"
         f"• <b>Risk / Reward:</b> <b>1 : {rr_val:.2f}</b>\n"
         f"━━━━━━━━━━━━━━━━━━\n"
-        f"🛡️ <i>Suggested Risk: 1% per trade. Trailing stops and profit-locking are managed automatically.</i>"
+        f"🛡️ <b>PROP FIRM & RISK GUIDELINES:</b>\n"
+        f"• <b>Anti-Copy Protection:</b> Enter anywhere within the Execution Zone. Always set SL and TP using the <b>pip distances</b> rather than a single price tick. This ensures your broker's local spread naturally randomizes your order ticket and protects evaluation accounts from mirror-trading flags.\n"
+        f"• <b>Suggested Risk:</b> 0.50% – 1.00% per trade. Trailing stops and profit-locking are managed automatically."
     )
 
 
