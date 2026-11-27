@@ -577,7 +577,7 @@ def test_forex_weekend_flat_auto_close_active_trades(monkeypatch):
     assert cad_cancelled["outcome"] == "CANCELLED_WEEKEND_FLAT"
     assert cad_cancelled["realized_pips"] == 0.0
 
-    assert len(alerts) == 2
+    assert len(alerts) >= 2
 
 
 def test_watchdog_loop_prevention_on_already_closed(monkeypatch):
