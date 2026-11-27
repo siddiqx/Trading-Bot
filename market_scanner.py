@@ -1617,7 +1617,9 @@ def send_telegram_alert(
         payload = {
             "chat_id": chat,
             "text": text,
-            "parse_mode": "HTML"
+            "parse_mode": "HTML",
+            "disable_web_page_preview": True,
+            "link_preview_options": {"is_disabled": True}
         }
         if use_protect:
             payload["protect_content"] = True

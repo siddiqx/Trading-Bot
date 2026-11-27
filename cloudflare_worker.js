@@ -2844,7 +2844,13 @@ async function sendTelegramMessage(chatId, text, replyMarkup = null, env = null)
   }
 
   const apiUrl = `https://api.telegram.org/bot${token}`;
-  const body = { chat_id: targetChats[0] || chatId, text: text, parse_mode: "HTML" };
+  const body = {
+    chat_id: targetChats[0] || chatId,
+    text: text,
+    parse_mode: "HTML",
+    disable_web_page_preview: true,
+    link_preview_options: { is_disabled: true }
+  };
   if (replyMarkup) body.reply_markup = replyMarkup;
 
   try {
