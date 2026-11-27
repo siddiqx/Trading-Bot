@@ -129,6 +129,22 @@ def send_telegram_alert(text: str, max_retries: int = 3) -> bool:
                     retry_after = int(resp.headers.get("Retry-After", 5))
                     logger.warning(f"Telegram rate limited. Waiting {retry_after}s (attempt {attempt+1}/{max_retries})")
                     time.sleep(retry_after)
+                elif resp.status_code == 400 and ("can't parse entities" in resp.text or "entity" in resp.text.lower()):
+                    logger.warning("Telegram HTML entity parse error for Gold alert. Retrying with plain text fallback.")
+                    import re
+                    plain_text = re.sub(r"<[^>]*>", "", text)
+                    plain_payload = {
+                        "chat_id": TELEGRAM_CHAT_ID,
+                        "text": plain_text,
+                        "disable_web_page_preview": True,
+                    }
+                    fb_resp = client.post(url, json=plain_payload)
+                    if fb_resp.status_code == 200:
+                        logger.info("Gold Telegram alert sent as plain text fallback.")
+                        return True
+                    else:
+                        logger.error(f"Plain text fallback also failed: {fb_resp.status_code} {fb_resp.text[:200]}")
+                        return False
                 else:
                     logger.error(f"Failed to send Telegram alert: HTTP {resp.status_code} {resp.text[:200]}")
                     return False  # Non-retriable client error
