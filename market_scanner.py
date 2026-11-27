@@ -106,6 +106,11 @@ from core.config import (
     CCRS_EXTREME_DIVERGENCE_THRESHOLD,
     EXPANDED_TAKE_PROFIT_RR,
     HTF_CONFLUENCE_ENABLED,
+    TELEGRAM_PUBLIC_CHAT_ID,
+    TELEGRAM_VIP_CHAT_ID,
+    TELEGRAM_MAX_PUBLIC_SIGNALS_PER_WEEK,
+    TELEGRAM_PROTECT_CONTENT,
+    TELEGRAM_VIP_INVITE_LINK,
     CCRS_STATE_MODE,
     CCRS_LOOKBACK_HOURS,
     CCRS_Z_WINDOW_HOURS,
@@ -1576,21 +1581,36 @@ def reconcile_and_close_orphaned_ctrader_positions(records: dict) -> bool:
     return modified
 
 
-def send_telegram_alert(text: str, max_retries: int = 3) -> bool:
-    """Send Telegram message with exponential backoff on rate limit (HTTP 429)."""
+def send_telegram_alert(
+    text: str,
+    max_retries: int = 3,
+    specific_chat_id: str | None = None,
+    protect_content: bool | None = None
+) -> bool:
+    """Send Telegram message with exponential backoff on rate limit (HTTP 429) and optional content protection."""
     if os.environ.get("PYTEST_CURRENT_TEST") or "pytest" in sys.modules:
         logger.info(f"[TELEGRAM SUPPRESSED — test mode] {text[:120]}")
         return True
-    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
+    if not TELEGRAM_BOT_TOKEN:
         if not os.environ.get("PYTEST_CURRENT_TEST"):
-            logger.error("Configuration Error: TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID is missing from environment. Outbound alert dropped.")
+            logger.error("Configuration Error: TELEGRAM_BOT_TOKEN is missing from environment. Outbound alert dropped.")
         else:
             logger.info(f"[TELEGRAM SKIPPED — test mode] {text[:120]}")
         return False
+
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-    target_chats = [c.strip() for c in TELEGRAM_CHAT_ID.split(",") if c.strip()]
+
+    if specific_chat_id:
+        target_chats = [specific_chat_id.strip()]
+    elif TELEGRAM_CHAT_ID:
+        target_chats = [c.strip() for c in TELEGRAM_CHAT_ID.split(",") if c.strip()]
+    else:
+        target_chats = []
+
     if not target_chats:
         return False
+
+    use_protect = protect_content if protect_content is not None else TELEGRAM_PROTECT_CONTENT
 
     overall_success = True
     for chat in target_chats:
@@ -1599,13 +1619,16 @@ def send_telegram_alert(text: str, max_retries: int = 3) -> bool:
             "text": text,
             "parse_mode": "HTML"
         }
+        if use_protect:
+            payload["protect_content"] = True
+
         sent = False
         for attempt in range(max_retries):
             try:
                 with httpx.Client(timeout=10.0) as client:
                     resp = client.post(url, json=payload)
                     if resp.status_code == 200:
-                        logger.info(f"Telegram alert sent successfully to {chat}.")
+                        logger.info(f"Telegram alert sent successfully to {chat} (protected={use_protect}).")
                         sent = True
                         break
                     elif resp.status_code == 429:
@@ -1623,6 +1646,80 @@ def send_telegram_alert(text: str, max_retries: int = 3) -> bool:
             overall_success = False
 
     return overall_success
+
+
+def format_locked_teaser_message(sig: dict) -> str:
+    """Format a high-converting locked teaser for the public channel when weekly quota is reached."""
+    pair = sig.get("pair", "FOREX")
+    direction = sig.get("direction", "LONG")
+    dir_icon = "🟢" if direction == "LONG" else "🔴"
+    div_val = sig.get("divergence", 0.0)
+    tf_str = sig.get("timeframe", "15M")
+    setup_name = sig.get("setup_name", "CCRS Precision Retest / Sweep")
+    invite_url = TELEGRAM_VIP_INVITE_LINK or "https://t.me/ccrs_forex_signals"
+
+    return (
+        f"🔒 <b>NEW INSTITUTIONAL SETUP GENERATED: {dir_icon} {pair} ({direction})</b>\n\n"
+        f"• <b>Timeframe:</b> <code>{tf_str} · 1H Macro Flow</code>\n"
+        f"• <b>Execution Trigger:</b> <code>{setup_name}</code>\n"
+        f"• <b>Macro Divergence:</b> <code>{div_val:+.2f}σ</code>\n"
+        f"• <b>Target Geometry:</b> <code>Direct 1:1.75R Dynamic Take Profit</code>\n"
+        f"• <b>Status:</b> <b>ACTIVE EXCLUSIVELY IN VIP CHANNEL</b>\n\n"
+        f"⚠️ <i>Weekly public quota reached ({TELEGRAM_MAX_PUBLIC_SIGNALS_PER_WEEK}/{TELEGRAM_MAX_PUBLIC_SIGNALS_PER_WEEK} signals shared this week). Exact Entry, Stop Loss, and Dynamic Take Profit are streaming live to VIP members.</i>\n\n"
+        f"💎 <b>Upgrade to VIP for 100% Unlocked Signals & Copy-Execution:</b>\n"
+        f"👉 <a href='{invite_url}'><b>Join VIP Channel Here</b></a>"
+    )
+
+
+def broadcast_commercial_signal(sig: dict, state: dict, extra_footer: str = "") -> dict:
+    """
+    Dual-Channel Commercial Signal Dispatcher:
+      - Admin & VIP: Receives 100% of signals with anti-forwarding content protection.
+      - Public Channel: Capped at maximum 4 full signals/week. Extra signals post a locked teaser.
+    """
+    now_utc = datetime.now(timezone.utc)
+    current_week = now_utc.strftime("%Y-W%W")
+    if state.get("public_signals_week") != current_week:
+        state["public_signals_week"] = current_week
+        state["public_signals_count"] = 0
+
+    base_msg = format_alert_message(sig)
+    if extra_footer:
+        base_msg += f"\n{extra_footer}"
+
+    results = {"admin_sent": False, "vip_sent": False, "public_sent": False}
+
+    # 1. Dispatch to Admin / Owner Primary Chat (Unprotected copy for personal archive)
+    admin_id = TELEGRAM_CHAT_ID.split(",")[0].strip() if TELEGRAM_CHAT_ID else ""
+    if admin_id and not admin_id.startswith("@"):
+        results["admin_sent"] = send_telegram_alert(base_msg, specific_chat_id=admin_id, protect_content=False)
+
+    # 2. Dispatch to VIP Private Channel (100% of signals, anti-forward content protection enabled)
+    vip_chat = TELEGRAM_VIP_CHAT_ID or os.environ.get("TELEGRAM_VIP_CHAT_ID", "").strip()
+    if vip_chat:
+        vip_msg = base_msg + "\n\n🔒 <i>VIP Channel Exclusive · Forwarding & Copy Protected</i>"
+        results["vip_sent"] = send_telegram_alert(vip_msg, specific_chat_id=vip_chat, protect_content=True)
+
+    # 3. Dispatch to Public Channel (@ccrs_forex_signals)
+    pub_chat = TELEGRAM_PUBLIC_CHAT_ID or "@ccrs_forex_signals"
+    public_count = state.get("public_signals_count", 0)
+
+    if public_count < TELEGRAM_MAX_PUBLIC_SIGNALS_PER_WEEK:
+        pub_footer = (
+            f"\n\n🎁 <b>Free Public Signal ({public_count + 1}/{TELEGRAM_MAX_PUBLIC_SIGNALS_PER_WEEK} this week)</b>\n"
+            f"<i>To trade 100% of setups (10–14 trades/week) + real-time execution, join our VIP Channel.</i>"
+        )
+        pub_msg = base_msg + pub_footer
+        results["public_sent"] = send_telegram_alert(pub_msg, specific_chat_id=pub_chat, protect_content=True)
+        state["public_signals_count"] = public_count + 1
+        save_state(state)
+        logger.info(f"Public signal dispatched ({public_count + 1}/{TELEGRAM_MAX_PUBLIC_SIGNALS_PER_WEEK} for week {current_week}).")
+    else:
+        teaser_msg = format_locked_teaser_message(sig)
+        results["public_sent"] = send_telegram_alert(teaser_msg, specific_chat_id=pub_chat, protect_content=False)
+        logger.info(f"Weekly public quota reached ({public_count}/{TELEGRAM_MAX_PUBLIC_SIGNALS_PER_WEEK}). Dispatched locked VIP teaser.")
+
+    return results
 
 
 def get_live_price(ticker: str, pip: float, digits: int) -> float | None:
@@ -4262,14 +4359,14 @@ def run_scan_cycle():
                         sig["risk_tier"] = primary_rec["risk_tier"]
                     if primary_rec.get("account_stage"):
                         sig["account_stage"] = primary_rec["account_stage"]
-                    msg = format_alert_message(sig)
+                    multi_acc_text = ""
                     if len(successful_receipts) > 1:
                         acc_pills = ", ".join([f"#{r.get('account_id')} ({float(r.get('lots', 0.1)):.2f}L)" for r in successful_receipts])
-                        msg += f"\n⚡ <b>Multi-Account Fills:</b> <code>{acc_pills}</code>"
+                        multi_acc_text = f"⚡ <b>Multi-Account Fills:</b> <code>{acc_pills}</code>"
 
                     telemetry["telegram_attempts"] += 1
-                    sent = send_telegram_alert(msg)
-                    if sent:
+                    dispatch_res = broadcast_commercial_signal(sig, state, extra_footer=multi_acc_text)
+                    if any(dispatch_res.values()):
                         telemetry["telegram_successes"] += 1
 
                     # Register newly opened active trade(s) in journal
