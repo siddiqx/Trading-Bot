@@ -682,10 +682,10 @@
     "USDCHF_15M_2026-11-26T07:00:00Z_SHORT_CCRS"
   ],
   "daily_equity_baseline": {
-    "date": "2026-11-26",
+    "date": "2026-11-27",
     "account_id": "49464417",
-    "starting_equity": 1000.0,
-    "starting_balance": 1000.0,
-    "recorded_at": "2026-11-26T14:37:24.019774+00:00"
+    "starting_equity": 5000.0,
+    "starting_balance": 5000.0,
+    "recorded_at": "2026-11-27T00:02:52.758165+00:00"
   }
 }
