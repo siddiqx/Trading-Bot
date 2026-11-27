@@ -1853,9 +1853,7 @@ def format_channel_signal_message(sig: dict) -> str:
         f"• <b>Take Profit Distance:</b> <b>+{sig['tp_pips']} Pips</b> <i>(approx. <code>{sig['take_profit']}</code> · +{rr_val:.2f}R)</i>\n"
         f"• <b>Risk / Reward:</b> <b>1 : {rr_val:.2f}</b>\n"
         f"━━━━━━━━━━━━━━━━━━\n"
-        f"🛡️ <b>PROP FIRM & RISK GUIDELINES:</b>\n"
-        f"• <b>Anti-Copy Protection:</b> Enter anywhere within the Execution Zone. Always set SL and TP using the <b>pip distances</b> rather than a single price tick. This ensures your broker's local spread naturally randomizes your order ticket and protects evaluation accounts from mirror-trading flags.\n"
-        f"• <b>Suggested Risk:</b> 0.50% – 1.00% per trade. Trailing stops and profit-locking are managed automatically."
+        f"🛡️ <i>Suggested Risk: 0.50% – 1.00% per trade. Trailing stops and profit-locking are managed automatically.</i>"
     )
 
 

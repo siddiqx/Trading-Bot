@@ -73,6 +73,7 @@ def generate_trade_chart(
         entry = float(sig.get("entry", df.iloc[-1]["close"]))
         sl = float(sig.get("stop_loss", entry * (0.998 if is_long else 1.002)))
         tp = float(sig.get("take_profit", entry * (1.003 if is_long else 0.997)))
+        rr_val = float(sig.get("risk_reward") or sig.get("rr") or (abs(tp - entry) / abs(entry - sl) if abs(entry - sl) > 0 else 1.75))
 
         # Precision decimals (3 for JPY, 5 for Forex, 2 for Gold)
         is_jpy = "JPY" in raw_pair
@@ -215,9 +216,17 @@ def generate_trade_chart(
         # ==============================================================================
         # TradingView Long / Short Position Tool Geometry
         # ==============================================================================
-        if trade_status == "TP_HIT":
-            box_width = min(24, n // 2)
-            box_start = max(0, n - box_width - 2)
+        is_running = trade_status.upper() in ("HALFWAY", "RUNNING")
+        is_tp_hit = trade_status.upper() in ("TP_HIT", "RESOLVED", "WIN")
+
+        if is_tp_hit:
+            box_width = min(22, max(6, n // 2))
+            box_start = max(0, n - box_width)
+            box_end = n - 1
+        elif is_running:
+            elapsed_bars = min(14, max(4, n // 3))
+            box_start = max(0, n - elapsed_bars)
+            box_width = (n - box_start) + projection_bars
             box_end = box_start + box_width
         else:
             box_start = n - 2
@@ -247,8 +256,14 @@ def generate_trade_chart(
         ax.add_patch(tp_box)
         ax.add_patch(sl_box)
 
-        # Diagonal dotted trajectory line
-        ax.plot([box_start, box_end], [entry, tp], color="#2962FF", linestyle=":", linewidth=1.2, alpha=0.8, zorder=3)
+        # Diagonal dotted trajectory lines (Authentic TradingView Projection)
+        if is_running:
+            # Traversed path from entry to current price
+            ax.plot([box_start, n - 1], [entry, cur_px], color="#2962FF", linestyle=":", linewidth=1.2, alpha=0.85, zorder=3)
+            # Remaining path to TP
+            ax.plot([n - 1, box_end], [cur_px, tp], color="#2962FF", linestyle=":", linewidth=0.9, alpha=0.60, zorder=3)
+        else:
+            ax.plot([box_start, box_end], [entry, tp], color="#2962FF", linestyle=":", linewidth=1.2, alpha=0.80, zorder=3)
 
         # Horizontal level lines
         ax.hlines(entry, box_start, box_end, colors="#D1D4DC", linestyles="--", linewidth=1.0, zorder=5)
@@ -258,6 +273,27 @@ def generate_trade_chart(
         # Current market price crosshair line
         ax.axhline(cur_px, color="#787B86", linestyle=":", linewidth=0.7, alpha=0.6, zorder=4)
 
+        # TradingView Box Info Pill (Open PnL / Take Profit Status)
+        pip_mult = 100 if is_jpy else 10000
+        if is_running:
+            pnl_pips = (cur_px - entry) * pip_mult if is_long else (entry - cur_px) * pip_mult
+            sl_pips_val = float(sig.get("sl_pips", 20.0))
+            r_val = pnl_pips / sl_pips_val if sl_pips_val > 0 else 0.0
+            pill_text = f"Open PnL: {pnl_pips:+.1f} pips (+{r_val:.2f}R)\nRisk/reward ratio: {rr_val:.2f}"
+            pill_x = box_start + 1.2
+            pill_y = entry + (tp - entry) * 0.25
+            ax.text(pill_x, pill_y, pill_text, color="#FFFFFF", fontsize=8.0, weight="bold",
+                    va="center", ha="left", zorder=6,
+                    bbox=dict(boxstyle="round,pad=0.35", facecolor="#1E222D", edgecolor="#2962FF", alpha=0.80, linewidth=0.8))
+        elif is_tp_hit:
+            tp_pips_val = float(sig.get("tp_pips", 35.0))
+            pill_text = f"Target: +{tp_pips_val:.1f} pips (+{rr_val:.2f}R)\nStatus: Target Reached"
+            pill_x = box_start + 1.2
+            pill_y = entry + (tp - entry) * 0.50
+            ax.text(pill_x, pill_y, pill_text, color="#FFFFFF", fontsize=8.0, weight="bold",
+                    va="center", ha="left", zorder=6,
+                    bbox=dict(boxstyle="round,pad=0.35", facecolor="#1E222D", edgecolor="#00E676", alpha=0.85, linewidth=0.8))
+
         # Right Price Axis Formatting
         ax.yaxis.tick_right()
         ax.yaxis.set_label_position("right")
@@ -265,6 +301,7 @@ def generate_trade_chart(
         ax.grid(True, color="#2A2E39", linestyle="-", linewidth=0.5, alpha=0.5)
 
         # Right Axis Badges (Authentic TradingView Price Badges)
+        cur_px_bg = "#2962FF" if (is_running or is_tp_hit) else "#363A45"
         ax.text(1.008, tp, f" {tp:.{digits}f} ", transform=ax.get_yaxis_transform(),
                 color="#FFFFFF", backgroundcolor="#2962FF", fontsize=8.5, weight="bold", va="center")
         ax.text(1.008, entry, f" {entry:.{digits}f} ", transform=ax.get_yaxis_transform(),
@@ -272,7 +309,7 @@ def generate_trade_chart(
         ax.text(1.008, sl, f" {sl:.{digits}f} ", transform=ax.get_yaxis_transform(),
                 color="#FFFFFF", backgroundcolor="#787B86", fontsize=8.5, weight="bold", va="center")
         ax.text(1.008, cur_px, f" {cur_px:.{digits}f} ", transform=ax.get_yaxis_transform(),
-                color="#FFFFFF", backgroundcolor="#363A45", fontsize=8.5, weight="bold", va="center")
+                color="#FFFFFF", backgroundcolor=cur_px_bg, fontsize=8.5, weight="bold", va="center")
 
         # Bottom X-Axis Time Ticks
         step = max(1, n // 7)
@@ -294,7 +331,8 @@ def generate_trade_chart(
         fig.text(0.890, 0.955, "QuantFlow Institutional Analysis", fontsize=9.5, color="#787B86", ha="right")
 
         # Set axis limits with clean padding
-        ax.set_xlim(-1, max(n + 3, box_end + 12))
+        right_padding = 4 if is_tp_hit else (8 if is_running else 12)
+        ax.set_xlim(-1, max(n + 2, box_end + right_padding))
         price_candidates = [plot_df["low"].min(), plot_df["high"].max(), sl, tp]
         if sweep_level is not None:
             price_candidates.append(sweep_level)
