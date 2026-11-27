@@ -79,6 +79,9 @@ jobs:
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          TELEGRAM_PUBLIC_CHAT_ID: ${{ secrets.TELEGRAM_PUBLIC_CHAT_ID || '@ccrs_forex_signals' }}
+          TELEGRAM_VIP_CHAT_ID: ${{ secrets.TELEGRAM_VIP_CHAT_ID || '-1005701371238' }}
+          TELEGRAM_VIP_INVITE_LINK: ${{ secrets.TELEGRAM_VIP_INVITE_LINK || 'https://whop.com/checkout/plan_AD4vSV9Uz7vyR' }}
           CTRADER_ENV: ${{ secrets.CTRADER_ENV || 'demo' }}
           CTRADER_CLIENT_ID: ${{ secrets.CTRADER_CLIENT_ID }}
           CTRADER_CLIENT_SECRET: ${{ secrets.CTRADER_CLIENT_SECRET }}
