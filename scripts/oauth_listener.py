@@ -10,8 +10,8 @@ import httpx
 import base64
 from nacl import public
 
-CLIENT_ID = "47211_trXEREWROuEgTuYltDiclHFA6DwVY06XZSjg5quXs160geCrn2"
-CLIENT_SECRET = "8bKOQzqOlrRq5jSy9EI38QZJDkMffjX00QWSaR6J7WofGoGx4R"
+CLIENT_ID = (os.environ.get("CTRADER_CLIENT_ID") or "").strip()
+CLIENT_SECRET = (os.environ.get("CTRADER_CLIENT_SECRET") or "").strip()
 REDIRECT_URI = "http://localhost"
 
 auth_code = None
