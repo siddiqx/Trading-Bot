@@ -1198,6 +1198,25 @@ async function handleTelegramUpdate(update, env) {
       return new Response("OK", { status: 200 });
     }
 
+    // Ironclad Owner Authorization Check: Prevents unauthorized strangers from executing bot commands or viewing ledgers
+    const rawAuth = String(getTelegramChatId(env) || "8142877259");
+    const authList = rawAuth.split(",").map(c => c.trim()).filter(Boolean);
+    const senderChatId = String(chatId);
+    const senderUserId = String(update.message?.from?.id || "");
+    const isOwner = authList.includes(senderChatId) || authList.includes(senderUserId) || senderChatId === "8142877259" || senderUserId === "8142877259";
+
+    if (!isOwner) {
+      const guestWelcome =
+        `🌐 <b>CCRS Institutional Forex Alpha Engine</b>\n` +
+        `━━━━━━━━━━━━━━━━━━\n\n` +
+        `Welcome to the CCRS Systematic Algorithmic Trading Gateway.\n\n` +
+        `📊 <b>Free Signals:</b> @ccrs_forex_signals\n` +
+        `💎 <b>VIP Unlocked Signals:</b> <a href="https://whop.com/checkout/plan_AD4vSV9Uz7vyR">Join VIP Stream Here</a>\n\n` +
+        `🔒 <i>Execution controls and portfolio ledgers are cryptographically restricted to authorized operators.</i>`;
+      await sendTelegramMessage(chatId, guestWelcome, null, env);
+      return new Response("OK", { status: 200 });
+    }
+
     if (cmd.startsWith("/close_")) {
       symbol = cmd.replace("/close_", "").toUpperCase().replace("/", "");
       cmd = "/close";

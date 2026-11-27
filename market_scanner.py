@@ -3895,7 +3895,7 @@ def format_alert_message(sig: dict) -> str:
         f"<b>📋 TRADE PARAMETERS</b>\n"
         f"• <b>Live Entry:</b> <code>{sig['entry']}</code>\n"
         f"• <b>Stop Loss:</b> <code>{sig['stop_loss']}</code> <i>({sl_sign}{sig['sl_pips']} pips · -1.00R)</i>\n"
-        f"• <b>Take Profit:</b> <code>{sig['take_profit']}</code> <i>({tp_sign}{sig['tp_pips']} pips · +1.50R)</i>\n"
+        f"• <b>Take Profit:</b> <code>{sig['take_profit']}</code> <i>({tp_sign}{sig['tp_pips']} pips · +{sig.get('rr', 1.50):.2f}R)</i>\n"
         f"• <b>Risk / Reward:</b> <b>1 : {sig.get('rr', 1.50)}</b>\n"
         f"{risk_line}"
         f"{macro_line}"
