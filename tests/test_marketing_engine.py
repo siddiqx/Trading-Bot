@@ -86,3 +86,16 @@ def test_generate_weekly_performance_digest():
     assert "Total Trades Closed:</b> <b>3</b>" in digest
     assert "66.7%" in digest
     assert "Net Return Factor:</b> <b>+2.52 R</b>" in digest
+
+
+def test_send_discord_signal_invalid_url():
+    from core.marketing import send_discord_signal
+    # Invalid url returns False without throwing
+    res = send_discord_signal({"pair": "EURUSD", "entry": 1.0950}, webhook_url="https://invalid.com")
+    assert res is False
+
+
+def test_send_discord_tp_celebration_invalid_url():
+    from core.marketing import send_discord_tp_celebration
+    res = send_discord_tp_celebration({"pair": "EURUSD"}, realized_pips=30.0, realized_r=1.5, webhook_url="https://invalid-discord-webhook.com")
+    assert res is False

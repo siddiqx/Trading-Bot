@@ -1970,6 +1970,13 @@ def broadcast_commercial_signal(sig: dict, state: dict, extra_footer: str = "", 
         results["public_sent"] = _safe_send_telegram_alert(teaser_msg, specific_chat_id=pub_chat, protect_content=False)
         logger.info(f"Weekly public quota reached ({public_count}/{TELEGRAM_MAX_PUBLIC_SIGNALS_PER_WEEK}). Dispatched locked VIP teaser.")
 
+    # 4. Dispatch to Discord Marketing Community (Non-blocking)
+    try:
+        from core.marketing import send_discord_signal
+        send_discord_signal(sig, chart_bytes=chart_bytes)
+    except Exception as e:
+        logger.debug(f"Discord signal dispatch non-critical error: {e}")
+
     return results
 
 
@@ -2153,6 +2160,13 @@ def broadcast_trade_exit(
             logger.info(f"Automated marketing case study processed: {mkt_res.get('status')} ({mkt_res.get('url')})")
         except Exception as e:
             logger.debug(f"Marketing syndication non-critical error: {e}")
+
+        # 5. Dispatch Take Profit Celebration to Discord Marketing Community
+        try:
+            from core.marketing import send_discord_tp_celebration
+            send_discord_tp_celebration(trade, realized_pips, realized_r, streak=streak, chart_bytes=tp_chart_bytes)
+        except Exception as e:
+            logger.debug(f"Discord TP celebration dispatch non-critical error: {e}")
 
     return results
 

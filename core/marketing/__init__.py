@@ -14,6 +14,10 @@ from core.marketing.telegram_growth import (
     format_viral_share_footer,
     generate_weekly_performance_digest,
 )
+from core.marketing.discord_publisher import (
+    send_discord_signal,
+    send_discord_tp_celebration,
+)
 
 __all__ = [
     "generate_reddit_case_study",
@@ -24,4 +28,6 @@ __all__ = [
     "is_on_cooldown",
     "format_viral_share_footer",
     "generate_weekly_performance_digest",
+    "send_discord_signal",
+    "send_discord_tp_celebration",
 ]
