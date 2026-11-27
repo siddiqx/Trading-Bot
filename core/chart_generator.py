@@ -64,8 +64,11 @@ def generate_trade_chart(
         raw_pair = sig.get("pair", "EURUSD").upper()
         display_pair = f"{raw_pair[:3]}/{raw_pair[3:]}" if len(raw_pair) == 6 else raw_pair
         is_long = sig.get("direction", "LONG").upper() == "LONG"
-        timeframe = str(sig.get("timeframe", "15M")).upper()
-        tf_label = timeframe.lower() if timeframe.endswith("m") else f"{timeframe.lower()}m"
+        timeframe_raw = str(sig.get("timeframe", "15M")).strip().upper()
+        if timeframe_raw.endswith("M") or timeframe_raw.endswith("H") or timeframe_raw.endswith("D"):
+            tf_display = timeframe_raw
+        else:
+            tf_display = f"{timeframe_raw}M"
 
         entry = float(sig.get("entry", df.iloc[-1]["close"]))
         sl = float(sig.get("stop_loss", entry * (0.998 if is_long else 1.002)))
@@ -148,7 +151,7 @@ def generate_trade_chart(
             ax.add_patch(ob_rect)
             ax.hlines((ob_top + ob_bottom) / 2, ob_idx - 0.5, ob_idx + ob_len,
                       colors="#00E676", linestyles=":", linewidth=0.8, alpha=0.7, zorder=3)
-            ax.text(ob_idx + 1, ob_top, f"+OB ({tf_label})", color="#00E676", fontsize=7.5, weight="bold", va="bottom")
+            ax.text(ob_idx + 1, ob_top, f"+OB ({tf_display.lower()})", color="#00E676", fontsize=7.5, weight="bold", va="bottom")
 
             # 2. Sell-Side Liquidity (SSL) Sweep
             low_window = plot_df.iloc[max(0, n - 25):max(1, n - 5)]
@@ -186,7 +189,7 @@ def generate_trade_chart(
             ax.add_patch(ob_rect)
             ax.hlines((ob_top + ob_bottom) / 2, ob_idx - 0.5, ob_idx + ob_len,
                       colors="#FF5252", linestyles=":", linewidth=0.8, alpha=0.7, zorder=3)
-            ax.text(ob_idx + 1, ob_bottom, f"-OB ({tf_label})", color="#FF5252", fontsize=7.5, weight="bold", va="top")
+            ax.text(ob_idx + 1, ob_bottom, f"-OB ({tf_display.lower()})", color="#FF5252", fontsize=7.5, weight="bold", va="top")
 
             # Buy-Side Liquidity (BSL) Sweep
             high_window = plot_df.iloc[max(0, n - 25):max(1, n - 5)]
@@ -284,15 +287,11 @@ def generate_trade_chart(
         # ==============================================================================
         # Professional Institutional Header (TradingView Style)
         # ==============================================================================
-        # Top-Left: Pair name and timeframe
-        fig.text(0.038, 0.955, f"{display_pair}  •  {tf_label.upper()}", fontsize=14, weight="bold", color="#FFFFFF")
+        # Top-Left: Clean pair name and timeframe (e.g. "EUR/USD  •  15M")
+        fig.text(0.038, 0.955, f"{display_pair}  •  {tf_display}", fontsize=14, weight="bold", color="#FFFFFF")
 
         # Top-Right: Institutional branding aligned to right margin (zero overlap)
         fig.text(0.890, 0.955, "QuantFlow Institutional Analysis", fontsize=9.5, color="#787B86", ha="right")
-
-        # Indicators legend (TradingView top-left stack)
-        fig.text(0.038, 0.932, "Smart Money Concepts [ICT] (Order Block, Liquidity Sweeps, MSS)", fontsize=8.5, color="#00B4D8")
-        fig.text(0.038, 0.912, "EMA 20 Equilibrium Confluence", fontsize=8.5, color="#FF9800")
 
         # Set axis limits with clean padding
         ax.set_xlim(-1, max(n + 3, box_end + 12))
