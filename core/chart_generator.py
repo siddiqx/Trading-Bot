@@ -284,10 +284,15 @@ def generate_trade_chart(
         # ==============================================================================
         # Professional Institutional Header (TradingView Style)
         # ==============================================================================
-        fig.text(0.040, 0.955, f"{display_pair}  •  {tf_label.upper()}", fontsize=14, weight="bold", color="#FFFFFF")
-        fig.text(0.180, 0.957, "QuantFlow Institutional Analysis", fontsize=9.5, color="#787B86")
-        fig.text(0.040, 0.932, "Smart Money Concepts [ICT] (Order Block, Liquidity Sweeps, MSS)", fontsize=8.5, color="#00B4D8")
-        fig.text(0.040, 0.912, "EMA 20 Equilibrium Confluence", fontsize=8.5, color="#FF9800")
+        # Top-Left: Pair name and timeframe
+        fig.text(0.038, 0.955, f"{display_pair}  •  {tf_label.upper()}", fontsize=14, weight="bold", color="#FFFFFF")
+
+        # Top-Right: Institutional branding aligned to right margin (zero overlap)
+        fig.text(0.890, 0.955, "QuantFlow Institutional Analysis", fontsize=9.5, color="#787B86", ha="right")
+
+        # Indicators legend (TradingView top-left stack)
+        fig.text(0.038, 0.932, "Smart Money Concepts [ICT] (Order Block, Liquidity Sweeps, MSS)", fontsize=8.5, color="#00B4D8")
+        fig.text(0.038, 0.912, "EMA 20 Equilibrium Confluence", fontsize=8.5, color="#FF9800")
 
         # Set axis limits with clean padding
         ax.set_xlim(-1, max(n + 3, box_end + 12))
