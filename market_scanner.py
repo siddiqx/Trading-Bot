@@ -1648,26 +1648,58 @@ def send_telegram_alert(
     return overall_success
 
 
+def format_channel_signal_message(sig: dict) -> str:
+    """Format a clean, institutional, jargon-free trade signal for Telegram channels."""
+    pair = sig.get("pair", "")
+    display_pair = f"{pair[:3]}/{pair[3:]}" if len(pair) == 6 else pair
+    is_long = sig.get("direction") == "LONG"
+    icon = "🟢" if is_long else "🔴"
+    action_text = "BUY / LONG" if is_long else "SELL / SHORT"
+    sl_sign = "-"
+    tp_sign = "+"
+    tf_val = str(sig.get("timeframe", "15M")).upper()
+    rr_val = float(sig.get("rr", 1.75))
+
+    is_test = sig.get("is_test") or "TEST" in str(sig.get("id", "")).upper()
+    test_banner = (
+        "🧪 <b>[SYSTEM VERIFICATION TEST · NOT A LIVE TRADE]</b>\n"
+        "━━━━━━━━━━━━━━━━━━\n"
+    ) if is_test else ""
+
+    return (
+        f"{test_banner}"
+        f"{icon} <b>NEW TRADE SIGNAL · {display_pair}</b>\n"
+        f"━━━━━━━━━━━━━━━━━━\n"
+        f"🧭 <b>Order:</b> <b>{action_text}</b>\n"
+        f"⏱ <b>Timeframe:</b> <b>{tf_val}</b>\n"
+        f"━━━━━━━━━━━━━━━━━━\n\n"
+        f"📋 <b>ORDER EXECUTION</b>\n"
+        f"• <b>Entry:</b> <code>{sig['entry']}</code>\n"
+        f"• <b>Stop Loss:</b> <code>{sig['stop_loss']}</code> <i>({sl_sign}{sig['sl_pips']} pips)</i>\n"
+        f"• <b>Take Profit:</b> <code>{sig['take_profit']}</code> <i>({tp_sign}{sig['tp_pips']} pips · +{rr_val:.2f}R)</i>\n"
+        f"• <b>Risk / Reward:</b> <b>1 : {rr_val:.2f}</b>\n"
+        f"━━━━━━━━━━━━━━━━━━\n"
+        f"🛡️ <i>Suggested Risk: 1% per trade. Trailing stops and profit-locking are managed automatically.</i>"
+    )
+
+
 def format_locked_teaser_message(sig: dict) -> str:
     """Format a high-converting locked teaser for the public channel when weekly quota is reached."""
     pair = sig.get("pair", "FOREX")
+    display_pair = f"{pair[:3]}/{pair[3:]}" if len(pair) == 6 else pair
     direction = sig.get("direction", "LONG")
     dir_icon = "🟢" if direction == "LONG" else "🔴"
-    div_val = sig.get("divergence", 0.0)
     tf_str = sig.get("timeframe", "15M")
-    setup_name = sig.get("setup_name", "CCRS Precision Retest / Sweep")
-    invite_url = TELEGRAM_VIP_INVITE_LINK or "https://t.me/ccrs_forex_signals"
+    invite_url = TELEGRAM_VIP_INVITE_LINK or "https://whop.com/checkout/plan_AD4vSV9Uz7vyR"
 
     return (
-        f"🔒 <b>NEW INSTITUTIONAL SETUP GENERATED: {dir_icon} {pair} ({direction})</b>\n\n"
-        f"• <b>Timeframe:</b> <code>{tf_str} · 1H Macro Flow</code>\n"
-        f"• <b>Execution Trigger:</b> <code>{setup_name}</code>\n"
-        f"• <b>Macro Divergence:</b> <code>{div_val:+.2f}σ</code>\n"
-        f"• <b>Target Geometry:</b> <code>Direct 1:1.75R Dynamic Take Profit</code>\n"
-        f"• <b>Status:</b> <b>ACTIVE EXCLUSIVELY IN VIP CHANNEL</b>\n\n"
-        f"⚠️ <i>Weekly public quota reached ({TELEGRAM_MAX_PUBLIC_SIGNALS_PER_WEEK}/{TELEGRAM_MAX_PUBLIC_SIGNALS_PER_WEEK} signals shared this week). Exact Entry, Stop Loss, and Dynamic Take Profit are streaming live to VIP members.</i>\n\n"
+        f"🔒 <b>NEW INSTITUTIONAL SETUP GENERATED: {dir_icon} {display_pair} ({direction})</b>\n\n"
+        f"• <b>Timeframe:</b> <code>{tf_str}</code>\n"
+        f"• <b>Target Geometry:</b> <code>1:1.75R Dynamic Take Profit</code>\n"
+        f"• <b>Status:</b> <b>ACTIVE EXCLUSIVELY IN VIP CHANNEL (QuantFlow VIP Club)</b>\n\n"
+        f"⚠️ <i>Weekly public quota reached ({TELEGRAM_MAX_PUBLIC_SIGNALS_PER_WEEK}/{TELEGRAM_MAX_PUBLIC_SIGNALS_PER_WEEK} signals shared this week). Exact Entry, Stop Loss, and Dynamic Take Profit are streaming live to QuantFlow VIP Club members.</i>\n\n"
         f"💎 <b>Upgrade to VIP for 100% Unlocked Signals & Copy-Execution:</b>\n"
-        f"👉 <a href='{invite_url}'><b>Join VIP Channel Here</b></a>"
+        f"👉 <a href='{invite_url}'><b>Join QuantFlow VIP Club Here</b></a>"
     )
 
 
@@ -1695,8 +1727,9 @@ def _safe_send_telegram_alert(
 def broadcast_commercial_signal(sig: dict, state: dict, extra_footer: str = "") -> dict:
     """
     Dual-Channel Commercial Signal Dispatcher:
-      - Admin & VIP: Receives 100% of signals with anti-forwarding content protection.
-      - Public Channel: Capped at maximum 4 full signals/week. Extra signals post a locked teaser.
+      - Admin: Receives full quant & sizing details for bot monitoring.
+      - VIP (QuantFlow VIP Club): Clean, jargon-free execution order with DRM content protection.
+      - Public Channel (QuantFlow Institutional FX): Capped at max 4 free signals/week. Extra signals post locked teaser.
     """
     now_utc = datetime.now(timezone.utc)
     current_week = now_utc.strftime("%Y-W%W")
@@ -1704,33 +1737,35 @@ def broadcast_commercial_signal(sig: dict, state: dict, extra_footer: str = "") 
         state["public_signals_week"] = current_week
         state["public_signals_count"] = 0
 
-    base_msg = format_alert_message(sig)
+    admin_msg = format_alert_message(sig)
+    channel_msg = format_channel_signal_message(sig)
     if extra_footer:
-        base_msg += f"\n{extra_footer}"
+        admin_msg += f"\n{extra_footer}"
+        channel_msg += f"\n{extra_footer}"
 
     results = {"admin_sent": False, "vip_sent": False, "public_sent": False}
 
     # 1. Dispatch to Admin / Owner Primary Chat (Unprotected copy for personal archive)
     admin_id = TELEGRAM_CHAT_ID.split(",")[0].strip() if TELEGRAM_CHAT_ID else ""
     if admin_id and not admin_id.startswith("@"):
-        results["admin_sent"] = _safe_send_telegram_alert(base_msg, specific_chat_id=admin_id, protect_content=False)
+        results["admin_sent"] = _safe_send_telegram_alert(admin_msg, specific_chat_id=admin_id, protect_content=False)
 
     # 2. Dispatch to VIP Private Channel (100% of signals, anti-forward content protection enabled)
     vip_chat = TELEGRAM_VIP_CHAT_ID or os.environ.get("TELEGRAM_VIP_CHAT_ID", "").strip()
     if vip_chat:
-        vip_msg = base_msg + "\n\n🔒 <i>VIP Channel Exclusive · Forwarding & Copy Protected</i>"
+        vip_msg = channel_msg + "\n\n🔒 <i>QuantFlow VIP Club Exclusive · Protected</i>"
         results["vip_sent"] = _safe_send_telegram_alert(vip_msg, specific_chat_id=vip_chat, protect_content=True)
 
-    # 3. Dispatch to Public Channel (@ccrs_forex_signals)
+    # 3. Dispatch to Public Channel (QuantFlow Institutional FX)
     pub_chat = TELEGRAM_PUBLIC_CHAT_ID or "@ccrs_forex_signals"
     public_count = state.get("public_signals_count", 0)
 
     if public_count < TELEGRAM_MAX_PUBLIC_SIGNALS_PER_WEEK:
         pub_footer = (
             f"\n\n🎁 <b>Free Public Signal ({public_count + 1}/{TELEGRAM_MAX_PUBLIC_SIGNALS_PER_WEEK} this week)</b>\n"
-            f"<i>To trade 100% of setups (10–14 trades/week) + real-time execution, join our VIP Channel.</i>"
+            f"<i>To trade 100% of setups (10–14 trades/week) + real-time execution, join QuantFlow VIP Club.</i>"
         )
-        pub_msg = base_msg + pub_footer
+        pub_msg = channel_msg + pub_footer
         results["public_sent"] = _safe_send_telegram_alert(pub_msg, specific_chat_id=pub_chat, protect_content=True)
         state["public_signals_count"] = public_count + 1
         save_state(state)
@@ -1793,13 +1828,13 @@ def format_public_tp_celebration(
     streak: int = 1
 ) -> str:
     """
-    Format a clean, institutional Take Profit celebration card for the public channel.
+    Format a clean, institutional Take Profit celebration card for the public channel (QuantFlow Institutional FX).
     Highlighting consecutive wins and value of VIP access without cheesy spam.
     """
     pair = trade.get("pair") or trade.get("symbol") or "FOREX"
+    display_pair = f"{pair[:3]}/{pair[3:]}" if len(pair) == 6 else pair
     direction = trade.get("direction", "LONG")
     dir_icon = "🟢" if direction == "LONG" else "🔴"
-    setup_name = trade.get("setup_name", "CCRS Institutional Divergence")
     invite_url = TELEGRAM_VIP_INVITE_LINK or "https://whop.com/checkout/plan_AD4vSV9Uz7vyR"
 
     sign = "+" if realized_pips >= 0 else ""
@@ -1812,18 +1847,17 @@ def format_public_tp_celebration(
     return (
         f"🎯 <b>TAKE PROFIT HIT — VIP SIGNAL RESOLVED IN PROFIT!</b>\n\n"
         f"{streak_header}"
-        f"• <b>Asset:</b> <code>{pair}</code> ({dir_icon} {direction})\n"
-        f"• <b>Execution:</b> <code>{setup_name}</code>\n"
+        f"• <b>Asset:</b> <code>{display_pair}</code> ({dir_icon} {direction})\n"
         f"• <b>Net Realized:</b> <b>{sign}{realized_pips:.1f} pips ({r_sign}{realized_r:.2f}R)</b>\n"
         f"• <b>Status:</b> <b>CLOSED AT FULL TARGET</b>\n\n"
         f"━━━━━━━━━━━━━━━━━━\n"
-        f"💎 <b>Trade Every Setup Live with VIP:</b>\n"
-        f"The free channel is limited to 4 signals/week. VIP members trade every institutional divergence signal (10–14 setups/week) with:\n"
+        f"💎 <b>Trade Every Setup Live with QuantFlow VIP Club:</b>\n"
+        f"The free channel receives maximum 4 signals/week. VIP members trade every institutional divergence signal (10–14 setups/week) with:\n"
         f"  ✓ Up to 68%–70% Win Rate on High Macro Divergence\n"
         f"  ✓ Asymmetrical 1:1.75R Dynamic Take Profit Targets\n"
         f"  ✓ Confirmed Entry, SL & Volatility Cushion Trailing\n"
         f"  ✓ Zero Lag & Automated Copy-Trading Execution\n\n"
-        f"👉 <a href='{invite_url}'><b>Join CCRS VIP Channel on Whop</b></a>"
+        f"👉 <a href='{invite_url}'><b>Join QuantFlow VIP Club on Whop</b></a>"
     )
 
 
@@ -1835,7 +1869,7 @@ def broadcast_trade_update(msg: str, protect_content: bool = True) -> dict:
         results["admin_sent"] = _safe_send_telegram_alert(msg, specific_chat_id=admin_id, protect_content=False)
     vip_chat = TELEGRAM_VIP_CHAT_ID or os.environ.get("TELEGRAM_VIP_CHAT_ID", "").strip()
     if vip_chat:
-        vip_msg = msg + "\n\n🔒 <i>VIP Channel Active Position Update</i>"
+        vip_msg = msg + "\n\n🔒 <i>QuantFlow VIP Club Active Position Update</i>"
         results["vip_sent"] = _safe_send_telegram_alert(vip_msg, specific_chat_id=vip_chat, protect_content=protect_content)
     return results
 
@@ -1853,8 +1887,8 @@ def broadcast_trade_exit(
     """
     Commercial Multi-Channel Exit Dispatcher:
       1. Admin / Owner: Full exit details + diagnostics.
-      2. VIP Private Channel: Full exit details + diagnostics (with content protection).
-      3. Public Channel (@ccrs_forex_signals): Only on profitable WIN / TP hits!
+      2. VIP Private Channel (QuantFlow VIP Club): Full exit details + diagnostics (with content protection).
+      3. Public Channel (QuantFlow Institutional FX): Only on profitable WIN / TP hits!
          Sends a clean celebration card highlighting realized profit, consecutive win streak,
          and official Whop VIP subscription link. Suppressed on loss/BE to protect channel focus.
     """
@@ -1869,13 +1903,13 @@ def broadcast_trade_exit(
     if admin_id and not admin_id.startswith("@"):
         results["admin_sent"] = _safe_send_telegram_alert(base_msg, specific_chat_id=admin_id, protect_content=False)
 
-    # 2. VIP Channel
+    # 2. VIP Channel (QuantFlow VIP Club)
     vip_chat = TELEGRAM_VIP_CHAT_ID or os.environ.get("TELEGRAM_VIP_CHAT_ID", "").strip()
     if vip_chat:
-        vip_msg = base_msg + "\n\n🔒 <i>VIP Channel Exclusive Trade Lifecycle · Protected</i>"
+        vip_msg = base_msg + "\n\n🔒 <i>QuantFlow VIP Club · VIP Channel Exclusive Trade Lifecycle · Protected</i>"
         results["vip_sent"] = _safe_send_telegram_alert(vip_msg, specific_chat_id=vip_chat, protect_content=True)
 
-    # 3. Public Channel on TP / Profit Hit
+    # 3. Public Channel on TP / Profit Hit (QuantFlow Institutional FX)
     is_profit_win = outcome == "WIN" or realized_r >= 0.50
     if is_profit_win:
         completed = records.get("completed_trades", []) if records else []
@@ -1892,18 +1926,18 @@ def broadcast_trade_exit(
 def get_periodic_vip_broadcast_templates(invite_url: str) -> list:
     """
     Returns high-converting, strictly truthful institutional educational templates
-    for the public channel.
+    for the public channel (QuantFlow Institutional FX).
     """
     t0 = (
-        f"📊 <b>HOW THE CCRS INSTITUTIONAL ENGINE WORKS</b>\n\n"
+        f"📊 <b>HOW THE QUANTFLOW CCRS INSTITUTIONAL ENGINE WORKS</b>\n\n"
         f"Most retail traders lose because they trade price patterns in isolation without understanding where global interbank capital is flowing.\n\n"
-        f"• <b>The CCRS Edge:</b> We normalize rolling 200-hour volatility across all 7 major currencies (USD, EUR, GBP, JPY, CAD, CHF, AUD) into synthetic single-currency strength indexes.\n"
+        f"• <b>The QuantFlow Edge:</b> We normalize rolling 200-hour volatility across all 7 major currencies (USD, EUR, GBP, JPY, CAD, CHF, AUD) into synthetic single-currency strength indexes.\n"
         f"• <b>Statistical Divergence:</b> When pairwise currency divergence |D| ≥ 2.50σ, mean-reversion probability reaches <b>up to 68%–70%</b>.\n"
         f"• <b>Asymmetric Geometry:</b> We pair extreme divergence with dynamic <b>1:1.75R Take Profit targets</b> and tight 2.0× ATR invalidation stops.\n\n"
         f"━━━━━━━━━━━━━━━━━━\n"
-        f"💎 <b>Trade Every Macro Signal with VIP:</b>\n"
+        f"💎 <b>Trade Every Macro Signal with QuantFlow VIP Club:</b>\n"
         f"The free channel receives only 4 sample signals per week. VIP members unlock 100% of signals (10–14 high-probability setups/week) with zero lag.\n\n"
-        f"👉 <a href='{invite_url}'><b>Join CCRS VIP Channel on Whop</b></a>"
+        f"👉 <a href='{invite_url}'><b>Join QuantFlow VIP Club on Whop</b></a>"
     )
 
     t1 = (
@@ -1915,7 +1949,7 @@ def get_periodic_vip_broadcast_templates(invite_url: str) -> list:
         f"• <b>Active Protection:</b> Automated breakeven trailing locks profits at +1.20R.\n\n"
         f"━━━━━━━━━━━━━━━━━━\n"
         f"Don't trade yesterday's setups. Lock in institutional execution.\n\n"
-        f"👉 <a href='{invite_url}'><b>Upgrade to VIP on Whop</b></a>"
+        f"👉 <a href='{invite_url}'><b>Upgrade to QuantFlow VIP Club on Whop</b></a>"
     )
 
     t2 = (
@@ -1927,7 +1961,7 @@ def get_periodic_vip_broadcast_templates(invite_url: str) -> list:
         f"✓ <b>Dynamic 1:1.75R Targets:</b> Asymmetrical payout ensures positive expectancy even during drawdown phases.\n\n"
         f"━━━━━━━━━━━━━━━━━━\n"
         f"Trade with institutional discipline. Get all setups live.\n\n"
-        f"👉 <a href='{invite_url}'><b>Get Instant VIP Access on Whop</b></a>"
+        f"👉 <a href='{invite_url}'><b>Join QuantFlow VIP Club on Whop</b></a>"
     )
 
     return [t0, t1, t2]

@@ -1207,11 +1207,11 @@ async function handleTelegramUpdate(update, env) {
 
     if (!isOwner) {
       const guestWelcome =
-        `🌐 <b>CCRS Institutional Forex Alpha Engine</b>\n` +
+        `🌐 <b>QuantFlow Institutional FX Alpha Gateway</b>\n` +
         `━━━━━━━━━━━━━━━━━━\n\n` +
-        `Welcome to the CCRS Systematic Algorithmic Trading Gateway.\n\n` +
-        `📊 <b>Free Signals:</b> @ccrs_forex_signals\n` +
-        `💎 <b>VIP Unlocked Signals:</b> <a href="https://whop.com/checkout/plan_AD4vSV9Uz7vyR">Join VIP Stream Here</a>\n\n` +
+        `Welcome to the QuantFlow Systematic Algorithmic Trading Gateway.\n\n` +
+        `📊 <b>Free Signals:</b> @ccrs_forex_signals (QuantFlow Institutional FX)\n` +
+        `💎 <b>VIP Unlocked Signals:</b> <a href="https://whop.com/checkout/plan_AD4vSV9Uz7vyR">QuantFlow VIP Club</a>\n\n` +
         `🔒 <i>Execution controls and portfolio ledgers are cryptographically restricted to authorized operators.</i>`;
       await sendTelegramMessage(chatId, guestWelcome, null, env);
       return new Response("OK", { status: 200 });

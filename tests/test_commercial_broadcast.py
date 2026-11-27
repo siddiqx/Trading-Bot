@@ -12,6 +12,7 @@ from datetime import datetime, timezone, timedelta
 from market_scanner import (
     broadcast_commercial_signal,
     format_locked_teaser_message,
+    format_channel_signal_message,
     calculate_consecutive_wins,
     format_public_tp_celebration,
     broadcast_trade_exit,
@@ -325,7 +326,7 @@ def test_periodic_vip_broadcast_cooldown_and_rotation(monkeypatch):
     res1 = check_and_send_periodic_vip_broadcast(state, now_dt=t0)
     assert res1 is True
     assert state["vip_broadcast_template_idx"] == 1
-    assert "HOW THE CCRS INSTITUTIONAL ENGINE WORKS" in sent_alerts[-1]["text"]
+    assert "HOW THE QUANTFLOW CCRS INSTITUTIONAL ENGINE WORKS" in sent_alerts[-1]["text"]
 
     # 2. Second dispatch after 24h: within 72h cooldown -> MUST return False
     t_24h = t0 + timedelta(hours=24)
@@ -340,4 +341,47 @@ def test_periodic_vip_broadcast_cooldown_and_rotation(monkeypatch):
     assert state["vip_broadcast_template_idx"] == 2
     assert "EXECUTION MATTERS: WHY DELAY KILLS EDGE" in sent_alerts[-1]["text"]
     assert len(sent_alerts) == 2
+
+
+def test_clean_jargon_free_channel_signal_format():
+    """Verify that channel signals are clean, actionable, and strictly stripped of technical quant jargon."""
+    sig = {
+        "pair": "EURUSD",
+        "direction": "LONG",
+        "strategy": "CCRS_DUAL_TF",
+        "strategy_type": "CCRS_DUAL_TF",
+        "timeframe": "15M",
+        "entry": 1.08500,
+        "stop_loss": 1.08280,
+        "take_profit": 1.08880,
+        "sl_pips": 22.0,
+        "tp_pips": 38.5,
+        "rr": 1.75,
+        "divergence": 2.65,
+        "setup_name": "15M 20-EMA Equilibrium Pullback Rejection",
+        "account_equity": 5000.0,
+        "risk_pct": 1.0,
+        "risk_usd": 50.0,
+        "ctrader_receipt": {"account_id": "49464417", "status": "EXECUTED"}
+    }
+
+    clean_msg = format_channel_signal_message(sig)
+
+    # 1. Must contain essential trader parameters
+    assert "EUR/USD" in clean_msg
+    assert "BUY / LONG" in clean_msg
+    assert "1.085" in clean_msg
+    assert "1.0828" in clean_msg
+    assert "1.0888" in clean_msg
+    assert "1 : 1.75" in clean_msg
+
+    # 2. Must strictly exclude confusing internal technical jargon
+    assert "Macro Flow" not in clean_msg
+    assert "Divergence" not in clean_msg
+    assert "20-EMA Equilibrium Pullback" not in clean_msg
+    assert "Setup Trigger" not in clean_msg
+    assert "Broker Client" not in clean_msg
+    assert "49464417" not in clean_msg
+    assert "5000" not in clean_msg
+
 
