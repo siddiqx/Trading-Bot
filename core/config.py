@@ -94,7 +94,7 @@ TELEGRAM_PUBLIC_CHAT_ID: str = os.environ.get("TELEGRAM_PUBLIC_CHAT_ID", "@ccrs_
 TELEGRAM_VIP_CHAT_ID: str = os.environ.get("TELEGRAM_VIP_CHAT_ID", "").strip()
 TELEGRAM_MAX_PUBLIC_SIGNALS_PER_WEEK: int = int(os.environ.get("TELEGRAM_MAX_PUBLIC_SIGNALS_PER_WEEK", "4"))
 TELEGRAM_PROTECT_CONTENT: bool = os.environ.get("TELEGRAM_PROTECT_CONTENT", "true").lower() in ("true", "1", "yes")
-TELEGRAM_VIP_INVITE_LINK: str = os.environ.get("TELEGRAM_VIP_INVITE_LINK", "").strip()
+TELEGRAM_VIP_INVITE_LINK: str = os.environ.get("TELEGRAM_VIP_INVITE_LINK", "https://whop.com/checkout/plan_AD4vSV9Uz7vyR").strip()
 
 # Volatility-Cushioned Trailing Stop Parameters (Disabled to prevent profit erosion from pullbacks)
 VOLATILITY_CUSHION_ENABLED: bool = False
