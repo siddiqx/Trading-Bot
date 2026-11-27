@@ -131,87 +131,76 @@ def generate_trade_chart(
         ax.plot(x, plot_df["ema20"], color="#FF9800", linewidth=1.3, alpha=0.85, zorder=4)
 
         # ==============================================================================
-        # ICT / SMART MONEY CONCEPTS (SMC) OVERLAYS
+        # ICT / SMART MONEY CONCEPTS (SMC) OVERLAYS (Liquidity Zones & Sweeps)
         # ==============================================================================
-        ob_rect = None
         sweep_level = None
-        mss_level = None
+        search_window = plot_df.iloc[max(0, n - 26):max(1, n - 3)]
 
         if is_long:
-            # 1. Bullish Order Block (+OB): Last down-candle prior to the upward expansion
-            ob_idx = max(0, n - 14)
+            # 1. Bullish Order Block / Demand Liquidity Zone: Lowest down-candle prior to impulse
+            down_candles = search_window[search_window["close"] <= search_window["open"]]
+            if not down_candles.empty:
+                ob_bar_idx = down_candles["low"].idxmin()
+                ob_idx = plot_df.index.get_loc(ob_bar_idx)
+            else:
+                ob_idx = max(0, n - 14)
+
             ob_bar = plot_df.iloc[ob_idx]
             ob_top = max(ob_bar["open"], ob_bar["close"])
-            ob_bottom = min(ob_bar["open"], ob_bar["close"])
-            ob_len = 22
+            ob_bottom = ob_bar["low"]
+            ob_len = (n - ob_idx) + 8
 
             ob_rect = patches.Rectangle(
                 (ob_idx - 0.5, ob_bottom), ob_len, max(ob_top - ob_bottom, 0.0001),
-                linewidth=1.0, edgecolor="#00E676", facecolor="#00E676", alpha=0.15, zorder=2
+                linewidth=0.9, edgecolor="#00E676", facecolor="#00E676", alpha=0.14, zorder=2
             )
             ax.add_patch(ob_rect)
             ax.hlines((ob_top + ob_bottom) / 2, ob_idx - 0.5, ob_idx + ob_len,
-                      colors="#00E676", linestyles=":", linewidth=0.8, alpha=0.7, zorder=3)
-            ax.text(ob_idx + 1, ob_top, f"+OB ({tf_display.lower()})", color="#00E676", fontsize=7.5, weight="bold", va="bottom")
+                      colors="#00E676", linestyles=":", linewidth=0.8, alpha=0.6, zorder=3)
+            ax.text(ob_idx + 0.8, ob_top, f"+OB / Demand ({tf_display.lower()})", color="#00E676", fontsize=7.5, weight="bold", va="bottom")
 
             # 2. Sell-Side Liquidity (SSL) Sweep
-            low_window = plot_df.iloc[max(0, n - 25):max(1, n - 5)]
-            if not low_window.empty:
-                sweep_level = low_window["low"].min()
-                sweep_bar_idx = low_window["low"].idxmin()
+            if not search_window.empty:
+                sweep_level = search_window["low"].min()
+                sweep_bar_idx = search_window["low"].idxmin()
                 sweep_x = plot_df.index.get_loc(sweep_bar_idx)
-                ax.hlines(sweep_level, sweep_x - 3, sweep_x + 15, colors="#FF5252", linestyles="--", linewidth=0.9, zorder=3)
+                ax.hlines(sweep_level, sweep_x - 3, min(n + 6, sweep_x + 18), colors="#FF5252", linestyles="--", linewidth=0.9, zorder=3)
                 ax.plot(sweep_x, sweep_level, "x", color="#FF5252", markersize=6, markeredgewidth=1.5, zorder=5)
-                ax.text(sweep_x + 5, sweep_level - (0.00015 if not is_jpy else 0.015),
-                        "x Liquidity Sweep (SSL)", color="#FF5252", fontsize=7.5, weight="bold", va="top")
-
-            # 3. Market Structure Shift (MSS)
-            high_window = plot_df.iloc[max(0, n - 18):max(1, n - 4)]
-            if not high_window.empty:
-                mss_level = high_window["high"].max()
-                mss_bar_idx = high_window["high"].idxmax()
-                mss_x = plot_df.index.get_loc(mss_bar_idx)
-                ax.hlines(mss_level, mss_x, n, colors="#00B4D8", linestyles="--", linewidth=0.9, zorder=3)
-                ax.text(mss_x + 3, mss_level + (0.00012 if not is_jpy else 0.012),
-                        "MSS ──▶", color="#00B4D8", fontsize=7.5, weight="bold", va="bottom")
+                ax.text(sweep_x + 3, sweep_level - (0.00015 if not is_jpy else 0.015),
+                        "Liquidity Sweep (SSL)", color="#FF5252", fontsize=7.5, weight="bold", va="top")
 
         else:
-            # Bearish Order Block (-OB): Last up-candle prior to downward expansion
-            ob_idx = max(0, n - 14)
+            # 1. Bearish Order Block / Supply Liquidity Zone: Highest up-candle prior to sell-off
+            up_candles = search_window[search_window["close"] >= search_window["open"]]
+            if not up_candles.empty:
+                ob_bar_idx = up_candles["high"].idxmax()
+                ob_idx = plot_df.index.get_loc(ob_bar_idx)
+            else:
+                ob_idx = max(0, n - 14)
+
             ob_bar = plot_df.iloc[ob_idx]
-            ob_top = max(ob_bar["open"], ob_bar["close"])
+            ob_top = ob_bar["high"]
             ob_bottom = min(ob_bar["open"], ob_bar["close"])
-            ob_len = 22
+            ob_len = (n - ob_idx) + 8
 
             ob_rect = patches.Rectangle(
                 (ob_idx - 0.5, ob_bottom), ob_len, max(ob_top - ob_bottom, 0.0001),
-                linewidth=1.0, edgecolor="#FF5252", facecolor="#FF5252", alpha=0.15, zorder=2
+                linewidth=0.9, edgecolor="#FF5252", facecolor="#FF5252", alpha=0.14, zorder=2
             )
             ax.add_patch(ob_rect)
             ax.hlines((ob_top + ob_bottom) / 2, ob_idx - 0.5, ob_idx + ob_len,
-                      colors="#FF5252", linestyles=":", linewidth=0.8, alpha=0.7, zorder=3)
-            ax.text(ob_idx + 1, ob_bottom, f"-OB ({tf_display.lower()})", color="#FF5252", fontsize=7.5, weight="bold", va="top")
+                      colors="#FF5252", linestyles=":", linewidth=0.8, alpha=0.6, zorder=3)
+            ax.text(ob_idx + 0.8, ob_bottom, f"-OB / Supply ({tf_display.lower()})", color="#FF5252", fontsize=7.5, weight="bold", va="top")
 
-            # Buy-Side Liquidity (BSL) Sweep
-            high_window = plot_df.iloc[max(0, n - 25):max(1, n - 5)]
-            if not high_window.empty:
-                sweep_level = high_window["high"].max()
-                sweep_bar_idx = high_window["high"].idxmax()
+            # 2. Buy-Side Liquidity (BSL) Sweep
+            if not search_window.empty:
+                sweep_level = search_window["high"].max()
+                sweep_bar_idx = search_window["high"].idxmax()
                 sweep_x = plot_df.index.get_loc(sweep_bar_idx)
-                ax.hlines(sweep_level, sweep_x - 3, sweep_x + 15, colors="#FF5252", linestyles="--", linewidth=0.9, zorder=3)
+                ax.hlines(sweep_level, sweep_x - 3, min(n + 6, sweep_x + 18), colors="#FF5252", linestyles="--", linewidth=0.9, zorder=3)
                 ax.plot(sweep_x, sweep_level, "x", color="#FF5252", markersize=6, markeredgewidth=1.5, zorder=5)
-                ax.text(sweep_x + 5, sweep_level + (0.00015 if not is_jpy else 0.015),
-                        "x Liquidity Sweep (BSL)", color="#FF5252", fontsize=7.5, weight="bold", va="bottom")
-
-            # Market Structure Shift (MSS)
-            low_window = plot_df.iloc[max(0, n - 18):max(1, n - 4)]
-            if not low_window.empty:
-                mss_level = low_window["low"].min()
-                mss_bar_idx = low_window["low"].idxmin()
-                mss_x = plot_df.index.get_loc(mss_bar_idx)
-                ax.hlines(mss_level, mss_x, n, colors="#00B4D8", linestyles="--", linewidth=0.9, zorder=3)
-                ax.text(mss_x + 3, mss_level - (0.00012 if not is_jpy else 0.012),
-                        "MSS ──▶", color="#00B4D8", fontsize=7.5, weight="bold", va="top")
+                ax.text(sweep_x + 3, sweep_level + (0.00015 if not is_jpy else 0.015),
+                        "Liquidity Sweep (BSL)", color="#FF5252", fontsize=7.5, weight="bold", va="bottom")
 
         # ==============================================================================
         # TradingView Long / Short Position Tool Geometry
@@ -293,6 +282,14 @@ def generate_trade_chart(
             ax.text(pill_x, pill_y, pill_text, color="#FFFFFF", fontsize=8.0, weight="bold",
                     va="center", ha="left", zorder=6,
                     bbox=dict(boxstyle="round,pad=0.35", facecolor="#1E222D", edgecolor="#00E676", alpha=0.85, linewidth=0.8))
+        else:
+            tp_pips_val = float(sig.get("tp_pips", 35.0))
+            pill_text = f"Target: +{tp_pips_val:.1f} pips (+{rr_val:.2f}R)\nRisk/reward ratio: {rr_val:.2f}"
+            pill_x = box_start + 1.2
+            pill_y = entry + (tp - entry) * 0.35
+            ax.text(pill_x, pill_y, pill_text, color="#FFFFFF", fontsize=8.0, weight="bold",
+                    va="center", ha="left", zorder=6,
+                    bbox=dict(boxstyle="round,pad=0.35", facecolor="#1E222D", edgecolor="#2962FF", alpha=0.80, linewidth=0.8))
 
         # Right Price Axis Formatting
         ax.yaxis.tick_right()
@@ -311,11 +308,22 @@ def generate_trade_chart(
         ax.text(1.008, cur_px, f" {cur_px:.{digits}f} ", transform=ax.get_yaxis_transform(),
                 color="#FFFFFF", backgroundcolor=cur_px_bg, fontsize=8.5, weight="bold", va="center")
 
-        # Bottom X-Axis Time Ticks
-        step = max(1, n // 7)
+        # Bottom X-Axis Time Ticks (Authentic TradingView Timeline)
+        step = max(1, n // 6)
         tick_locs = list(range(0, n, step))
-        if plot_df.index is not None and hasattr(plot_df.index[0], "strftime"):
-            tick_labels = [plot_df.index[i].strftime("%d %b %H:%M") for i in tick_locs]
+        time_series = None
+        if "time" in plot_df.columns:
+            time_series = pd.to_datetime(plot_df["time"])
+        elif isinstance(plot_df.index, pd.DatetimeIndex):
+            time_series = plot_df.index
+        elif hasattr(plot_df.index[0], "strftime"):
+            time_series = plot_df.index
+
+        if time_series is not None and len(time_series) == n:
+            tick_labels = [
+                time_series.iloc[i].strftime("%d %b %H:%M") if hasattr(time_series, "iloc") else time_series[i].strftime("%d %b %H:%M")
+                for i in tick_locs
+            ]
             ax.set_xticks(tick_locs)
             ax.set_xticklabels(tick_labels, color="#787B86", fontsize=8.5)
         else:
@@ -336,9 +344,6 @@ def generate_trade_chart(
         price_candidates = [plot_df["low"].min(), plot_df["high"].max(), sl, tp]
         if sweep_level is not None:
             price_candidates.append(sweep_level)
-        if mss_level is not None:
-            price_candidates.append(mss_level)
-
         min_p = min(price_candidates)
         max_p = max(price_candidates)
         padding = (max_p - min_p) * 0.09
