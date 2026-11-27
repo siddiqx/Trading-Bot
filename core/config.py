@@ -96,6 +96,7 @@ TELEGRAM_MAX_PUBLIC_SIGNALS_PER_WEEK: int = int(os.environ.get("TELEGRAM_MAX_PUB
 TELEGRAM_PROTECT_CONTENT: bool = os.environ.get("TELEGRAM_PROTECT_CONTENT", "true").lower() in ("true", "1", "yes")
 TELEGRAM_VIP_INVITE_LINK: str = os.environ.get("TELEGRAM_VIP_INVITE_LINK", "https://whop.com/checkout/plan_AD4vSV9Uz7vyR").strip()
 VIP_BROADCAST_COOLDOWN_HOURS: int = int(os.environ.get("VIP_BROADCAST_COOLDOWN_HOURS", "72"))
+DISBOARD_BUMP_COOLDOWN_SECONDS: int = int(os.environ.get("DISBOARD_BUMP_COOLDOWN_SECONDS", "7200"))
 
 # Volatility-Cushioned Trailing Stop Parameters (Disabled to prevent profit erosion from pullbacks)
 VOLATILITY_CUSHION_ENABLED: bool = False

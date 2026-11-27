@@ -7,6 +7,8 @@ on:
     - cron: '2,17,32,47 * * * 1-5'
     # Redundant fail-safe schedule (:09, :24, :39, :54) in case GitHub peak load delays or drops a primary run
     - cron: '9,24,39,54 * * * 1-5'
+    # Weekend 2-hour Disboard bump reminder & webhook health watchdog (:02 every 2 hours on Sat/Sun)
+    - cron: '2 */2 * * 0,6'
   workflow_dispatch: # Manual trigger from GitHub web UI or external cron ping at any time
 
 # Prevent concurrent runs from racing each other and double-firing signals

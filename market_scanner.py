@@ -112,6 +112,7 @@ from core.config import (
     TELEGRAM_PROTECT_CONTENT,
     TELEGRAM_VIP_INVITE_LINK,
     VIP_BROADCAST_COOLDOWN_HOURS,
+    DISBOARD_BUMP_COOLDOWN_SECONDS,
     CCRS_STATE_MODE,
     CCRS_LOOKBACK_HOURS,
     CCRS_Z_WINDOW_HOURS,
@@ -2253,6 +2254,57 @@ def check_and_send_periodic_vip_broadcast(state: dict, now_dt: datetime | None =
         state["vip_broadcast_template_idx"] = idx + 1
         save_state(state)
         logger.info(f"Periodic VIP educational broadcast #{idx} dispatched to {pub_chat}.")
+        return True
+    return False
+
+
+def check_disboard_bump_reminder(
+    state: dict,
+    now_dt: datetime | None = None,
+    force: bool = False
+) -> bool:
+    """
+    Sends an automated reminder to the Admin chat (TELEGRAM_CHAT_ID) every 2 hours (7200s)
+    to type /bump in the Discord server. Runs 24/7 independently of market hours.
+    Never alters trades, risk management, or live signal execution.
+    """
+    if now_dt is None:
+        now_dt = datetime.now(timezone.utc)
+    elif now_dt.tzinfo is None:
+        now_dt = now_dt.replace(tzinfo=timezone.utc)
+
+    # 1. Check 2-hour cooldown unless forced
+    if not force:
+        last_bump_str = state.get("last_disboard_bump_reminder_ts")
+        if last_bump_str:
+            try:
+                last_dt = datetime.fromisoformat(last_bump_str)
+                if last_dt.tzinfo is None:
+                    last_dt = last_dt.replace(tzinfo=timezone.utc)
+                if (now_dt - last_dt).total_seconds() < DISBOARD_BUMP_COOLDOWN_SECONDS:
+                    return False
+            except Exception as e:
+                logger.warning(f"Failed to parse last_disboard_bump_reminder_ts: {e}")
+
+    # 2. Identify Admin chat target
+    admin_id = TELEGRAM_CHAT_ID.split(",")[0].strip() if TELEGRAM_CHAT_ID else None
+    if not admin_id:
+        return False
+
+    msg = (
+        "⏰ <b>DISBOARD BUMP REMINDER · QUANTFLOW DISCORD</b>\n"
+        "━━━━━━━━━━━━━━━━━━\n"
+        "2 hours have elapsed since the last server bump!\n\n"
+        "👉 Open Discord and send:\n"
+        "<code>/bump</code>\n\n"
+        "<i>Keeps QuantFlow pinned at the top of Disboard Forex & Algo-Trading listings to attract members.</i>"
+    )
+
+    sent = _safe_send_telegram_alert(msg, specific_chat_id=admin_id, protect_content=False)
+    if sent:
+        state["last_disboard_bump_reminder_ts"] = now_dt.isoformat()
+        save_state(state)
+        logger.info(f"Disboard 2-hour bump reminder dispatched to Admin ({admin_id}).")
         return True
     return False
 
@@ -4612,18 +4664,25 @@ def run_scan_cycle():
         "active_trades_count": 0,
         "circuit_breaker": "NORMAL",
     }
+    state = load_state()
+
+    # 0. Watchdog: Guarantee 24/7 Telegram bot responsiveness
+    ensure_telegram_webhook_active()
+
+    # 0.1 Disboard 2-Hour Bump Reminder (Admin Only - Runs 24/7 independently of market hours)
+    try:
+        check_disboard_bump_reminder(state)
+    except Exception as e:
+        logger.warning(f"Error checking Disboard bump reminder: {e}")
+
     if not is_forex_market_open():
         logger.info("Forex markets are CLOSED for the weekend (Friday 17:00 NY to Sunday 17:00 NY). Standing down.")
         telemetry["circuit_breaker"] = "MARKET_CLOSED_WEEKEND"
         write_step_summary(telemetry, scan_start)
         return 0
 
-    state = load_state()
     records = load_trade_records()
     total_signals = 0
-
-    # 0. Watchdog: Guarantee 24/7 Telegram bot responsiveness
-    ensure_telegram_webhook_active()
 
     # 0.2 Periodic Educational / VIP Value Broadcast (Max once every 72 hours during market hours)
     try:
@@ -5055,6 +5114,10 @@ if __name__ == "__main__":
                 logger.error(f"Loop cycle error: {e}")
             # Wait 60 seconds before checking next interval
             time.sleep(60)
+    elif len(sys.argv) > 1 and sys.argv[1] == "--bump":
+        state = load_state()
+        res = check_disboard_bump_reminder(state, force=True)
+        print(f"Disboard bump reminder triggered to Admin: {res}")
     elif len(sys.argv) > 1 and sys.argv[1] in ("--marketing", "--recap"):
         from core.marketing import (
             generate_weekly_performance_digest,

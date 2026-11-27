@@ -99,3 +99,49 @@ def test_send_discord_tp_celebration_invalid_url():
     from core.marketing import send_discord_tp_celebration
     res = send_discord_tp_celebration({"pair": "EURUSD"}, realized_pips=30.0, realized_r=1.5, webhook_url="https://invalid-discord-webhook.com")
     assert res is False
+
+
+def test_check_disboard_bump_reminder(monkeypatch):
+    from datetime import datetime, timezone, timedelta
+    from market_scanner import check_disboard_bump_reminder
+
+    dispatched = []
+
+    def mock_send(msg, specific_chat_id=None, protect_content=None):
+        dispatched.append({"msg": msg, "chat_id": specific_chat_id})
+        return True
+
+    monkeypatch.setattr("market_scanner._safe_send_telegram_alert", mock_send)
+    monkeypatch.setattr("market_scanner.save_state", lambda s: None)
+    monkeypatch.setattr("market_scanner.TELEGRAM_CHAT_ID", "8142877259")
+
+    # 1. First run without timestamp -> Sends
+    state = {}
+    t0 = datetime(2026, 11, 28, 12, 0, 0, tzinfo=timezone.utc)
+    res0 = check_disboard_bump_reminder(state, now_dt=t0)
+    assert res0 is True
+    assert len(dispatched) == 1
+    assert "DISBOARD BUMP REMINDER" in dispatched[0]["msg"]
+    assert "/bump" in dispatched[0]["msg"]
+    assert dispatched[0]["chat_id"] == "8142877259"
+    assert state.get("last_disboard_bump_reminder_ts") == t0.isoformat()
+
+    # 2. Within 2 hours (1 hour later) -> Suppressed by cooldown
+    t1 = t0 + timedelta(hours=1)
+    res1 = check_disboard_bump_reminder(state, now_dt=t1)
+    assert res1 is False
+    assert len(dispatched) == 1
+
+    # 3. Exactly 2 hours and 1 minute later -> Sends
+    t2 = t0 + timedelta(hours=2, minutes=1)
+    res2 = check_disboard_bump_reminder(state, now_dt=t2)
+    assert res2 is True
+    assert len(dispatched) == 2
+    assert state.get("last_disboard_bump_reminder_ts") == t2.isoformat()
+
+    # 4. Force bypasses cooldown
+    t3 = t2 + timedelta(minutes=5)
+    res3 = check_disboard_bump_reminder(state, now_dt=t3, force=True)
+    assert res3 is True
+    assert len(dispatched) == 3
+
