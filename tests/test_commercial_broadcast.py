@@ -385,3 +385,48 @@ def test_clean_jargon_free_channel_signal_format():
     assert "5000" not in clean_msg
 
 
+def test_send_telegram_alert_html_parse_error_fallback(monkeypatch):
+    """Verify that send_telegram_alert falls back to plain text when Telegram returns 400 Bad Request."""
+    import httpx
+    from market_scanner import send_telegram_alert
+
+    calls = []
+
+    class MockResponse:
+        def __init__(self, status_code, text):
+            self.status_code = status_code
+            self.text = text
+            self.headers = {}
+
+    class MockClient:
+        def __init__(self, *args, **kwargs):
+            pass
+        def __enter__(self):
+            return self
+        def __exit__(self, *args):
+            pass
+        def post(self, url, json=None):
+            calls.append(json)
+            # First attempt with bad HTML returns 400, second fallback returns 200
+            if len(calls) == 1:
+                return MockResponse(400, '{"ok":false,"description":"Bad Request: can\'t parse entities"}')
+            return MockResponse(200, '{"ok":true}')
+
+    monkeypatch.setattr(httpx, "Client", MockClient)
+    monkeypatch.setattr("market_scanner.TELEGRAM_BOT_TOKEN", "mock_token")
+    monkeypatch.setattr("market_scanner.TELEGRAM_CHAT_ID", "123456789")
+
+    bad_html = "<b>Unclosed bold text with invalid < entities"
+    res = send_telegram_alert(bad_html, max_retries=1, specific_chat_id="123456789", bypass_test_mode=True)
+
+    assert res is True
+    assert len(calls) == 2
+    # First call had HTML mode
+    assert calls[0].get("parse_mode") == "HTML"
+    # Second call stripped HTML and did not have parse_mode='HTML'
+    assert "parse_mode" not in calls[1]
+    assert "<b>" not in calls[1]["text"]
+    assert "Unclosed bold text" in calls[1]["text"]
+
+
+

@@ -1585,10 +1585,11 @@ def send_telegram_alert(
     text: str,
     max_retries: int = 3,
     specific_chat_id: str | None = None,
-    protect_content: bool | None = None
+    protect_content: bool | None = None,
+    bypass_test_mode: bool = False
 ) -> bool:
     """Send Telegram message with exponential backoff on rate limit (HTTP 429) and optional content protection."""
-    if os.environ.get("PYTEST_CURRENT_TEST") or "pytest" in sys.modules:
+    if not bypass_test_mode and (os.environ.get("PYTEST_CURRENT_TEST") or "pytest" in sys.modules):
         logger.info(f"[TELEGRAM SUPPRESSED — test mode] {text[:120]}")
         return True
     if not TELEGRAM_BOT_TOKEN:
@@ -1637,6 +1638,26 @@ def send_telegram_alert(
                         retry_after = int(resp.headers.get("Retry-After", 5))
                         logger.warning(f"Telegram rate limited for {chat}. Waiting {retry_after}s (attempt {attempt+1}/{max_retries})")
                         time.sleep(retry_after)
+                    elif resp.status_code == 400 and ("can't parse entities" in resp.text or "entity" in resp.text.lower()):
+                        logger.warning(f"Telegram HTML entity parse error for {chat}. Retrying with plain text fallback.")
+                        import re
+                        plain_text = re.sub(r"<[^>]*>", "", text)
+                        plain_payload = {
+                            "chat_id": chat,
+                            "text": plain_text,
+                            "disable_web_page_preview": True,
+                            "link_preview_options": {"is_disabled": True}
+                        }
+                        if use_protect:
+                            plain_payload["protect_content"] = True
+                        fb_resp = client.post(url, json=plain_payload)
+                        if fb_resp.status_code == 200:
+                            logger.info(f"Telegram alert sent as plain text fallback to {chat}.")
+                            sent = True
+                            break
+                        else:
+                            logger.error(f"Plain text fallback also failed to {chat}: {fb_resp.status_code} {fb_resp.text[:200]}")
+                            break
                     else:
                         logger.error(f"Failed to send Telegram alert to {chat}: {resp.status_code} {resp.text[:200]}")
                         break
