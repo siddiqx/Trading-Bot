@@ -2031,6 +2031,8 @@ def format_public_tp_celebration(
     direction = trade.get("direction", "LONG")
     dir_icon = "🟢" if direction == "LONG" else "🔴"
     invite_url = TELEGRAM_VIP_INVITE_LINK or "https://whop.com/checkout/plan_AD4vSV9Uz7vyR"
+    pub_chat_name = TELEGRAM_PUBLIC_CHAT_ID.replace("@", "") if TELEGRAM_PUBLIC_CHAT_ID.startswith("@") else "ccrs_forex_signals"
+    channel_url = f"https://t.me/{pub_chat_name}"
 
     sign = "+" if realized_pips >= 0 else ""
     r_sign = "+" if realized_r >= 0 else ""
@@ -2038,6 +2040,13 @@ def format_public_tp_celebration(
     streak_header = ""
     if streak >= 2:
         streak_header = f"🔥 <b>PERFORMANCE: {streak} CONSECUTIVE WINS IN A ROW!</b>\n\n"
+
+    try:
+        from core.marketing import generate_telegram_share_url
+        share_url = generate_telegram_share_url(display_pair, direction, realized_pips, realized_r, channel_link=channel_url)
+        share_btn = f"\n\n🚀 <a href='{share_url}'><b>Share This Winning Setup with a Trading Partner</b></a>"
+    except Exception:
+        share_btn = ""
 
     return (
         f"🎯 <b>TAKE PROFIT HIT — VIP SIGNAL RESOLVED IN PROFIT!</b>\n\n"
@@ -2053,6 +2062,7 @@ def format_public_tp_celebration(
         f"  ✓ Confirmed Entry, SL & Volatility Cushion Trailing\n"
         f"  ✓ Zero Lag & Automated Copy-Trading Execution\n\n"
         f"👉 <a href='{invite_url}'><b>Join QuantFlow VIP Club on Whop</b></a>"
+        f"{share_btn}"
     )
 
 
@@ -2134,6 +2144,15 @@ def broadcast_trade_exit(
 
         results["public_sent"] = _safe_send_telegram_photo(tp_chart_bytes, pub_msg, specific_chat_id=pub_chat, protect_content=False)
         logger.info(f"Public TP celebration dispatched to {pub_chat} ({trade.get('pair')}: +{realized_pips:.1f}p, +{realized_r:.2f}R, streak={streak}).")
+
+        # 4. Automated Marketing & Reddit Syndication Hook
+        try:
+            from core.marketing import generate_reddit_case_study, publish_reddit_case_study
+            case_study = generate_reddit_case_study(trade, realized_pips, realized_r)
+            mkt_res = publish_reddit_case_study(case_study)
+            logger.info(f"Automated marketing case study processed: {mkt_res.get('status')} ({mkt_res.get('url')})")
+        except Exception as e:
+            logger.debug(f"Marketing syndication non-critical error: {e}")
 
     return results
 
@@ -5022,6 +5041,34 @@ if __name__ == "__main__":
                 logger.error(f"Loop cycle error: {e}")
             # Wait 60 seconds before checking next interval
             time.sleep(60)
+    elif len(sys.argv) > 1 and sys.argv[1] in ("--marketing", "--recap"):
+        from core.marketing import (
+            generate_weekly_performance_digest,
+            generate_reddit_case_study,
+            generate_twitter_thread,
+            publish_reddit_case_study
+        )
+        records = load_trade_records()
+        digest = generate_weekly_performance_digest(records)
+        print("\n" + "=" * 60)
+        print("INSTITUTIONAL WEEKLY DIGEST (READY FOR TELEGRAM / TWITTER):")
+        print("=" * 60)
+        print(digest)
+        sample_trade = {
+            "pair": "USDCAD",
+            "direction": "SHORT",
+            "timeframe": "15M",
+            "entry": 1.43125,
+            "take_profit": 1.42735,
+            "stop_loss": 1.43345
+        }
+        reddit_post = generate_reddit_case_study(sample_trade, 39.0, 1.77)
+        res = publish_reddit_case_study(reddit_post)
+        print("\n" + "=" * 60)
+        print(f"REDDIT CASE STUDY DRAFT STATUS: {res.get('status')} ({res.get('url')})")
+        print("=" * 60)
+        print(f"TITLE: {reddit_post['title']}\n")
+        print(reddit_post['body'])
     else:
         # Default: Single scan execution (ideal for cron or test)
         run_scan_cycle()

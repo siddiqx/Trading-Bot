@@ -46,6 +46,11 @@ data/*
 .coverage
 htmlcov/
 
+# Marketing Drafts
+marketing_drafts/*.md
+marketing_drafts/*.json
+!marketing_drafts/.gitkeep
+
 # IDE
 .vscode/
 .idea/
