@@ -5007,9 +5007,9 @@ if __name__ == "__main__":
                 "risk_pct": DEFAULT_RISK_PCT,
                 "account_equity": DEFAULT_ACCOUNT_EQUITY
             }
-        msg = format_alert_message(test_sig)
-        send_telegram_alert(msg)
-        print("Real-time live test alert dispatched to Telegram.")
+        state = load_state()
+        res = broadcast_commercial_signal(test_sig, state, df=df)
+        print(f"Real-time live test alert + chart dispatched to Telegram: {res}")
     elif len(sys.argv) > 1 and sys.argv[1] == "--loop":
         logger.info("Running market scanner in 24/7 background loop...")
         while True:
