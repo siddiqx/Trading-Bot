@@ -1588,30 +1588,41 @@ def send_telegram_alert(text: str, max_retries: int = 3) -> bool:
             logger.info(f"[TELEGRAM SKIPPED — test mode] {text[:120]}")
         return False
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-    payload = {
-        "chat_id": TELEGRAM_CHAT_ID,
-        "text": text,
-        "parse_mode": "HTML"
-    }
-    for attempt in range(max_retries):
-        try:
-            with httpx.Client(timeout=10.0) as client:
-                resp = client.post(url, json=payload)
-                if resp.status_code == 200:
-                    logger.info("Telegram alert sent successfully.")
-                    return True
-                elif resp.status_code == 429:
-                    retry_after = int(resp.headers.get("Retry-After", 5))
-                    logger.warning(f"Telegram rate limited. Waiting {retry_after}s (attempt {attempt+1}/{max_retries})")
-                    time.sleep(retry_after)
-                else:
-                    logger.error(f"Failed to send Telegram alert: {resp.status_code} {resp.text[:200]}")
-                    return False  # Non-retriable error
-        except Exception as e:
-            logger.error(f"Error sending Telegram alert (attempt {attempt+1}): {e}")
-            if attempt < max_retries - 1:
-                time.sleep(2 ** attempt)
-    return False
+    target_chats = [c.strip() for c in TELEGRAM_CHAT_ID.split(",") if c.strip()]
+    if not target_chats:
+        return False
+
+    overall_success = True
+    for chat in target_chats:
+        payload = {
+            "chat_id": chat,
+            "text": text,
+            "parse_mode": "HTML"
+        }
+        sent = False
+        for attempt in range(max_retries):
+            try:
+                with httpx.Client(timeout=10.0) as client:
+                    resp = client.post(url, json=payload)
+                    if resp.status_code == 200:
+                        logger.info(f"Telegram alert sent successfully to {chat}.")
+                        sent = True
+                        break
+                    elif resp.status_code == 429:
+                        retry_after = int(resp.headers.get("Retry-After", 5))
+                        logger.warning(f"Telegram rate limited for {chat}. Waiting {retry_after}s (attempt {attempt+1}/{max_retries})")
+                        time.sleep(retry_after)
+                    else:
+                        logger.error(f"Failed to send Telegram alert to {chat}: {resp.status_code} {resp.text[:200]}")
+                        break
+            except Exception as e:
+                logger.error(f"Error sending Telegram alert to {chat} (attempt {attempt+1}): {e}")
+                if attempt < max_retries - 1:
+                    time.sleep(2 ** attempt)
+        if not sent:
+            overall_success = False
+
+    return overall_success
 
 
 def get_live_price(ticker: str, pip: float, digits: int) -> float | None:
