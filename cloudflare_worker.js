@@ -2778,8 +2778,19 @@ async function sendTelegramMessage(chatId, text, replyMarkup = null, env = null)
     console.error("Configuration Error: TELEGRAM_BOT_TOKEN missing in environment. Telegram dispatch aborted.");
     return null;
   }
+
+  // Handle multi-chat broadcast (e.g. "8142877259,@ccrs_forex_signals")
+  const targetChats = String(chatId).split(",").map(c => c.trim()).filter(Boolean);
+  if (targetChats.length > 1) {
+    let lastRes = null;
+    for (const target of targetChats) {
+      lastRes = await sendTelegramMessage(target, text, replyMarkup, env);
+    }
+    return lastRes;
+  }
+
   const apiUrl = `https://api.telegram.org/bot${token}`;
-  const body = { chat_id: chatId, text: text, parse_mode: "HTML" };
+  const body = { chat_id: targetChats[0] || chatId, text: text, parse_mode: "HTML" };
   if (replyMarkup) body.reply_markup = replyMarkup;
 
   try {
