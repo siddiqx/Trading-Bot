@@ -2350,98 +2350,24 @@ def dispatch_social_media_pack(
     df: pd.DataFrame | None = None
 ) -> bool:
     """
-    Dispatches a complete Omni-Channel Social Media Pack directly from the
-    Contents Bot (@contents7_bot, TELEGRAM_MARKETING_BOT_TOKEN) to the user:
-      1. High-resolution dark chart photo.
-      2. 🐦 3-Tweet Twitter/X Thread (1-tap copyable with hashtags & channel URL).
-      3. 📝 Reddit Institutional Breakdown (1-tap copyable for r/Forex & r/PropFirm).
-      4. 📊 TradingView Publication Pack (1-tap copyable).
-    Keeps the personal Columbina Raiden Bot 100% clean and dedicated solely to trading.
+    Dispatches a clean, non-confused Omni-Channel Social Media Pack directly from
+    the Contents Bot (@contents7_bot, TELEGRAM_MARKETING_BOT_TOKEN) to the user:
+      1. High-resolution dark chart photo with clean ICT/SMC markup.
+      2. Master Social Hub containing:
+         - Unified cross-platform blurb (Twitter & Reddit)
+         - 3-Tweet Twitter/X Thread in <code> for 1-tap mobile copying
+         - Reddit Case Study with Title in <code> and Body in <pre>
+         - Interactive action buttons for instant switching
+    Keeps personal Columbina Raiden Bot 100% clean and dedicated solely to trading.
     """
-    admin_id = TELEGRAM_CHAT_ID.split(",")[0].strip() if TELEGRAM_CHAT_ID else ""
-    if not admin_id or admin_id.startswith("@"):
-        return False
-
-    pair = trade.get("pair") or trade.get("symbol") or "EURUSD"
-    display_pair = f"{pair[:3]}/{pair[3:]}" if len(pair) == 6 else pair
-    direction = trade.get("direction", "LONG").upper()
-    tf = str(trade.get("timeframe", "15M")).upper()
-
-    # 1. Fetch real market candles if chart_bytes not provided
-    if not chart_bytes and not (os.environ.get("PYTEST_CURRENT_TEST") or "pytest" in sys.modules):
-        try:
-            if df is None:
-                ticker = SYMBOLS.get(pair, {}).get("ticker", f"{pair}=X")
-                df = fetch_candles(ticker, tf.lower(), range_days="3d")
-            if df is not None and not df.empty:
-                status = "TP_HIT" if (realized_r is not None and realized_r > 0) else "OPEN"
-                chart_bytes = generate_trade_chart(df, trade, trade_status=status)
-        except Exception as e:
-            logger.warning(f"Could not generate real chart for social media pack: {e}")
-
-    # 2. Dispatch real market chart photo first via Contents Bot
-    if chart_bytes:
-        photo_caption = (
-            f"📸 <b>SOCIAL MEDIA CHART · {display_pair} ({tf})</b>\n"
-            f"<i>Attach this chart to your Twitter/X, Reddit, or TradingView post.</i>"
-        )
-        _safe_send_telegram_photo(
-            chart_bytes, photo_caption, specific_chat_id=admin_id, protect_content=False,
-            bot_token=TELEGRAM_MARKETING_BOT_TOKEN
-        )
-
-    from core.marketing.case_study_generator import (
-        generate_twitter_thread,
-        generate_reddit_case_study,
-        format_tradingview_telegram_pack
-    )
-
-    # 3. Twitter / X Pack (1-tap mobile copy)
-    pips_val = realized_pips if realized_pips is not None else float(trade.get("tp_pips", 35.0))
-    r_val = realized_r if realized_r is not None else float(trade.get("rr", 1.50))
-    tweets = generate_twitter_thread(trade, realized_pips=pips_val, realized_r=r_val)
-
-    twitter_msg = (
-        f"🐦 <b>TWITTER / X THREAD PACK (Tap to copy)</b>\n"
-        f"━━━━━━━━━━━━━━━━━━\n"
-        f"Asset: <b>{display_pair} ({direction})</b> • <code>{tf}</code>\n\n"
-        f"📌 <b>TWEET 1 (Hook & Levels):</b>\n"
-        f"<code>{tweets[0]}</code>\n\n"
-        f"📌 <b>TWEET 2 (Setup Anatomy):</b>\n"
-        f"<code>{tweets[1]}</code>\n\n"
-        f"📌 <b>TWEET 3 (Risk & Telegram Link):</b>\n"
-        f"<code>{tweets[2]}</code>\n\n"
-        f"━━━━━━━━━━━━━━━━━━\n"
-        f"👉 <i>Copy Tweet 1 → Post on X → Reply with Tweet 2 & 3.</i>"
-    )
-    _safe_send_telegram_alert(
-        twitter_msg, specific_chat_id=admin_id, protect_content=False,
-        bot_token=TELEGRAM_MARKETING_BOT_TOKEN
-    )
-
-    # 4. Reddit Case Study Pack (1-tap mobile copy)
-    reddit_post = generate_reddit_case_study(trade, realized_pips=pips_val, realized_r=r_val)
-    reddit_msg = (
-        f"📝 <b>REDDIT POST PACK (r/Forex · r/PropFirm)</b>\n"
-        f"━━━━━━━━━━━━━━━━━━\n"
-        f"Suggested Subreddits: <code>r/Forex</code>, <code>r/Daytrading</code>, <code>r/PropFirm</code>\n"
-        f"Flair: <code>Technical Analysis</code>\n\n"
-        f"📌 <b>COPY TITLE:</b>\n"
-        f"<code>{reddit_post['title']}</code>\n\n"
-        f"📋 <b>COPY BODY (Markdown):</b>\n"
-        f"<pre>{reddit_post['body']}</pre>\n\n"
-        f"━━━━━━━━━━━━━━━━━━\n"
-        f"👉 <i>Open Reddit → Create Post → Paste Title & Body.</i>"
-    )
-    _safe_send_telegram_alert(
-        reddit_msg, specific_chat_id=admin_id, protect_content=False,
-        bot_token=TELEGRAM_MARKETING_BOT_TOKEN
-    )
-
-    # 5. TradingView Publication Pack (1-tap copy)
-    tv_msg = format_tradingview_telegram_pack(trade, realized_pips=realized_pips, realized_r=realized_r)
-    return _safe_send_telegram_alert(
-        tv_msg, specific_chat_id=admin_id, protect_content=False,
+    from core.marketing.contents_bot import dispatch_automated_market_content
+    return dispatch_automated_market_content(
+        trade=trade,
+        event_type="TP_HIT" if (realized_r is not None and realized_r > 0) else "SIGNAL",
+        realized_pips=realized_pips,
+        realized_r=realized_r,
+        chart_bytes=chart_bytes,
+        df=df,
         bot_token=TELEGRAM_MARKETING_BOT_TOKEN
     )
 
@@ -2579,62 +2505,6 @@ def check_and_send_periodic_vip_broadcast(state: dict, now_dt: datetime | None =
         state["vip_broadcast_template_idx"] = idx + 1
         save_state(state)
         logger.info(f"Periodic VIP educational broadcast #{idx} dispatched to {pub_chat}.")
-        return True
-    return False
-
-
-def check_disboard_bump_reminder(
-    state: dict,
-    now_dt: datetime | None = None,
-    force: bool = False
-) -> bool:
-    """
-    Sends an automated reminder to the Admin chat (TELEGRAM_CHAT_ID) every 2 hours (7200s)
-    to type /bump in the Discord server. Runs 24/7 independently of market hours.
-    Never alters trades, risk management, or live signal execution.
-    """
-    if now_dt is None:
-        now_dt = datetime.now(timezone.utc)
-    elif now_dt.tzinfo is None:
-        now_dt = now_dt.replace(tzinfo=timezone.utc)
-
-    # 1. Check 2-hour cooldown unless forced
-    if not force:
-        last_bump_str = state.get("last_disboard_bump_reminder_ts")
-        if last_bump_str:
-            try:
-                last_dt = datetime.fromisoformat(last_bump_str)
-                if last_dt.tzinfo is None:
-                    last_dt = last_dt.replace(tzinfo=timezone.utc)
-                if (now_dt - last_dt).total_seconds() < DISBOARD_BUMP_COOLDOWN_SECONDS:
-                    return False
-            except Exception as e:
-                logger.warning(f"Failed to parse last_disboard_bump_reminder_ts: {e}")
-
-    # 2. Identify Admin chat target
-    admin_id = TELEGRAM_CHAT_ID.split(",")[0].strip() if TELEGRAM_CHAT_ID else None
-    if not admin_id:
-        return False
-
-    msg = (
-        "⏰ <b>DISBOARD BUMP REMINDER · QUANTFLOW DISCORD</b>\n"
-        "━━━━━━━━━━━━━━━━━━\n"
-        "2 hours have elapsed since the last server bump!\n\n"
-        "👉 Open Discord and send:\n"
-        "<code>/bump</code>\n\n"
-        "<i>Keeps QuantFlow pinned at the top of Disboard Forex & Algo-Trading listings to attract members.</i>"
-    )
-
-    sent = _safe_send_telegram_alert(
-        msg,
-        specific_chat_id=admin_id,
-        protect_content=False,
-        bot_token=TELEGRAM_MARKETING_BOT_TOKEN
-    )
-    if sent:
-        state["last_disboard_bump_reminder_ts"] = now_dt.isoformat()
-        save_state(state)
-        logger.info(f"Disboard 2-hour bump reminder dispatched to Admin ({admin_id}) via Contents Bot (@contents7_bot).")
         return True
     return False
 
@@ -5000,11 +4870,12 @@ def run_scan_cycle():
     # 0. Watchdog: Guarantee 24/7 Telegram bot responsiveness
     ensure_telegram_webhook_active()
 
-    # 0.1 Disboard 2-Hour Bump Reminder (Admin Only - Runs 24/7 independently of market hours)
+    # 0.1 Contents Marketing Bot Command Processor (Processes any pending user commands)
     try:
-        check_disboard_bump_reminder(state)
+        from core.marketing.contents_bot import process_contents_bot_pending_updates
+        process_contents_bot_pending_updates()
     except Exception as e:
-        logger.warning(f"Error checking Disboard bump reminder: {e}")
+        logger.warning(f"Error checking Contents bot updates: {e}")
 
     # 0.15 Community Engagement & Educational Content Engine (Context-Aware & Data-Aligned)
     try:
@@ -5451,10 +5322,9 @@ if __name__ == "__main__":
                 logger.error(f"Loop cycle error: {e}")
             # Wait 60 seconds before checking next interval
             time.sleep(60)
-    elif len(sys.argv) > 1 and sys.argv[1] == "--bump":
-        state = load_state()
-        res = check_disboard_bump_reminder(state, force=True)
-        print(f"Disboard bump reminder triggered to Admin: {res}")
+    elif len(sys.argv) > 1 and sys.argv[1] in ("--contents-bot", "--contents-loop"):
+        from core.marketing.contents_bot import run_contents_bot_loop
+        run_contents_bot_loop()
     elif len(sys.argv) > 1 and sys.argv[1] in ("--contents", "--social", "--marketing-pack", "--tv", "--outlook"):
         cmd = sys.argv[1]
         pair_arg = sys.argv[2].upper() if len(sys.argv) > 2 else None
