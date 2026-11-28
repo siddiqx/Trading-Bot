@@ -1,20 +1,24 @@
 """
-Institutional Video Shorts & Reels Generator (v3.0.0)
+Institutional Video Shorts & Reels Generator (v4.0.0)
 =====================================================
-Clean In-Chart Technical Analysis, Guidelines Hook, and Call-to-Action Engine.
+Hyper-Clean In-Chart Technical Analysis Engine.
 Directly modeled after institutional YouTube Shorts & Instagram Reels creators (e.g. @easytradingeasy).
 
-Design & Flow Architecture (35–40 seconds):
-  • Stage 0 (0% - 18%): Clean Strategy Guidelines Hook & Rules Card overlay.
-  • Stage 1 (18% - 38%): Liquidity Sweep purge of retail stop clusters.
-  • Stage 2 (38% - 58%): 20-EMA displacement reclaim & TradingView Position Tool entry.
-  • Stage 3 (58% - 78%): Dynamic bar-by-bar expansion into full 1:1.50R Take Profit.
-  • Stage 4 (78% - 100%): Clean Outro Credits with Subscribe & Free VIP Telegram signals CTA.
-
-Aesthetic:
-  • Full-Screen Visuals (85%+ canvas): Dedicated purely to the TradingView candlestick chart.
-  • Zero Clutter: No giant external cards squeezing the chart into a tiny box.
-  • Natural Human Neural Audio: Microsoft's top conversational human voice (en-US-BrianMultilingualNeural).
+Design Highlights:
+  • Zero Box-Like Overlays: NO pop-up cards or bulky boxes anywhere in the video.
+  • Unobstructed Full-Screen Chart: Visible 100% of the time from start to finish.
+  • Lower-Third Points (One by One): Short, simple, elegant typography at the bottom.
+  • Continuous Smooth Flow: No jarring cuts or broken visual interruptions.
+  • Real ICT Technical Analysis:
+      - Equal Lows / Highs Liquidity Pool levels.
+      - Clean Sell-Side / Buy-Side Liquidity Sweep wick markers.
+      - 20-EMA Dynamic Equilibrium curve.
+      - TradingView Long / Short Position Tool box (translucent TP profit & SL risk zones).
+      - Dynamic bar-by-bar progressive replay leading into Take Profit.
+      - In-chart badge: "★ TARGET HIT (+1.50R)".
+  • Natural Human Neural Voice:
+      - Microsoft's top conversational human voice (en-US-BrianMultilingualNeural).
+      - Natural pacing (+5%), conversational tone, 38–40 second duration.
 """
 
 import asyncio
@@ -38,24 +42,23 @@ from PIL import Image, ImageDraw, ImageFont
 logger = logging.getLogger("ShortsGenerator")
 logger.setLevel(logging.INFO)
 
-# Primary natural voice: Brian Multilingual (warm, natural conversational tone)
 PRIMARY_NEURAL_VOICE = "en-US-BrianMultilingualNeural"
 FALLBACK_NEURAL_VOICE = "en-US-GuyNeural"
 
 TELEGRAM_PUBLIC_CHANNEL = "@ccrs_forex_signals"
 
-# Clean, conversational 35-40s in-chart scripts across the active institutional universe
+# Hyper-clean in-chart scripts and lower-third points across active assets
 INCHART_SCRIPTS: Dict[str, Dict[str, Any]] = {
     "XAUUSD": {
         "title": "GOLD LIQUIDITY SWEEP & RECLAIM",
         "subtitle": "Institutional Order Flow Execution",
         "direction": "LONG",
-        "rules": [
-            ("• Rule 1: Never chase breakouts at session extremes", (255, 255, 255)),
-            ("• Rule 2: Identify engineered retail liquidity pools", (255, 255, 255)),
-            ("• Rule 3: Wait for session open liquidity sweep", (41, 98, 255)),
-            ("• Rule 4: 20-EMA displacement retest entry", (0, 230, 118)),
-            ("• Rule 5: 1:1.50R strict mathematical execution", (255, 215, 0))
+        "points": [
+            ("📌 STEP 1 OF 4", "Identify Equal Lows (Retail Liquidity Pool)", "Never chase breakouts at session extremes.", (255, 215, 0)),
+            ("⚡ STEP 2 OF 4", "Wait for Session Open to Sweep the Lows", "Purges retail stop losses to fill institutional buy orders.", (255, 82, 82)),
+            ("🎯 STEP 3 OF 4", "20-EMA Displacement Reclaim on Retest", "Enter on pullback with stop loss safely below sweep wick.", (41, 98, 255)),
+            ("💎 STEP 4 OF 4", "Full 1:1.50R Target Hit (+45.0 Pips)", "Mathematical quantitative edge. Zero intra-trade emotion.", (0, 230, 118)),
+            ("✨ DAILY INSTITUTIONAL ANALYSIS", "Subscribe & Join Telegram: @ccrs_forex_signals", "Free VIP Forex & Gold Signals · Link in Bio & Description", (255, 215, 0))
         ],
         "voiceover": (
             "Here are the exact guidelines to trade the institutional liquidity sweep strategy on Gold. "
@@ -65,13 +68,6 @@ INCHART_SCRIPTS: Dict[str, Dict[str, Any]] = {
             "Rule four: let the math work. The trade hits our one to one point five target cleanly. "
             "Subscribe for daily clean chart analysis, and join our free Telegram channel for real-time institutional signals."
         ),
-        "subtitles": [
-            "\"Here are the exact guidelines to trade the institutional liquidity sweep strategy.\"",
-            "\"Rule one & two: never chase breakouts. Wait for session open to sweep equal lows.\"",
-            "\"Rule three: once price displaces back above the 20 moving average, enter on retest.\"",
-            "\"Rule four: let the math work. The trade hits our 1:1.50 target cleanly.\"",
-            "\"Subscribe for daily clean analysis & join our free Telegram channel for real-time signals.\""
-        ],
         "ig_caption": (
             "🟡 Clean Gold (XAU/USD) In-Chart Liquidity Analysis\n\n"
             "Notice how retail support gets swept before the real expansion begins:\n"
@@ -87,12 +83,12 @@ INCHART_SCRIPTS: Dict[str, Dict[str, Any]] = {
         "title": "EUR/USD 20-EMA LIQUIDITY RECLAIM",
         "subtitle": "Interbank Market Structure Shift",
         "direction": "LONG",
-        "rules": [
-            ("• Rule 1: Never buy support breakout traps", (255, 255, 255)),
-            ("• Rule 2: Spot obvious retail stop clusters", (255, 255, 255)),
-            ("• Rule 3: Wait for London session stop purge", (41, 98, 255)),
-            ("• Rule 4: High-volume 20-EMA displacement reclaim", (0, 230, 118)),
-            ("• Rule 5: 1:1.50R mathematical profit exit", (255, 215, 0))
+        "points": [
+            ("📌 STEP 1 OF 4", "Identify Equal Lows (Retail Stop Pool)", "Never buy support breakout traps.", (255, 215, 0)),
+            ("⚡ STEP 2 OF 4", "Wait for London Session Stop Purge", "Institutions sweep the lows to accumulate liquidity.", (255, 82, 82)),
+            ("🎯 STEP 3 OF 4", "High-Volume 20-EMA Displacement Reclaim", "Execute on retest with protective stop below sweep.", (41, 98, 255)),
+            ("💎 STEP 4 OF 4", "Full 1:1.50R Target Hit (+33.0 Pips)", "Rule-based quantitative execution wins.", (0, 230, 118)),
+            ("✨ DAILY INSTITUTIONAL ANALYSIS", "Subscribe & Join Telegram: @ccrs_forex_signals", "Free VIP Forex & Gold Signals · Link in Bio & Description", (255, 215, 0))
         ],
         "voiceover": (
             "Here are the exact guidelines to trade the interbank liquidity sweep on EUR USD. "
@@ -102,13 +98,6 @@ INCHART_SCRIPTS: Dict[str, Dict[str, Any]] = {
             "Rule four: follow the math. Target is secured cleanly for a one to one point five return. "
             "Subscribe for daily clean chart analysis, and join our free Telegram channel for real-time institutional signals."
         ),
-        "subtitles": [
-            "\"Here are the exact guidelines to trade the interbank liquidity sweep on EUR/USD.\"",
-            "\"Rule one & two: identify equal lows and wait for London to sweep retail stops.\"",
-            "\"Rule three: wait for high-volume 20-EMA displacement, then execute on retest.\"",
-            "\"Rule four: follow the math. Target is secured cleanly for a 1:1.50 return.\"",
-            "\"Subscribe for daily clean analysis & join our free Telegram channel for real-time signals.\""
-        ],
         "ig_caption": (
             "⚡ EUR/USD Interbank Flow & Liquidity Sweep\n\n"
             "Institutions don't chase breakouts; they buy into retail stop runs:\n"
@@ -124,12 +113,12 @@ INCHART_SCRIPTS: Dict[str, Dict[str, Any]] = {
         "title": "USD/CAD BUY-SIDE LIQUIDITY HUNT",
         "subtitle": "Donchian Extreme & Trend Continuation",
         "direction": "SHORT",
-        "rules": [
-            ("• Rule 1: Never chase momentum into resistance", (255, 255, 255)),
-            ("• Rule 2: Identify equal highs where retail buys", (255, 255, 255)),
-            ("• Rule 3: Wait for sharp buy-side liquidity sweep", (255, 82, 82)),
-            ("• Rule 4: Bearish displacement beneath 20-EMA", (0, 230, 118)),
-            ("• Rule 5: Strict 1:1.50R risk-to-reward target", (255, 215, 0))
+        "points": [
+            ("📌 STEP 1 OF 4", "Identify Equal Highs (Retail Breakout Trap)", "Never chase upside momentum into resistance.", (255, 215, 0)),
+            ("⚡ STEP 2 OF 4", "Wait for Buy-Side Liquidity (BSL) Sweep", "Sharp rejection wick exhausts retail buyers.", (255, 82, 82)),
+            ("🎯 STEP 3 OF 4", "Bearish Displacement Beneath 20-EMA", "Execute short on pullback with stop above sweep high.", (41, 98, 255)),
+            ("💎 STEP 4 OF 4", "Full 1:1.50R Target Hit (+35.0 Pips)", "Zero guesswork. Strictly systematic rules.", (0, 230, 118)),
+            ("✨ DAILY INSTITUTIONAL ANALYSIS", "Subscribe & Join Telegram: @ccrs_forex_signals", "Free VIP Forex & Gold Signals · Link in Bio & Description", (255, 215, 0))
         ],
         "voiceover": (
             "Here are the exact guidelines to trade institutional reversals on USD CAD. "
@@ -139,13 +128,6 @@ INCHART_SCRIPTS: Dict[str, Dict[str, Any]] = {
             "Rule four: let the mathematics do the work, hitting our one to one point five target cleanly. "
             "Subscribe for daily clean chart analysis, and join our free Telegram channel for real-time institutional signals."
         ),
-        "subtitles": [
-            "\"Here are the exact guidelines to trade institutional reversals on USD/CAD.\"",
-            "\"Rule one & two: never chase momentum into resistance. Wait for the BSL sweep.\"",
-            "\"Rule three: violent displacement beneath the 20-EMA confirms short execution.\"",
-            "\"Rule four: let the mathematics do the work, hitting our 1:1.50 target cleanly.\"",
-            "\"Subscribe for daily clean analysis & join our free Telegram channel for real-time signals.\""
-        ],
         "ig_caption": (
             "🔴 USD/CAD Buy-Side Liquidity Reversal\n\n"
             "Why buying breakouts at the highs gets you stopped out:\n"
@@ -161,12 +143,12 @@ INCHART_SCRIPTS: Dict[str, Dict[str, Any]] = {
         "title": "USD/CHF EQUILIBRIUM REVERSAL",
         "subtitle": "Safe-Haven Relative Strength Flow",
         "direction": "SHORT",
-        "rules": [
-            ("• Rule 1: Spot false upside breakouts above highs", (255, 255, 255)),
-            ("• Rule 2: Wait for aggressive rejection wick", (255, 82, 82)),
-            ("• Rule 3: Reversal drops beneath 20-EMA curve", (41, 98, 255)),
-            ("• Rule 4: Short pullback retest execution", (0, 230, 118)),
-            ("• Rule 5: 1:1.50R target secured with zero stress", (255, 215, 0))
+        "points": [
+            ("📌 STEP 1 OF 4", "Spot False Upside Breakout at Session Highs", "Smart money engineers liquidity above resistance.", (255, 215, 0)),
+            ("⚡ STEP 2 OF 4", "Aggressive Rejection Wick Sweeps BSL", "Purges early short stops and exhausts late buyers.", (255, 82, 82)),
+            ("🎯 STEP 3 OF 4", "Price Drops Beneath 20-EMA Equilibrium", "Enter short on the retest of dynamic equilibrium.", (41, 98, 255)),
+            ("💎 STEP 4 OF 4", "Full 1:1.50R Target Hit (+30.0 Pips)", "Discipline over emotion every single time.", (0, 230, 118)),
+            ("✨ DAILY INSTITUTIONAL ANALYSIS", "Subscribe & Join Telegram: @ccrs_forex_signals", "Free VIP Forex & Gold Signals · Link in Bio & Description", (255, 215, 0))
         ],
         "voiceover": (
             "Here are the exact guidelines to trade safe-haven currency flow on USD CHF. "
@@ -176,13 +158,6 @@ INCHART_SCRIPTS: Dict[str, Dict[str, Any]] = {
             "Rule four: target hit cleanly for a one to one point five risk to reward. "
             "Subscribe for daily clean chart analysis, and join our free Telegram channel for real-time institutional signals."
         ),
-        "subtitles": [
-            "\"Here are the exact guidelines to trade safe-haven flow on USD/CHF.\"",
-            "\"Rule one & two: identify false breakouts and wait for BSL liquidity sweep.\"",
-            "\"Rule three: strong displacement drops beneath the 20-EMA for retest entry.\"",
-            "\"Rule four: target hit cleanly for a 1:1.50 risk-to-reward.\"",
-            "\"Subscribe for daily clean analysis & join our free Telegram channel for real-time signals.\""
-        ],
         "ig_caption": (
             "📉 USD/CHF 20-EMA Dynamic Reversal\n\n"
             "How institutional relative currency flow creates high-probability reversals:\n"
@@ -198,12 +173,12 @@ INCHART_SCRIPTS: Dict[str, Dict[str, Any]] = {
         "title": "AUD/USD COMMODITY LIQUIDITY BREAK",
         "subtitle": "High-Beta Relative Strength Displacement",
         "direction": "LONG",
-        "rules": [
-            ("• Rule 1: Spot consolidation base with equal lows", (255, 255, 255)),
-            ("• Rule 2: Wait for smart money liquidity sweep", (41, 98, 255)),
-            ("• Rule 3: Bullish displacement above 20-EMA curve", (0, 230, 118)),
-            ("• Rule 4: Retest entry with disciplined stop", (255, 255, 255)),
-            ("• Rule 5: 1:1.50R mathematical edge secured", (255, 215, 0))
+        "points": [
+            ("📌 STEP 1 OF 4", "Consolidation Base Engineers Equal Lows", "Retail stop placement clusters beneath the base.", (255, 215, 0)),
+            ("⚡ STEP 2 OF 4", "London Sweep Clears Out Retail Stops", "Fills high-volume buy orders at discount prices.", (255, 82, 82)),
+            ("🎯 STEP 3 OF 4", "Bullish Displacement Closes Above 20-EMA", "Execute long on retest with disciplined risk.", (41, 98, 255)),
+            ("💎 STEP 4 OF 4", "Full 1:1.50R Target Hit (+32.0 Pips)", "Mathematical edge executed with zero bias.", (0, 230, 118)),
+            ("✨ DAILY INSTITUTIONAL ANALYSIS", "Subscribe & Join Telegram: @ccrs_forex_signals", "Free VIP Forex & Gold Signals · Link in Bio & Description", (255, 215, 0))
         ],
         "voiceover": (
             "Here are the exact guidelines to trade high-beta currency sweeps on AUD USD. "
@@ -213,13 +188,6 @@ INCHART_SCRIPTS: Dict[str, Dict[str, Any]] = {
             "Rule four: target reached with mathematical discipline for a one to one point five gain. "
             "Subscribe for daily clean chart analysis, and join our free Telegram channel for real-time institutional signals."
         ),
-        "subtitles": [
-            "\"Here are the exact guidelines to trade high-beta currency sweeps on AUD/USD.\"",
-            "\"Rule one & two: spot equal lows and wait for the institutional sweep.\"",
-            "\"Rule three: strong displacement closes back above the 20-EMA for retest entry.\"",
-            "\"Rule four: target reached with mathematical discipline for a 1:1.50 gain.\"",
-            "\"Subscribe for daily clean analysis & join our free Telegram channel for real-time signals.\""
-        ],
         "ig_caption": (
             "🇦🇺 AUD/USD Systematic Liquidity Reclaim\n\n"
             "Clean interbank technical analysis on AUD/USD:\n"
@@ -261,7 +229,7 @@ def render_inchart_replay_charts(
     Renders 4 high-definition (1080x1650) full-screen in-chart replay frames.
     Directly models @easytradingeasy style:
       - 100% focused on chart price action.
-      - Real progressive candle reveal across the 4 stages.
+      - Real progressive candle reveal across the stages.
       - Liquidity level line, sweep marker, 20-EMA curve, and TradingView position tool.
     """
     bars = df.tail(num_bars).copy().reset_index(drop=True)
@@ -299,8 +267,8 @@ def render_inchart_replay_charts(
     replay_charts: List[Image.Image] = []
 
     for phase in range(4):
-        fig, ax = plt.subplots(figsize=(10.8, 16.5), dpi=100, facecolor="#131722")
-        ax.set_facecolor("#131722")
+        fig, ax = plt.subplots(figsize=(10.8, 16.5), dpi=100, facecolor="#0d1117")
+        ax.set_facecolor("#0d1117")
 
         # Candle replay progression: bar-by-bar reveal
         if phase == 0:
@@ -337,7 +305,8 @@ def render_inchart_replay_charts(
             marker_shape = "v" if is_long else "^"
             ax.plot([sweep_idx], [sweep_level], marker=marker_shape, markersize=14, color="#ff5252", zorder=6)
             sweep_offset = -risk_dist * 0.15 if is_long else risk_dist * 0.15
-            ax.text(sweep_idx, sweep_level + sweep_offset, "✕ Liquidity Sweep", color="#ff5252", fontsize=14, fontweight="bold", ha="center", va="top" if is_long else "bottom", zorder=6)
+            sweep_txt = "✕ SSL Swept" if is_long else "✕ BSL Swept"
+            ax.text(sweep_idx, sweep_level + sweep_offset, sweep_txt, color="#ff5252", fontsize=14, fontweight="bold", ha="center", va="top" if is_long else "bottom", zorder=6)
 
         # TradingView Position Tool Box
         if phase >= 2:
@@ -357,21 +326,21 @@ def render_inchart_replay_charts(
         if phase >= 3:
             badge_y = tp_price + (risk_dist * 0.25 if is_long else -risk_dist * 0.25)
             ax.text(
-                len(bars)-6, badge_y, "★ 1:1.50R TARGET REACHED",
+                len(bars)-6, badge_y, "★ TARGET HIT (+1.50R)",
                 color="#00e676", fontsize=15, fontweight="bold",
-                bbox=dict(boxstyle="round,pad=0.5", facecolor="#131722", edgecolor="#00e676", linewidth=2.0)
+                bbox=dict(boxstyle="round,pad=0.4", facecolor="#0d1117", edgecolor="#00e676", linewidth=1.5)
             )
 
         ax.set_xlim(-1, len(bars) + 5)
         ax.set_ylim(min(lows) - risk_dist * 0.8, max(highs) + risk_dist * 0.8)
-        ax.grid(True, color="#2a2e39", linestyle="-", linewidth=0.8, alpha=0.5)
+        ax.grid(True, color="#1e222d", linestyle="-", linewidth=0.8, alpha=0.5)
         for spine in ax.spines.values():
-            spine.set_color("#2a2e39")
+            spine.set_color("#1e222d")
         ax.tick_params(colors="#787b86", labelsize=11)
 
         plt.tight_layout(pad=1.5)
         buf = io.BytesIO()
-        plt.savefig(buf, format="png", facecolor=fig.get_facecolor(), edgecolor="none", dpi=100)
+        plt.savefig(buf, format="png", facecolor="#0d1117", edgecolor="none", dpi=100)
         plt.close(fig)
         buf.seek(0)
         replay_charts.append(Image.open(buf))
@@ -410,17 +379,18 @@ def generate_trading_short_video(
     candle_df: Optional[pd.DataFrame] = None
 ) -> Tuple[Optional[bytes], Dict[str, Any]]:
     """
-    Renders an uncluttered, full-screen vertical (1080x1920, 35-40s) video short.
+    Renders an uncluttered, full-screen vertical (1080x1920, 38-40s) video short.
     Features:
-      - Guidelines Intro & Rules Card
-      - Clean in-chart progressive replay
-      - Subscribe & Telegram VIP signals CTA outro
+      - ZERO box overlays on top of the chart.
+      - 100% visible, continuous chart flow from start to finish.
+      - Short & simple points displayed one-by-one in the clean lower-third.
+      - Professional Subscribe & Telegram credits at the end.
     """
     # Fast path for unit tests
     if os.environ.get("PYTEST_CURRENT_TEST") or "pytest" in sys.modules:
         dummy_meta = {
             "pair": pair,
-            "title": "CLEAN IN-CHART LIQUIDITY REPLAY",
+            "title": "HYPER-CLEAN IN-CHART LIQUIDITY REPLAY",
             "ig_caption": "Test IG Caption",
             "duration": 38.0
         }
@@ -444,7 +414,7 @@ def generate_trading_short_video(
         audio_path = os.path.join(tmpdir, "voice.mp3")
         video_out = os.path.join(tmpdir, "short.mp4")
 
-        # 2. Generate Natural Neural Audio (Brian, ~36-40s)
+        # 2. Generate Natural Neural Audio (Brian, ~38-40s)
         if voice_enabled:
             try:
                 duration = asyncio.run(_generate_natural_audio(config["voiceover"], audio_path))
@@ -453,7 +423,7 @@ def generate_trading_short_video(
                 voice_enabled = False
                 duration = 38.0
         else:
-            duration = 36.0
+            duration = 38.0
 
         # 3. Render In-Chart Replay Frames (1080x1650)
         chart_imgs = render_inchart_replay_charts(candle_df, norm_pair, direction=config["direction"])
@@ -463,10 +433,10 @@ def generate_trading_short_video(
         fps = 24
         total_frames = int(duration * fps)
 
-        font_bold_lg = _get_system_font(28, bold=True)
+        font_bold_lg = _get_system_font(30, bold=True)
         font_bold_md = _get_system_font(24, bold=True)
+        font_bold_sm = _get_system_font(20, bold=True)
         font_reg_md = _get_system_font(22, bold=False)
-        font_reg_sm = _get_system_font(18, bold=False)
 
         ffmpeg_cmd = [
             "ffmpeg", "-y",
@@ -495,7 +465,7 @@ def generate_trading_short_video(
 
         proc = subprocess.Popen(ffmpeg_cmd, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
-        subtitles = config["subtitles"]
+        points = config["points"]
         phase_splits = [0.18, 0.38, 0.58, 0.78, 1.0]
 
         for frame_idx in range(total_frames):
@@ -514,56 +484,29 @@ def generate_trading_short_video(
                 chart_idx = 3
             else:
                 cur_phase = 4
-                chart_idx = 3  # Outro sits over completed profitable chart
+                chart_idx = 3  # Keeps full completed profitable chart visible at the end!
 
             chart_img = chart_imgs[chart_idx]
-            canvas = Image.new("RGB", (w, h), color=(19, 23, 34))
+            canvas = Image.new("RGB", (w, h), color=(13, 17, 23))
             draw = ImageDraw.Draw(canvas)
 
-            # Top Floating Header Bar (y: 0 to 115)
-            draw.rectangle([0, 0, w, 115], fill=(13, 17, 23))
-            draw.line([0, 115, w, 115], fill=(42, 46, 57), width=1)
-            draw.rectangle([40, 25, 430, 90], fill=(24, 30, 44), outline=(41, 98, 255), width=2)
-            draw.text((60, 42), f"🟡 {norm_pair} · {timeframe}", font=font_bold_lg, fill=(255, 215, 0))
-            draw.text((460, 35), config["title"], font=font_bold_lg, fill=(255, 255, 255))
-            draw.text((460, 72), config["subtitle"], font=font_reg_sm, fill=(120, 123, 134))
+            # Minimalist Top Header (Clean, sleek, no giant borders)
+            draw.text((60, 45), f"🟡 {norm_pair} · {timeframe}", font=font_bold_lg, fill=(255, 215, 0))
+            draw.text((w - 60, 48), config["title"], font=font_bold_md, fill=(200, 205, 215), anchor="ra")
+            draw.line([60, 95, w - 60, 95], fill=(30, 34, 45), width=1)
 
-            # Paste Full Chart (y: 120 to 1770)
-            canvas.paste(chart_img, (0, 120))
+            # Paste Full-Screen Unobstructed Chart (y: 100 to 1750)
+            canvas.paste(chart_img, (0, 100))
 
-            # Stage 0: Guidelines Intro Overlay Card
-            if cur_phase == 0:
-                bx1, by1, bx2, by2 = 60, 520, w - 60, 1160
-                draw.rectangle([bx1, by1, bx2, by2], fill=(13, 17, 23), outline=(41, 98, 255), width=2)
-                draw.line([bx1 + 25, by1 + 75, bx2 - 25, by1 + 75], fill=(42, 46, 57), width=1)
-                draw.text(((bx1 + bx2) // 2, by1 + 40), "📌 THE SMART MONEY PLAYBOOK", font=font_bold_lg, fill=(255, 215, 0), anchor="mm")
+            # Bottom Lower-Third Points (NO BOXES! Clean, hyper-professional open typography)
+            tag_text, main_text, sub_text, tag_color = points[cur_phase]
 
-                ry = by1 + 115
-                for r_text, r_col in config["rules"]:
-                    draw.text((bx1 + 40, ry), r_text, font=font_bold_md, fill=r_col)
-                    ry += 80
+            draw.line([60, 1750, w - 60, 1750], fill=(30, 34, 45), width=1)
+            draw.text((w // 2, 1785), tag_text, font=font_bold_sm, fill=tag_color, anchor="mm")
+            draw.text((w // 2, 1830), main_text, font=font_bold_lg, fill=(255, 255, 255), anchor="mm")
+            draw.text((w // 2, 1875), sub_text, font=font_reg_md, fill=(150, 155, 165), anchor="mm")
 
-            # Stage 4: Outro CTA & Telegram VIP Signals Overlay Card
-            elif cur_phase == 4:
-                bx1, by1, bx2, by2 = 60, 520, w - 60, 1160
-                draw.rectangle([bx1, by1, bx2, by2], fill=(13, 17, 23), outline=(41, 98, 255), width=2)
-                draw.line([bx1 + 25, by1 + 80, bx2 - 25, by1 + 80], fill=(42, 46, 57), width=1)
-
-                draw.text(((bx1 + bx2) // 2, by1 + 42), "✨ SUBSCRIBE FOR DAILY ANALYSIS", font=font_bold_lg, fill=(255, 215, 0), anchor="mm")
-                draw.text(((bx1 + bx2) // 2, by1 + 130), "🚀 FREE VIP FOREX & GOLD SIGNALS", font=font_bold_md, fill=(255, 255, 255), anchor="mm")
-
-                draw.rectangle([bx1 + 50, by1 + 180, bx2 - 50, by1 + 270], fill=(24, 32, 54), outline=(0, 230, 118), width=2)
-                draw.text(((bx1 + bx2) // 2, by1 + 225), f"📲 Telegram: {TELEGRAM_PUBLIC_CHANNEL}", font=font_bold_lg, fill=(0, 230, 118), anchor="mm")
-
-                draw.text(((bx1 + bx2) // 2, by1 + 330), "Institutional Quantitative Setups · Zero Emotion", font=font_reg_md, fill=(180, 185, 195), anchor="mm")
-                draw.text(((bx1 + bx2) // 2, by1 + 390), "🔗 Link in Bio & Pinned Description", font=font_bold_md, fill=(41, 98, 255), anchor="mm")
-
-            # Bottom Subtitle Area (y: 1770 to 1920)
-            draw.rectangle([0, 1770, w, 1920], fill=(13, 17, 23))
-            draw.line([0, 1770, w, 1770], fill=(42, 46, 57), width=1)
-            draw.text((540, 1835), subtitles[cur_phase], font=font_reg_md, fill=(255, 255, 255), anchor="mm")
-
-            # 3px Bottom Progress Line
+            # Sleek 3px Bottom Progress Line
             draw.rectangle([0, 1915, int(w * progress), 1920], fill=(0, 230, 118))
 
             proc.stdin.write(canvas.tobytes())
@@ -582,7 +525,7 @@ def generate_trading_short_video(
                 "voice_enabled": voice_enabled,
                 "file_size": len(video_bytes)
             }
-            logger.info(f"Generated clean in-chart {norm_pair} video ({len(video_bytes)} bytes, {duration:.1f}s)")
+            logger.info(f"Generated hyper-clean {norm_pair} video ({len(video_bytes)} bytes, {duration:.1f}s)")
             return video_bytes, metadata
 
     return None, {}
