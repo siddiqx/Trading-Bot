@@ -35,6 +35,7 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_MARKETING_BOT_TOKEN: ${{ secrets.TELEGRAM_MARKETING_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
         run: |
           echo "Starting 24/7 Contents Bot live Telegram listener..."
           # Run for 14,000 seconds (~3.88 hours) before clean handoff to next runner

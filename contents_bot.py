@@ -21,7 +21,7 @@ from core.marketing.contents_bot import (
     run_contents_bot_loop,
     process_contents_bot_pending_updates,
     dispatch_automated_market_content,
-    get_latest_trade_or_benchmark,
+    get_latest_active_trade,
     handle_contents_bot_update,
     TELEGRAM_MARKETING_BOT_TOKEN,
     TELEGRAM_CHAT_ID
@@ -42,7 +42,6 @@ def main():
         return
 
     admin_id = TELEGRAM_CHAT_ID.split(",")[0].strip() if TELEGRAM_CHAT_ID else "8142877259"
-    trade, pips, r_val = get_latest_trade_or_benchmark()
 
     cmd = sys.argv[1] if len(sys.argv) > 1 else "--help"
 
@@ -73,8 +72,12 @@ def main():
         print(f"Dispatched 4H trend outlook ({pair}) to {admin_id}: {res}")
 
     elif cmd in ("--pack", "--contents"):
-        res = dispatch_automated_market_content(trade, realized_pips=pips, realized_r=r_val)
-        print(f"Dispatched master content pack to {admin_id}: {res}")
+        active = get_latest_active_trade()
+        if active:
+            res = dispatch_automated_market_content(active)
+            print(f"Dispatched master content pack to {admin_id}: {res}")
+        else:
+            print(f"No active trade open. Run --twitter or --reddit to generate AI educational content with charts!")
 
     elif cmd in ("--check", "--poll"):
         offset = process_contents_bot_pending_updates()

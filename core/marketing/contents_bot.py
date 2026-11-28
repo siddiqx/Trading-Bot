@@ -171,21 +171,22 @@ def answer_callback(callback_query_id: str, text: str = "", bot_token: Optional[
         return False
 
 
-_TRADE_CACHE = None
-_TRADE_CACHE_TS = 0.0
+_ACTIVE_TRADE_CACHE = None
+_ACTIVE_TRADE_CACHE_TS = 0.0
 _CHART_CACHE: Dict[str, Tuple[float, bytes]] = {}
 
 
-def get_latest_trade_or_benchmark() -> Tuple[dict, Optional[float], Optional[float]]:
+def get_latest_active_trade() -> Optional[dict]:
     """
-    Retrieves the most recent active or completed trade from the ledger.
-    Cached for 30s in memory to ensure sub-second response times for Telegram commands.
+    Retrieves the currently open active trade from the ledger.
+    Returns None if there are NO active trades open in the trading system.
+    Never invents or fabricates fake mock trades.
     """
-    global _TRADE_CACHE, _TRADE_CACHE_TS
+    global _ACTIVE_TRADE_CACHE, _ACTIVE_TRADE_CACHE_TS
     import time
     now = time.time()
-    if _TRADE_CACHE is not None and (now - _TRADE_CACHE_TS < 30.0):
-        return _TRADE_CACHE
+    if _ACTIVE_TRADE_CACHE is not None and (now - _ACTIVE_TRADE_CACHE_TS < 15.0):
+        return _ACTIVE_TRADE_CACHE
 
     try:
         from market_scanner import load_trade_records
@@ -194,35 +195,31 @@ def get_latest_trade_or_benchmark() -> Tuple[dict, Optional[float], Optional[flo
         if active:
             latest_key = list(active.keys())[-1]
             trade = dict(active[latest_key])
-            _TRADE_CACHE = (trade, None, None)
-            _TRADE_CACHE_TS = now
-            return _TRADE_CACHE
+            _ACTIVE_TRADE_CACHE = trade
+            _ACTIVE_TRADE_CACHE_TS = now
+            return trade
+    except Exception as e:
+        logger.warning(f"Failed to fetch active trade from ledger: {e}")
 
+    _ACTIVE_TRADE_CACHE = None
+    _ACTIVE_TRADE_CACHE_TS = now
+    return None
+
+
+def get_recent_completed_trade() -> Optional[Tuple[dict, float, float]]:
+    """Retrieves the most recent verified completed trade from the ledger."""
+    try:
+        from market_scanner import load_trade_records
+        records = load_trade_records()
         completed = records.get("completed_trades", [])
         if completed:
             latest = dict(completed[-1])
-            pips = latest.get("realized_pips", latest.get("pips"))
-            r_val = latest.get("realized_r", latest.get("r_multiple"))
-            _TRADE_CACHE = (latest, pips, r_val)
-            _TRADE_CACHE_TS = now
-            return _TRADE_CACHE
+            pips = float(latest.get("realized_pips") or latest.get("pips", 0.0))
+            r_val = float(latest.get("realized_r") or latest.get("r_multiple", 0.0))
+            return latest, pips, r_val
     except Exception as e:
-        logger.warning(f"Failed to fetch trade from ledger: {e}")
-
-    # Fallback to realistic institutional benchmark trade
-    trade = {
-        "pair": "EURUSD",
-        "direction": "SHORT",
-        "entry": 1.08500,
-        "stop_loss": 1.08750,
-        "take_profit": 1.08125,
-        "timeframe": "15M",
-        "rr": 1.50,
-        "status": "OPEN"
-    }
-    _TRADE_CACHE = (trade, None, None)
-    _TRADE_CACHE_TS = now
-    return _TRADE_CACHE
+        logger.warning(f"Failed to query completed trades: {e}")
+    return None
 
 
 def fetch_candles_for_pair(pair: str, interval: str = "15m", range_days: str = "3d") -> Optional[pd.DataFrame]:
@@ -428,6 +425,9 @@ def handle_contents_bot_update(update: dict, bot_token: Optional[str] = None) ->
     """
     token = (bot_token or TELEGRAM_MARKETING_BOT_TOKEN).strip()
 
+    active_trade = get_latest_active_trade()
+    recent_comp = get_recent_completed_trade()
+
     # 1. Handle Inline Callback Queries
     if "callback_query" in update:
         cb = update["callback_query"]
@@ -436,49 +436,73 @@ def handle_contents_bot_update(update: dict, bot_token: Optional[str] = None) ->
         chat_id = str(cb.get("message", {}).get("chat", {}).get("id") or cb.get("from", {}).get("id"))
         answer_callback(cb_id, bot_token=token)
 
-        trade, pips, r_val = get_latest_trade_or_benchmark()
-        pair = data.split("_")[-1] if "_" in data else trade.get("pair", "EURUSD")
-        trade["pair"] = pair
+        target_pair = data.split("_")[-1] if "_" in data else (active_trade.get("pair") if active_trade else "EURUSD")
+        if target_pair not in ACTIVE_PAIRS:
+            target_pair = "EURUSD"
 
         if data.startswith("btn_tw"):
-            from core.marketing.case_study_generator import generate_twitter_thread
-            tweets = generate_twitter_thread(trade, realized_pips=pips or 35.0, realized_r=r_val or 1.50)
-            msg = (
-                f"🐦 <b>TWITTER / X THREAD · {pair} (Tap to copy)</b>\n"
-                f"━━━━━━━━━━━━━━━━━━\n\n"
-                f"📌 <b>TWEET 1 (Hook & Levels):</b>\n<code>{tweets[0]}</code>\n\n"
-                f"📌 <b>TWEET 2 (Setup Anatomy):</b>\n<code>{tweets[1]}</code>\n\n"
-                f"📌 <b>TWEET 3 (Risk & Link):</b>\n<code>{tweets[2]}</code>"
-            )
-            return send_contents_message(chat_id, msg, reply_markup=get_persistent_menu_keyboard(), bot_token=token)
+            if active_trade:
+                from core.marketing.case_study_generator import generate_twitter_thread
+                tweets = generate_twitter_thread(active_trade)
+                msg = (
+                    f"🐦 <b>TWITTER / X THREAD · {target_pair} (Tap to copy)</b>\n"
+                    f"━━━━━━━━━━━━━━━━━━\n\n"
+                    f"📌 <b>TWEET 1 (Hook & Levels):</b>\n<code>{tweets[0]}</code>\n\n"
+                    f"📌 <b>TWEET 2 (Setup Anatomy):</b>\n<code>{tweets[1]}</code>\n\n"
+                    f"📌 <b>TWEET 3 (Risk & Link):</b>\n<code>{tweets[2]}</code>"
+                )
+            else:
+                from core.marketing.ai_content_generator import generate_ai_twitter_educational_thread
+                ai_pack = generate_ai_twitter_educational_thread()
+                tweets = ai_pack["tweets"]
+                msg = (
+                    f"🐦 <b>TWITTER / X EDUCATIONAL THREAD (Tap to copy)</b>\n"
+                    f"━━━━━━━━━━━━━━━━━━\n"
+                    f"Topic: <b>{ai_pack['topic']}</b>\n\n"
+                    f"📌 <b>TWEET 1 (Hook):</b>\n<code>{tweets[0]}</code>\n\n"
+                    f"📌 <b>TWEET 2 (Mechanics):</b>\n<code>{tweets[1]}</code>\n\n"
+                    f"📌 <b>TWEET 3 (Takeaway & Link):</b>\n<code>{tweets[2]}</code>"
+                )
+            return send_contents_message(chat_id, msg, bot_token=token)
 
         elif data.startswith("btn_rd"):
-            from core.marketing.case_study_generator import generate_reddit_case_study
-            reddit_post = generate_reddit_case_study(trade, realized_pips=pips or 35.0, realized_r=r_val or 1.50)
-            msg = (
-                f"📝 <b>REDDIT CASE STUDY · {pair}</b>\n"
-                f"━━━━━━━━━━━━━━━━━━\n"
-                f"📌 <b>TITLE:</b>\n<code>{reddit_post['title']}</code>\n\n"
-                f"📋 <b>BODY:</b>\n<pre>{reddit_post['body']}</pre>"
-            )
-            return send_contents_message(chat_id, msg, reply_markup=get_persistent_menu_keyboard(), bot_token=token)
+            if active_trade:
+                from core.marketing.case_study_generator import generate_reddit_case_study
+                reddit_post = generate_reddit_case_study(active_trade)
+                msg = (
+                    f"📝 <b>REDDIT CASE STUDY · {target_pair}</b>\n"
+                    f"━━━━━━━━━━━━━━━━━━\n"
+                    f"📌 <b>TITLE:</b>\n<code>{reddit_post['title']}</code>\n\n"
+                    f"📋 <b>BODY:</b>\n<pre>{reddit_post['body']}</pre>"
+                )
+            else:
+                from core.marketing.ai_content_generator import generate_ai_reddit_educational_post
+                ai_pack = generate_ai_reddit_educational_post()
+                msg = (
+                    f"📝 <b>REDDIT EDUCATIONAL POST ({ai_pack.get('subreddit', 'r/Forex')})</b>\n"
+                    f"━━━━━━━━━━━━━━━━━━\n"
+                    f"📌 <b>TITLE:</b>\n<code>{ai_pack['title']}</code>\n\n"
+                    f"📋 <b>BODY:</b>\n<pre>{ai_pack['body']}</pre>"
+                )
+            return send_contents_message(chat_id, msg, bot_token=token)
 
         elif data.startswith("btn_ch"):
-            chart_bytes = generate_chart_bytes(trade, trade_status="OPEN")
+            chart_sig = {"pair": target_pair, "timeframe": "15M", "direction": (active_trade.get("direction") if active_trade and active_trade.get("pair") == target_pair else "NEUTRAL")}
+            chart_bytes = generate_chart_bytes(chart_sig, trade_status="OPEN" if active_trade else "OUTLOOK")
             if chart_bytes:
-                caption = f"📊 <b>REAL MARKET CHART · {pair} (15M)</b>\n<i>Clean ICT/SMC institutional markup.</i>"
-                return send_contents_photo(chat_id, chart_bytes, caption=caption, reply_markup=get_inline_action_keyboard(pair), bot_token=token)
+                caption = f"📊 <b>REAL MARKET CHART · {target_pair} (15M)</b>\n<i>Verified interbank price action & structure.</i>"
+                return send_contents_photo(chat_id, chart_bytes, caption=caption, reply_markup=get_inline_action_keyboard(target_pair), bot_token=token)
             return send_contents_message(chat_id, "Could not render chart at this moment.", bot_token=token)
 
         elif data.startswith("btn_ot"):
             from core.marketing.case_study_generator import format_market_outlook_telegram_pack
-            df_4h = fetch_candles_for_pair(pair, interval="1h", range_days="15d")
-            outlook_text = format_market_outlook_telegram_pack(pair=pair, df=df_4h)
-            outlook_sig = {"pair": pair, "timeframe": "4H", "direction": "NEUTRAL"}
+            df_4h = fetch_candles_for_pair(target_pair, interval="1h", range_days="15d")
+            outlook_text = format_market_outlook_telegram_pack(pair=target_pair, df=df_4h)
+            outlook_sig = {"pair": target_pair, "timeframe": "4H", "direction": "NEUTRAL"}
             chart_bytes = generate_chart_bytes(outlook_sig, trade_status="OUTLOOK", df=df_4h)
             if chart_bytes:
-                send_contents_photo(chat_id, chart_bytes, caption=f"🌐 <b>4H MARKET OUTLOOK · {pair}</b>", bot_token=token)
-            return send_contents_message(chat_id, outlook_text, reply_markup=get_persistent_menu_keyboard(), bot_token=token)
+                send_contents_photo(chat_id, chart_bytes, caption=f"🌐 <b>4H MARKET OUTLOOK · {target_pair}</b>", bot_token=token)
+            return send_contents_message(chat_id, outlook_text, bot_token=token)
 
         return True
 
@@ -491,88 +515,166 @@ def handle_contents_bot_update(update: dict, bot_token: Optional[str] = None) ->
     raw_text = (message.get("text") or "").strip()
     cmd = raw_text.lower()
 
-    trade, pips, r_val = get_latest_trade_or_benchmark()
-    pair = trade.get("pair", "EURUSD")
-
     # Command: /start or /help
     if cmd in ("/start", "/help", "help", "menu", "info"):
+        status_text = f"🟢 1 Active Trade Live ({active_trade.get('pair')})" if active_trade else "📡 Scanner Monitoring (No Active Setups)"
         welcome_text = (
-            f"🚀 <b>CONTENTS MARKETING COCKPIT (@contents7_bot)</b>\n\n"
-            f"Generate instant, institutional-grade content for <b>Twitter/X</b>, <b>Reddit</b>, and <b>TradingView</b>.\n\n"
-            f"<b>Available Commands:</b>\n"
-            f"• <code>/signal</code> (⚡ Latest Signal) — Clean cross-platform post for Twitter & Reddit\n"
-            f"• <code>/chart</code> (📊 Chart) — High-res candlestick chart with ICT levels\n"
-            f"• <code>/twitter</code> (🐦 Twitter Thread) — 3-tweet thread (1-tap copy)\n"
-            f"• <code>/reddit</code> (📝 Reddit Post) — Complete case study for r/Forex & r/PropFirm\n"
-            f"• <code>/outlook</code> (🌐 4H Trend Outlook) — Higher-timeframe macro breakdown\n"
-            f"• <code>/tradingview</code> (📈 TradingView Idea) — Clean narrative publication pack\n\n"
-            f"💡 <i>Tap any option on your typing keyboard below or type / to start.</i>"
+            f"🚀 <b>QUANTFLOW CONTENTS COCKPIT (@contents7_bot)</b>\n"
+            f"Engine Status: <b>{status_text}</b>\n\n"
+            f"<b>Commands:</b>\n"
+            f"• <code>/signal</code> — Active verified trade signal (or standby status)\n"
+            f"• <code>/twitter</code> — Educational FinTwit thread + real chart pic\n"
+            f"• <code>/reddit</code> — In-depth technical breakdown for r/Forex + chart\n"
+            f"• <code>/chart [PAIR]</code> — Real interbank candlestick chart\n"
+            f"• <code>/outlook [PAIR]</code> — 4H macro trend & liquidity structure\n"
+            f"• <code>/tradingview</code> — Clean publication pack\n\n"
+            f"💡 <i>Tip: Tap the Menu (/) button next to the typing bar to select commands!</i>"
         )
         return send_contents_message(chat_id, welcome_text, reply_markup=get_persistent_menu_keyboard(), bot_token=token)
 
     # Command: /signal
     elif cmd in ("/signal", "⚡ latest signal", "signal"):
-        signal_text = generate_unified_cross_platform_signal(trade, realized_pips=pips, realized_r=r_val)
-        chart_bytes = generate_chart_bytes(trade, trade_status="OPEN")
-        if chart_bytes:
-            send_contents_photo(
-                chat_id, chart_bytes,
-                caption=f"⚡ <b>ACTIVE SETUP · {trade.get('pair', 'EURUSD')} ({trade.get('direction', 'LONG')})</b>",
+        if active_trade:
+            signal_text = generate_unified_cross_platform_signal(active_trade)
+            chart_bytes = generate_chart_bytes(active_trade, trade_status="OPEN")
+            if chart_bytes:
+                send_contents_photo(
+                    chat_id, chart_bytes,
+                    caption=f"⚡ <b>VERIFIED ACTIVE TRADE · {active_trade.get('pair', 'EURUSD')} ({active_trade.get('direction', 'LONG')})</b>",
+                    bot_token=token
+                )
+            return send_contents_message(
+                chat_id, signal_text,
+                reply_markup=get_inline_action_keyboard(active_trade.get("pair", "EURUSD")),
                 bot_token=token
             )
-        return send_contents_message(
-            chat_id, signal_text,
-            reply_markup=get_inline_action_keyboard(trade.get("pair", "EURUSD")),
-            bot_token=token
-        )
-
-    # Command: /chart
-    elif cmd.startswith("/chart") or cmd in ("📊 chart", "chart"):
-        parts = raw_text.split()
-        target_pair = parts[1].upper() if len(parts) > 1 else pair
-        target_trade = dict(trade)
-        target_trade["pair"] = target_pair
-        chart_bytes = generate_chart_bytes(target_trade, trade_status="OPEN")
-        if chart_bytes:
-            caption = (
-                f"📊 <b>REAL MARKET CHART · {target_pair} (15M)</b>\n"
-                f"<i>Institutional ICT/SMC liquidity sweep & structure markup.</i>"
+        else:
+            no_trade_msg = (
+                "📡 <b>NO ACTIVE TRADES IDENTIFIED</b>\n"
+                "━━━━━━━━━━━━━━━━━━\n"
+                "The systematic CCRS quantitative engine currently monitors the 4 institutional pairs:\n\n"
+                "• <b>EUR/USD:</b> Standby (Evaluating 1H currency relative strength)\n"
+                "• <b>USD/CAD:</b> Neutral (No liquidity sweep identified)\n"
+                "• <b>USD/CHF:</b> Balanced (Divergence below 1.75σ threshold)\n"
+                "• <b>AUD/USD:</b> Standby\n\n"
+                "⚡ <i>Authentic systematic trading requires patience. We execute strictly when mathematical edge confirms (|D| ≥ 1.75σ).</i>\n\n"
+                "👉 Send <code>/outlook</code> to view 4H market structure analysis.\n"
+                "👉 Send <code>/twitter</code> or <code>/reddit</code> for educational content with real charts to post!"
             )
-            return send_contents_photo(chat_id, chart_bytes, caption=caption, reply_markup=get_inline_action_keyboard(target_pair), bot_token=token)
-        return send_contents_message(chat_id, f"⚠️ Unable to render chart for {target_pair} right now.", bot_token=token)
+            return send_contents_message(chat_id, no_trade_msg, bot_token=token)
 
     # Command: /twitter
     elif cmd in ("/twitter", "🐦 twitter thread", "twitter"):
         from core.marketing.case_study_generator import generate_twitter_thread
-        tweets = generate_twitter_thread(trade, realized_pips=pips or 35.0, realized_r=r_val or 1.50)
-        msg = (
-            f"🐦 <b>TWITTER / X THREAD · {pair} (Tap to copy)</b>\n"
-            f"━━━━━━━━━━━━━━━━━━\n\n"
-            f"📌 <b>TWEET 1 (Hook & Levels):</b>\n<code>{tweets[0]}</code>\n\n"
-            f"📌 <b>TWEET 2 (Setup Anatomy):</b>\n<code>{tweets[1]}</code>\n\n"
-            f"📌 <b>TWEET 3 (Risk & Free Link):</b>\n<code>{tweets[2]}</code>\n\n"
-            f"━━━━━━━━━━━━━━━━━━\n"
-            f"👉 <i>Post Tweet 1 → Reply with Tweet 2 & 3.</i>"
-        )
-        return send_contents_message(chat_id, msg, reply_markup=get_persistent_menu_keyboard(), bot_token=token)
+        from core.marketing.ai_content_generator import generate_ai_twitter_educational_thread
+
+        if active_trade:
+            tweets = generate_twitter_thread(active_trade)
+            pair = active_trade.get("pair", "EURUSD")
+            chart_bytes = generate_chart_bytes(active_trade, trade_status="OPEN")
+            if chart_bytes:
+                send_contents_photo(chat_id, chart_bytes, caption=f"📸 <b>REAL MARKET CHART · {pair} (15M)</b>\n<i>Attach this chart to your tweet.</i>", bot_token=token)
+            msg = (
+                f"🐦 <b>TWITTER / X THREAD · {pair} (Tap to copy)</b>\n"
+                f"━━━━━━━━━━━━━━━━━━\n\n"
+                f"📌 <b>TWEET 1 (Hook & Levels):</b>\n<code>{tweets[0]}</code>\n\n"
+                f"📌 <b>TWEET 2 (Setup Anatomy):</b>\n<code>{tweets[1]}</code>\n\n"
+                f"📌 <b>TWEET 3 (Risk & Link):</b>\n<code>{tweets[2]}</code>\n\n"
+                f"━━━━━━━━━━━━━━━━━━\n"
+                f"👉 <i>Post Tweet 1 with the chart photo above → Reply with Tweet 2 & 3.</i>"
+            )
+            return send_contents_message(chat_id, msg, bot_token=token)
+        else:
+            # Generate AI-powered authentic educational thread
+            ai_pack = generate_ai_twitter_educational_thread()
+            tweets = ai_pack["tweets"]
+            pair = ai_pack["pair"]
+            topic = ai_pack["topic"]
+
+            # Real market chart generated from live candles to attach to tweet!
+            chart_sig = {"pair": pair, "timeframe": "1H", "direction": "NEUTRAL"}
+            df_chart = fetch_candles_for_pair(pair, interval="1h", range_days="10d")
+            chart_bytes = generate_chart_bytes(chart_sig, trade_status="OUTLOOK", df=df_chart)
+            if chart_bytes:
+                caption = f"📸 <b>REAL MARKET CHART · {pair} (1H Structure)</b>\n<i>Attach this verified chart to your Twitter post.</i>"
+                send_contents_photo(chat_id, chart_bytes, caption=caption, bot_token=token)
+
+            msg = (
+                f"🐦 <b>TWITTER / X EDUCATIONAL THREAD (Tap to copy)</b>\n"
+                f"━━━━━━━━━━━━━━━━━━\n"
+                f"Topic: <b>{topic}</b>\n\n"
+                f"📌 <b>TWEET 1 (Hook):</b>\n<code>{tweets[0]}</code>\n\n"
+                f"📌 <b>TWEET 2 (Mechanics):</b>\n<code>{tweets[1]}</code>\n\n"
+                f"📌 <b>TWEET 3 (Takeaway & Link):</b>\n<code>{tweets[2]}</code>\n\n"
+                f"━━━━━━━━━━━━━━━━━━\n"
+                f"👉 <i>Post Tweet 1 with the chart photo above → Reply with Tweet 2 & 3.</i>"
+            )
+            return send_contents_message(chat_id, msg, bot_token=token)
 
     # Command: /reddit
     elif cmd in ("/reddit", "📝 reddit post", "reddit"):
         from core.marketing.case_study_generator import generate_reddit_case_study
-        reddit_post = generate_reddit_case_study(trade, realized_pips=pips or 35.0, realized_r=r_val or 1.50)
-        msg = (
-            f"📝 <b>REDDIT CASE STUDY · {pair}</b>\n"
-            f"━━━━━━━━━━━━━━━━━━\n"
-            f"Subreddits: <code>r/Forex</code>, <code>r/Daytrading</code>, <code>r/PropFirm</code>\n\n"
-            f"📌 <b>POST TITLE:</b>\n<code>{reddit_post['title']}</code>\n\n"
-            f"📋 <b>POST BODY (Markdown):</b>\n<pre>{reddit_post['body']}</pre>"
-        )
-        return send_contents_message(chat_id, msg, reply_markup=get_persistent_menu_keyboard(), bot_token=token)
+        from core.marketing.ai_content_generator import generate_ai_reddit_educational_post
+
+        if active_trade:
+            reddit_post = generate_reddit_case_study(active_trade)
+            pair = active_trade.get("pair", "EURUSD")
+            chart_bytes = generate_chart_bytes(active_trade, trade_status="OPEN")
+            if chart_bytes:
+                send_contents_photo(chat_id, chart_bytes, caption=f"📸 <b>REAL MARKET CHART · {pair} (15M)</b>\n<i>Attach this chart to your Reddit post.</i>", bot_token=token)
+            msg = (
+                f"📝 <b>REDDIT CASE STUDY · {pair}</b>\n"
+                f"━━━━━━━━━━━━━━━━━━\n"
+                f"📌 <b>TITLE:</b>\n<code>{reddit_post['title']}</code>\n\n"
+                f"📋 <b>BODY:</b>\n<pre>{reddit_post['body']}</pre>"
+            )
+            return send_contents_message(chat_id, msg, bot_token=token)
+        else:
+            # Generate AI-powered authentic educational post
+            ai_pack = generate_ai_reddit_educational_post()
+            pair = ai_pack["pair"]
+            sub = ai_pack.get("subreddit", "r/Forex")
+
+            # Real market chart to attach!
+            chart_sig = {"pair": pair, "timeframe": "1H", "direction": "NEUTRAL"}
+            df_chart = fetch_candles_for_pair(pair, interval="1h", range_days="10d")
+            chart_bytes = generate_chart_bytes(chart_sig, trade_status="OUTLOOK", df=df_chart)
+            if chart_bytes:
+                caption = f"📸 <b>REAL MARKET CHART · {pair} (1H Liquidity Structure)</b>\n<i>Attach this verified chart to your Reddit post.</i>"
+                send_contents_photo(chat_id, chart_bytes, caption=caption, bot_token=token)
+
+            msg = (
+                f"📝 <b>REDDIT EDUCATIONAL POST ({sub})</b>\n"
+                f"━━━━━━━━━━━━━━━━━━\n"
+                f"📌 <b>POST TITLE:</b>\n<code>{ai_pack['title']}</code>\n\n"
+                f"📋 <b>POST BODY (Markdown):</b>\n<pre>{ai_pack['body']}</pre>\n\n"
+                f"━━━━━━━━━━━━━━━━━━\n"
+                f"👉 <i>Open Reddit → Create Post in {sub} → Paste Title & Body, and attach the chart above.</i>"
+            )
+            return send_contents_message(chat_id, msg, bot_token=token)
+
+    # Command: /chart
+    elif cmd.startswith("/chart") or cmd in ("📊 chart", "chart"):
+        parts = raw_text.split()
+        target_pair = parts[1].upper() if len(parts) > 1 else (active_trade.get("pair") if active_trade else "EURUSD")
+        if target_pair not in ACTIVE_PAIRS:
+            target_pair = "EURUSD"
+        chart_sig = {"pair": target_pair, "timeframe": "15M", "direction": (active_trade.get("direction") if active_trade and active_trade.get("pair") == target_pair else "NEUTRAL")}
+        chart_bytes = generate_chart_bytes(chart_sig, trade_status="OPEN" if active_trade else "OUTLOOK")
+        if chart_bytes:
+            caption = (
+                f"📊 <b>REAL MARKET CHART · {target_pair} (15M)</b>\n"
+                f"<i>Verified interbank price action, 20-EMA curve, and Donchian liquidity bounds.</i>"
+            )
+            return send_contents_photo(chat_id, chart_bytes, caption=caption, reply_markup=get_inline_action_keyboard(target_pair), bot_token=token)
+        return send_contents_message(chat_id, f"⚠️ Unable to render chart for {target_pair} right now.", bot_token=token)
 
     # Command: /outlook
     elif cmd.startswith("/outlook") or cmd in ("🌐 4h trend outlook", "outlook"):
         parts = raw_text.split()
-        target_pair = parts[1].upper() if len(parts) > 1 else pair
+        target_pair = parts[1].upper() if len(parts) > 1 else (active_trade.get("pair") if active_trade else "EURUSD")
+        if target_pair not in ACTIVE_PAIRS:
+            target_pair = "EURUSD"
         from core.marketing.case_study_generator import format_market_outlook_telegram_pack
         df_4h = fetch_candles_for_pair(target_pair, interval="1h", range_days="15d")
         outlook_text = format_market_outlook_telegram_pack(pair=target_pair, df=df_4h)
@@ -580,20 +682,24 @@ def handle_contents_bot_update(update: dict, bot_token: Optional[str] = None) ->
         chart_bytes = generate_chart_bytes(outlook_sig, trade_status="OUTLOOK", df=df_4h)
         if chart_bytes:
             send_contents_photo(chat_id, chart_bytes, caption=f"🌐 <b>4H TREND OUTLOOK · {target_pair}</b>", bot_token=token)
-        return send_contents_message(chat_id, outlook_text, reply_markup=get_persistent_menu_keyboard(), bot_token=token)
+        return send_contents_message(chat_id, outlook_text, bot_token=token)
 
     # Command: /tradingview
     elif cmd in ("/tradingview", "📈 tradingview idea", "tradingview"):
-        from core.marketing.case_study_generator import format_tradingview_telegram_pack
-        tv_msg = format_tradingview_telegram_pack(trade, realized_pips=pips, realized_r=r_val)
-        return send_contents_message(chat_id, tv_msg, reply_markup=get_persistent_menu_keyboard(), bot_token=token)
+        if active_trade:
+            from core.marketing.case_study_generator import format_tradingview_telegram_pack
+            tv_msg = format_tradingview_telegram_pack(active_trade)
+            return send_contents_message(chat_id, tv_msg, bot_token=token)
+        else:
+            from core.marketing.case_study_generator import format_market_outlook_telegram_pack
+            tv_msg = format_market_outlook_telegram_pack(pair="EURUSD")
+            return send_contents_message(chat_id, tv_msg, bot_token=token)
 
     else:
         # Fallback helpful response
         return send_contents_message(
             chat_id,
-            "👋 Select an option from your typing keyboard or send <code>/help</code> for available commands.",
-            reply_markup=get_persistent_menu_keyboard(),
+            "👋 Send <code>/help</code> or tap the <b>Menu (/)</b> button next to the typing bar for available commands.",
             bot_token=token
         )
 

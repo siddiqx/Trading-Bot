@@ -255,24 +255,24 @@ def test_contents_bot_commands(monkeypatch):
     res_start = handle_contents_bot_update({"message": {"chat": {"id": "8142877259"}, "text": "/start"}})
     assert res_start is True
     assert len(messages_sent) == 1
-    assert "CONTENTS MARKETING COCKPIT" in messages_sent[0]["text"]
+    assert "QUANTFLOW CONTENTS COCKPIT" in messages_sent[0]["text"]
     assert messages_sent[0]["markup"] is not None
     assert "remove_keyboard" in messages_sent[0]["markup"]  # Clean text bar enforced!
 
-    # 2. Test /signal
+    # 2. Test /signal (when no active trade -> cleanly states no active trades identified)
     res_sig = handle_contents_bot_update({"message": {"chat": {"id": "8142877259"}, "text": "/signal"}})
     assert res_sig is True
-    assert any("INSTITUTIONAL TRADE SETUP" in m["text"] or "TAKE PROFIT" in m["text"] for m in messages_sent)
+    assert any("NO ACTIVE TRADES" in m["text"] or "VERIFIED ACTIVE TRADE" in m["text"] for m in messages_sent)
 
-    # 3. Test /twitter
+    # 3. Test /twitter (generates high-value content with real chart)
     res_tw = handle_contents_bot_update({"message": {"chat": {"id": "8142877259"}, "text": "/twitter"}})
     assert res_tw is True
-    assert any("TWITTER / X THREAD" in m["text"] for m in messages_sent)
+    assert any("TWITTER / X" in m["text"] for m in messages_sent)
 
-    # 4. Test /reddit
+    # 4. Test /reddit (generates in-depth post with real chart)
     res_rd = handle_contents_bot_update({"message": {"chat": {"id": "8142877259"}, "text": "/reddit"}})
     assert res_rd is True
-    assert any("REDDIT CASE STUDY" in m["text"] for m in messages_sent)
+    assert any("REDDIT" in m["text"] for m in messages_sent)
 
     # 5. Test /chart
     res_ch = handle_contents_bot_update({"message": {"chat": {"id": "8142877259"}, "text": "/chart EURUSD"}})
@@ -303,7 +303,7 @@ def test_contents_bot_callback_queries(monkeypatch):
     }
     res = handle_contents_bot_update(cb_update)
     assert res is True
-    assert any("TWITTER / X THREAD" in m["text"] for m in messages_sent)
+    assert any("TWITTER / X" in m["text"] for m in messages_sent)
 
 
 def test_dispatch_social_media_pack(monkeypatch):
@@ -342,4 +342,23 @@ def test_dispatch_social_media_pack(monkeypatch):
     # Ensure all alerts are routed strictly to the Contents Bot!
     for a in alerts:
         assert "9196801543" in str(a["token"])
+
+
+def test_ai_content_generator():
+    from core.marketing.ai_content_generator import (
+        generate_ai_twitter_educational_thread,
+        generate_ai_reddit_educational_post
+    )
+
+    tw = generate_ai_twitter_educational_thread(topic_idx=0)
+    assert "tweets" in tw
+    assert len(tw["tweets"]) == 3
+    assert "topic" in tw
+    assert "pair" in tw
+
+    rd = generate_ai_reddit_educational_post(topic_idx=0)
+    assert "title" in rd
+    assert "body" in rd
+    assert "subreddit" in rd
+    assert "pair" in rd
 
