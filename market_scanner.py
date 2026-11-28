@@ -2036,6 +2036,9 @@ def broadcast_commercial_signal(sig: dict, state: dict, extra_footer: str = "", 
     except Exception as e:
         logger.debug(f"Discord signal dispatch non-critical error: {e}")
 
+    state["last_signal_time"] = now_utc.isoformat()
+    save_state(state)
+
     return results
 
 
@@ -4723,6 +4726,7 @@ def run_scan_cycle():
         "circuit_breaker": "NORMAL",
     }
     state = load_state()
+    records = load_trade_records()
 
     # 0. Watchdog: Guarantee 24/7 Telegram bot responsiveness
     ensure_telegram_webhook_active()
@@ -4733,10 +4737,10 @@ def run_scan_cycle():
     except Exception as e:
         logger.warning(f"Error checking Disboard bump reminder: {e}")
 
-    # 0.15 Community Engagement & Educational Content Engine (24/7 with 3h cooldown)
+    # 0.15 Community Engagement & Educational Content Engine (Context-Aware & Data-Aligned)
     try:
         from core.marketing.engagement_engine import check_and_dispatch_engagement_content
-        check_and_dispatch_engagement_content(state, now_dt=scan_start)
+        check_and_dispatch_engagement_content(state, records=records, now_dt=scan_start)
     except Exception as e:
         logger.warning(f"Error checking community engagement content: {e}")
 
@@ -4746,7 +4750,6 @@ def run_scan_cycle():
         write_step_summary(telemetry, scan_start)
         return 0
 
-    records = load_trade_records()
     total_signals = 0
 
     # 0.2 Periodic Educational / VIP Value Broadcast (Max once every 72 hours during market hours)
@@ -5186,9 +5189,10 @@ if __name__ == "__main__":
     elif len(sys.argv) > 1 and sys.argv[1] in ("--engagement", "--news", "--poll", "--ict", "--vip"):
         from core.marketing.engagement_engine import check_and_dispatch_engagement_content
         state = load_state()
+        records = load_trade_records()
         arg = sys.argv[1].replace("--", "").upper()
         content_type = "AUTO" if arg == "ENGAGEMENT" else arg
-        success, reason = check_and_dispatch_engagement_content(state, force=True, content_type=content_type)
+        success, reason = check_and_dispatch_engagement_content(state, records=records, force=True, content_type=content_type)
         print(f"Engagement content dispatch ({content_type}): {success} - {reason}")
     elif len(sys.argv) > 1 and sys.argv[1] in ("--marketing", "--recap"):
         from core.marketing import (

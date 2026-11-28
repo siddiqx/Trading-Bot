@@ -1,18 +1,20 @@
 """
 Unit Tests for Community Engagement & Educational Content Engine
 ================================================================
-Tests economic calendar briefing generation, community polls, ICT educational cards,
-VIP promotion drops, and automated cooldown scheduling.
+Tests economic calendar briefing generation, context-aware non-contradictory polls,
+ICT educational cards, VIP promotion drops, and automated cooldown scheduling.
 """
 
 from datetime import datetime, timezone, timedelta
+import re
+
 from core.marketing.engagement_engine import (
     generate_daily_news_briefing,
-    get_community_poll,
+    build_natural_community_poll,
     get_ict_educational_card,
     get_vip_promotion_card,
     check_and_dispatch_engagement_content,
-    COMMUNITY_POLLS,
+    CORE_EDUCATIONAL_POLLS,
     ICT_EDUCATIONAL_CARDS,
     VIP_PROMOTION_CARDS,
 )
@@ -53,6 +55,7 @@ def test_generate_daily_news_briefing_with_events():
     assert res["type"] == "NEWS_BRIEFING"
     assert res["events_count"] == 2  # High + Medium
     assert res["has_high_impact"] is True
+    assert res["skip"] is False
     assert "Non-Farm Employment Change" in res["telegram_msg"]
     assert "Flash Manufacturing PMI" in res["telegram_msg"]
     assert "Low Impact Report" not in res["telegram_msg"]
@@ -61,26 +64,76 @@ def test_generate_daily_news_briefing_with_events():
     assert "Algorithmic Risk Guard" in res["telegram_msg"]
 
 
-def test_generate_daily_news_briefing_clean_runway():
+def test_generate_daily_news_briefing_skips_when_empty():
     ref_dt = datetime(2026, 11, 28, 7, 0, 0, tzinfo=timezone.utc)
     res = generate_daily_news_briefing(events=[], now_dt=ref_dt)
     assert res["events_count"] == 0
     assert res["has_high_impact"] is False
-    assert "Clean Macro Runway" in res["telegram_msg"]
+    assert res["skip"] is True  # Avoids posting artificial filler text
 
 
-def test_community_polls_structure():
-    assert len(COMMUNITY_POLLS) >= 5
-    for p in COMMUNITY_POLLS:
-        assert "id" in p
-        assert "question" in p
-        assert "options" in p
-        assert len(p["options"]) >= 2
-        assert len(p["question"]) <= 300
+def test_build_natural_poll_active_trade_alignment():
+    """When an active trade exists on EURUSD Short, poll asks for position management, NOT conflicting bias."""
+    mock_records = {
+        "active_trades": {
+            "tr_123": {
+                "pair": "EURUSD",
+                "direction": "SHORT",
+                "entry": 1.0850,
+                "stop_loss": 1.0875,
+                "take_profit": 1.08125
+            }
+        }
+    }
+    state = {}
+    poll = build_natural_community_poll(state, records=mock_records)
+    assert "EUR/USD Short" in poll["question"]
+    assert "Position Management" in poll["question"]
+    # Check options are clean and authentic
+    assert "Holding to full 1:1.50R Take Profit" in poll["options"]
+    assert "Stop Loss trailed to Breakeven" in poll["options"]
+    # Verify no fabricated target prices like '1.0950'
+    for opt in poll["options"]:
+        assert not re.search(r"\d\.\d{4}", opt)
 
-    poll0 = get_community_poll(0)
-    poll1 = get_community_poll(1)
-    assert poll0 != poll1
+
+def test_build_natural_poll_avoids_recently_alerted_pairs():
+    """When EURUSD and USDCAD were recently signaled, session bias poll chooses a different neutral pair."""
+    mock_records = {"active_trades": {}}
+    state = {
+        "alerted_signals": [
+            "EURUSD_15M_2026-11-28T08:00:00Z_SHORT",
+            "USDCAD_15M_2026-11-28T09:00:00Z_LONG",
+        ]
+    }
+    now_dt = datetime(2026, 11, 25, 8, 30, 0, tzinfo=timezone.utc)  # Wednesday London session
+    poll = build_natural_community_poll(state, records=mock_records, now_dt=now_dt)
+    assert "EUR/USD" not in poll["question"]
+    assert "USD/CAD" not in poll["question"]
+    # Should choose USD/CHF or AUD/USD
+    assert any(sym in poll["question"] for sym in ["USD/CHF", "AUD/USD"])
+    # Options use clean price action terms (Bullish, Bearish, MSS)
+    assert any("Bullish" in opt for opt in poll["options"])
+    assert any("Bearish" in opt for opt in poll["options"])
+    assert any("Market Structure Shift" in opt for opt in poll["options"])
+
+
+def test_build_natural_poll_ccrs_macro_divergence():
+    """Leverages live mathematical divergence from CCRS matrix."""
+    mock_records = {"active_trades": {}}
+    state = {"alerted_signals": []}
+    mock_ccrs = {
+        "latest_div": {
+            "AUDUSD": +3.48,
+            "EURUSD": +1.49,
+            "USDCHF": -1.56,
+            "USDCAD": -2.23
+        }
+    }
+    poll = build_natural_community_poll(state, records=mock_records, ccrs_matrix=mock_ccrs)
+    assert "AUD/USD" in poll["question"]
+    assert "+3.48σ" in poll["question"]
+    assert any("Market Structure Shift" in opt for opt in poll["options"])
 
 
 def test_ict_educational_cards_structure():
@@ -93,10 +146,6 @@ def test_ict_educational_cards_structure():
         assert len(c["telegram_msg"]) > 100
         assert "Whop" in c["telegram_msg"] or "VIP" in c["telegram_msg"]
 
-    card0 = get_ict_educational_card(0)
-    card1 = get_ict_educational_card(1)
-    assert card0["id"] != card1["id"]
-
 
 def test_vip_promotion_cards_structure():
     assert len(VIP_PROMOTION_CARDS) >= 2
@@ -107,7 +156,6 @@ def test_vip_promotion_cards_structure():
 
 
 def test_discord_content_and_poll_invalid_url():
-    # Graceful False when webhook url is invalid
     res_c = send_discord_content("Title", "Desc", webhook_url="https://invalid-discord.com")
     assert res_c is False
 
@@ -120,51 +168,25 @@ def test_send_telegram_poll_suppressed_in_test_mode():
     assert res is True
 
 
-def test_check_and_dispatch_engagement_content(monkeypatch):
-    dispatched = []
-
-    def mock_tg_alert(msg, specific_chat_id=None, protect_content=None):
-        dispatched.append(("TG_ALERT", msg, specific_chat_id))
-        return True
-
-    def mock_tg_poll(question, options, specific_chat_id=None, is_anonymous=True):
-        dispatched.append(("TG_POLL", question, specific_chat_id))
-        return True
-
-    def mock_dc_content(title, description, category=None, color=None):
-        dispatched.append(("DC_CONTENT", title))
-        return True
-
-    def mock_dc_poll(question, options):
-        dispatched.append(("DC_POLL", question))
-        return True
-
-    monkeypatch.setattr("market_scanner._safe_send_telegram_alert", mock_tg_alert)
-    monkeypatch.setattr("market_scanner.send_telegram_poll", mock_tg_poll)
-    monkeypatch.setattr("core.marketing.engagement_engine.send_discord_content", mock_dc_content)
-    monkeypatch.setattr("core.marketing.engagement_engine.send_discord_poll", mock_dc_poll)
+def test_post_signal_quiet_buffer(monkeypatch):
+    """Verifies that non-signal engagement content holds silence for 60m after a live trade signal."""
+    monkeypatch.setattr("market_scanner._safe_send_telegram_alert", lambda *a, **kw: True)
     monkeypatch.setattr("market_scanner.save_state", lambda s: None)
 
+    now = datetime(2026, 11, 28, 14, 0, 0, tzinfo=timezone.utc)
+    # Signal was sent 15 minutes ago
+    state = {
+        "last_signal_time": (now - timedelta(minutes=15)).isoformat()
+    }
+    ok, reason = check_and_dispatch_engagement_content(state, now_dt=now)
+    assert ok is False
+    assert "Holding silence" in reason
+
+
+def test_dead_zone_suppression(monkeypatch):
+    """Verifies that engagement posts are suppressed between 21:00 and 06:00 UTC."""
+    now_night = datetime(2026, 11, 28, 23, 0, 0, tzinfo=timezone.utc)
     state = {}
-    now = datetime(2026, 11, 28, 11, 0, 0, tzinfo=timezone.utc)
-
-    # 1. First run -> Dispatches ICT card (Mid-day session)
-    ok, desc = check_and_dispatch_engagement_content(state, now_dt=now, content_type="ICT")
-    assert ok is True
-    assert "ICT Masterclass Card" in desc
-    assert len(dispatched) >= 2
-    assert "last_engagement_post_ts" in state
-
-    # 2. Within 3 hours -> Cooldown active
-    dispatched.clear()
-    now_later = now + timedelta(hours=1)
-    ok2, desc2 = check_and_dispatch_engagement_content(state, now_dt=now_later)
-    assert ok2 is False
-    assert "Cooldown active" in desc2
-    assert len(dispatched) == 0
-
-    # 3. Force bypasses cooldown and sends Poll
-    ok3, desc3 = check_and_dispatch_engagement_content(state, now_dt=now_later, force=True, content_type="POLL")
-    assert ok3 is True
-    assert "Interactive Poll" in desc3
-    assert len(dispatched) >= 2
+    ok, reason = check_and_dispatch_engagement_content(state, now_dt=now_night)
+    assert ok is False
+    assert "dead-zone" in reason

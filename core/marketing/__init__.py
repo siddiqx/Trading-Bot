@@ -22,7 +22,7 @@ from core.marketing.discord_publisher import (
 )
 from core.marketing.engagement_engine import (
     generate_daily_news_briefing,
-    get_community_poll,
+    build_natural_community_poll,
     get_ict_educational_card,
     get_vip_promotion_card,
     check_and_dispatch_engagement_content,
@@ -42,7 +42,7 @@ __all__ = [
     "send_discord_content",
     "send_discord_poll",
     "generate_daily_news_briefing",
-    "get_community_poll",
+    "build_natural_community_poll",
     "get_ict_educational_card",
     "get_vip_promotion_card",
     "check_and_dispatch_engagement_content",
