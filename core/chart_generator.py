@@ -221,10 +221,94 @@ def generate_trade_chart(
                         "MSS ▾", color="#FF9800", fontsize=7.5, weight="bold", va="top", ha="right")
 
         # ==============================================================================
-        # TradingView Long / Short Position Tool Geometry
+        # TradingView Long / Short Position Tool Geometry OR Market Outlook Zones
         # ==============================================================================
         is_running = trade_status.upper() in ("HALFWAY", "RUNNING")
         is_tp_hit = trade_status.upper() in ("TP_HIT", "RESOLVED", "WIN")
+        is_outlook = trade_status.upper() in ("OUTLOOK", "TREND", "MACRO")
+
+        if is_outlook:
+            # 1. 50-SMA Trendline Curve
+            if "sma50" not in plot_df.columns:
+                plot_df["sma50"] = plot_df["close"].rolling(min(30, n), min_periods=5).mean()
+            ax.plot(x, plot_df["sma50"], color="#00E5FF", linewidth=1.1, linestyle="--", alpha=0.75, zorder=4)
+
+            # 2. Major Supply / Overhead Resistance Zone
+            res_px = float(plot_df["high"].tail(35).max())
+            res_rect = patches.Rectangle(
+                (0, res_px - 0.0006), n + 12, 0.0006,
+                linewidth=0.9, edgecolor="#FF5252", facecolor="#FF5252", alpha=0.15, zorder=2
+            )
+            ax.add_patch(res_rect)
+            ax.hlines(res_px, 0, n + 10, colors="#FF5252", linestyles="-", linewidth=1.1, zorder=4)
+            ax.text(n - 2, res_px + (0.00010 if not is_jpy else 0.010),
+                    "Major Supply / Key Resistance", color="#FF5252", fontsize=7.5, weight="bold", ha="right", va="bottom")
+
+            # 3. Major Demand / Underlying Support Zone
+            sup_px = float(plot_df["low"].tail(35).min())
+            sup_rect = patches.Rectangle(
+                (0, sup_px), n + 12, 0.0006,
+                linewidth=0.9, edgecolor="#00E676", facecolor="#00E676", alpha=0.15, zorder=2
+            )
+            ax.add_patch(sup_rect)
+            ax.hlines(sup_px, 0, n + 10, colors="#00E676", linestyles="-", linewidth=1.1, zorder=4)
+            ax.text(n - 2, sup_px - (0.00010 if not is_jpy else 0.010),
+                    "Major Demand / Key Support", color="#00E676", fontsize=7.5, weight="bold", ha="right", va="top")
+
+            # 4. Market Price crosshair
+            ax.axhline(cur_px, color="#787B86", linestyle=":", linewidth=0.7, alpha=0.6, zorder=4)
+
+            # 5. Outlook Info Pill
+            trend_dir = "Bullish" if cur_px >= float(plot_df["ema20"].iloc[-1]) else "Bearish"
+            pill_text = (
+                f"Market Trend Outlook ({tf_display})\n"
+                f"Trend Structure: {trend_dir} Flow\n"
+                f"Game Plan: Awaiting Key Zone Reaction"
+            )
+            ax.text(n - 16, cur_px, pill_text, color="#FFFFFF", fontsize=8.0, weight="bold",
+                    va="center", ha="left", zorder=6,
+                    bbox=dict(boxstyle="round,pad=0.35", facecolor="#1E222D", edgecolor="#00E5FF", alpha=0.85, linewidth=0.8))
+
+            # 6. Right Axis Badges for Outlook
+            ax.yaxis.tick_right()
+            ax.yaxis.set_label_position("right")
+            ax.tick_params(colors="#787B86", labelsize=9, length=4)
+            ax.grid(True, color="#2A2E39", linestyle="-", linewidth=0.5, alpha=0.5)
+
+            ax.text(1.008, res_px, f" {res_px:.{digits}f} ", transform=ax.get_yaxis_transform(),
+                    color="#FFFFFF", backgroundcolor="#FF5252", fontsize=8.5, weight="bold", va="center")
+            ax.text(1.008, sup_px, f" {sup_px:.{digits}f} ", transform=ax.get_yaxis_transform(),
+                    color="#131722", backgroundcolor="#00E676", fontsize=8.5, weight="bold", va="center")
+            ax.text(1.008, cur_px, f" {cur_px:.{digits}f} ", transform=ax.get_yaxis_transform(),
+                    color="#FFFFFF", backgroundcolor="#363A45", fontsize=8.5, weight="bold", va="center")
+
+            # Timeline
+            step = max(1, n // 6)
+            tick_locs = list(range(0, n, step))
+            time_series = plot_df.index if isinstance(plot_df.index, pd.DatetimeIndex) else None
+            if time_series is not None and len(time_series) == n:
+                tick_labels = [time_series[i].strftime("%d %b %H:%M") for i in tick_locs]
+                ax.set_xticks(tick_locs)
+                ax.set_xticklabels(tick_labels, color="#787B86", fontsize=8.5)
+            else:
+                ax.set_xticks([])
+
+            # Header
+            fig.text(0.038, 0.955, f"{display_pair}  •  {tf_display}", fontsize=14, weight="bold", color="#FFFFFF")
+            fig.text(0.038, 0.925, "Higher-Timeframe Trend Structure • 20-EMA & 50-SMA • Major Zones", fontsize=8.2, color="#787B86")
+            fig.text(0.890, 0.955, "QuantFlow Institutional Analysis", fontsize=9.5, color="#787B86", ha="right")
+
+            ax.set_xlim(-1, n + 8)
+            min_p = min(plot_df["low"].min(), sup_px)
+            max_p = max(plot_df["high"].max(), res_px)
+            padding = (max_p - min_p) * 0.10
+            ax.set_ylim(min_p - padding, max_p + padding)
+
+            buf = io.BytesIO()
+            plt.savefig(buf, format="png", dpi=150, facecolor=fig.get_facecolor(), edgecolor="none")
+            plt.close(fig)
+            buf.seek(0)
+            return buf.getvalue()
 
         if is_tp_hit:
             box_width = min(22, max(6, n // 2))

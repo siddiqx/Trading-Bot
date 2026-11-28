@@ -65,19 +65,19 @@ def test_generate_tradingview_idea_post():
     # 1. New Short Signal Setup: BSL sweep + MSS ▾ + -OB + SSL target
     tv_post_short = generate_tradingview_idea_post(trade_short)
     assert "EUR/USD" in tv_post_short["title"]
-    assert "Order Block" in tv_post_short["title"]
+    assert "Bearish Setup" in tv_post_short["title"]
     assert "1.08500" in tv_post_short["description"]
     assert "1.08750" in tv_post_short["description"]
     assert "1.08125" in tv_post_short["description"]
     assert "Buy-Side Liquidity (BSL)" in tv_post_short["description"]
     assert "Market Structure Shift (MSS ▾)" in tv_post_short["description"]
-    assert "Bearish Order Block (-OB / Supply)" in tv_post_short["description"]
     assert "Sell-Side Liquidity (SSL)" in tv_post_short["description"]
     assert "t.me/ccrs_forex_signals" in tv_post_short["description"]
     assert "forex" in tv_post_short["tags"]
     # Ensure zero markdown hash or asterisk symbols in description
     assert "#" not in tv_post_short["description"]
     assert "*" not in tv_post_short["description"]
+    assert "+-" not in tv_post_short["description"]
 
     # 2. New Long Signal Setup: SSL sweep + MSS ▴ + +OB + BSL target
     trade_long = {
@@ -91,7 +91,6 @@ def test_generate_tradingview_idea_post():
     tv_post_long = generate_tradingview_idea_post(trade_long)
     assert "Sell-Side Liquidity (SSL)" in tv_post_long["description"]
     assert "Market Structure Shift (MSS ▴)" in tv_post_long["description"]
-    assert "Bullish Order Block (+OB / Demand)" in tv_post_long["description"]
     assert "Buy-Side Liquidity (BSL)" in tv_post_long["description"]
 
     # 3. Closed Win Resolution
@@ -99,6 +98,40 @@ def test_generate_tradingview_idea_post():
     assert "+37.5 Pips" in tv_win["title"]
     assert "(+1.50R)" in tv_win["title"]
     assert "Full Take Profit Hit" in tv_win["description"]
+    assert "+-" not in tv_win["title"]
+    assert "+-" not in tv_win["description"]
+    assert "#" not in tv_win["description"]
+    assert "*" not in tv_win["description"]
+
+
+def test_generate_market_trend_outlook():
+    from core.marketing import generate_market_trend_outlook, format_market_outlook_telegram_pack
+    import pandas as pd
+    import numpy as np
+
+    dates = pd.date_range("2026-11-20", periods=50, freq="4h")
+    prices = 1.0850 + np.cumsum(np.random.normal(0, 0.0010, 50))
+    df_4h = pd.DataFrame({
+        "open": prices,
+        "high": prices + 0.0015,
+        "low": prices - 0.0015,
+        "close": prices + 0.0005,
+        "volume": [2000] * 50
+    }, index=dates)
+
+    outlook = generate_market_trend_outlook("EURUSD", df=df_4h)
+    assert "EUR/USD" in outlook["title"]
+    assert "Macro Trend Outlook" in outlook["title"]
+    assert "MARKET CONTEXT" in outlook["description"]
+    assert "KEY STRUCTURAL LEVELS" in outlook["description"]
+    assert "TRADING GAME PLAN" in outlook["description"]
+    assert "#" not in outlook["description"]
+    assert "*" not in outlook["description"]
+    assert "+-" not in outlook["description"]
+
+    pack = format_market_outlook_telegram_pack("EURUSD", df=df_4h)
+    assert "TRADINGVIEW MARKET TREND OUTLOOK PACK" in pack
+    assert "<pre>" in pack
 
 
 

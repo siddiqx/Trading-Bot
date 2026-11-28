@@ -83,6 +83,20 @@ def test_generate_trade_chart_tp_hit(sample_ohlcv_df):
     assert png_bytes.startswith(b"\x89PNG\r\n\x1a\n")
 
 
+def test_generate_trade_chart_market_outlook(sample_ohlcv_df):
+    """Verify that a higher-timeframe MARKET OUTLOOK chart renders properly."""
+    sig = {
+        "pair": "EURUSD",
+        "timeframe": "4H",
+        "direction": "NEUTRAL"
+    }
+    png_bytes = generate_trade_chart(sample_ohlcv_df, sig, trade_status="OUTLOOK")
+    assert png_bytes is not None
+    assert isinstance(png_bytes, bytes)
+    assert png_bytes.startswith(b"\x89PNG\r\n\x1a\n")
+    assert len(png_bytes) > 20000
+
+
 def test_generate_trade_chart_empty_df():
     """Verify graceful handling when dataframe is empty or None."""
     sig = {"pair": "EURUSD", "direction": "LONG"}

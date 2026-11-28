@@ -1898,6 +1898,10 @@ def format_channel_signal_message(sig: dict) -> str:
         "━━━━━━━━━━━━━━━━━━\n"
     ) if is_test else ""
 
+    sl_pips_clean = abs(float(sig.get("sl_pips", 20.0)))
+    tp_pips_clean = abs(float(sig.get("tp_pips", 35.0)))
+    target_pool = "Buy-Side Liquidity (BSL)" if is_long else "Sell-Side Liquidity (SSL)"
+
     return (
         f"{test_banner}"
         f"{icon} <b>NEW TRADE SIGNAL · {display_pair}</b>\n"
@@ -1905,13 +1909,12 @@ def format_channel_signal_message(sig: dict) -> str:
         f"🧭 <b>Order:</b> <b>{action_text}</b>\n"
         f"⏱ <b>Timeframe:</b> <b>{tf_val}</b>\n"
         f"━━━━━━━━━━━━━━━━━━\n\n"
-        f"📋 <b>EXECUTION PARAMETERS</b>\n"
-        f"• <b>Execution Zone:</b> {zone_str}\n"
-        f"• <b>Reference Price:</b> <code>{sig['entry']}</code>\n"
-        f"• <b>Stop Loss Distance:</b> <b>{sig['sl_pips']} Pips</b> <i>(approx. <code>{sig['stop_loss']}</code>)</i>\n"
-        f"• <b>Take Profit Distance:</b> <b>+{sig['tp_pips']} Pips</b> <i>(approx. <code>{sig['take_profit']}</code> · +{rr_val:.2f}R)</i>\n"
-        f"• <b>Target Pool (DOL):</b> <b>{'Buy-Side Liquidity (BSL)' if is_long else 'Sell-Side Liquidity (SSL)'}</b>\n"
+        f"📋 <b>EXECUTION PLAN</b>\n"
+        f"• <b>Entry Zone:</b> {zone_str}\n"
+        f"• <b>Stop Loss:</b> <code>{sig['stop_loss']}</code> <i>({sl_pips_clean:.1f} pips risk)</i>\n"
+        f"• <b>Take Profit:</b> <code>{sig['take_profit']}</code> <i>({tp_pips_clean:.1f} pips target)</i>\n"
         f"• <b>Risk / Reward:</b> <b>1 : {rr_val:.2f}</b>\n"
+        f"• <b>Target Focus:</b> <b>{target_pool}</b>\n"
         f"━━━━━━━━━━━━━━━━━━\n"
         f"🛡️ <i>Suggested Risk: 0.50% – 1.00% per trade. Trailing stops and profit-locking are managed automatically.</i>"
     )
@@ -2291,6 +2294,51 @@ def dispatch_tradingview_admin_pack(
     # 3. Dispatch clean, 1-tap copyable text pack (zero markdown # or * syntax)
     from core.marketing.case_study_generator import format_tradingview_telegram_pack
     tv_msg = format_tradingview_telegram_pack(trade, realized_pips=realized_pips, realized_r=realized_r)
+    return _safe_send_telegram_alert(tv_msg, specific_chat_id=admin_id, protect_content=False)
+
+
+def dispatch_tradingview_outlook_admin_pack(
+    pair: str = "EURUSD",
+    df: pd.DataFrame | None = None
+) -> bool:
+    """
+    Dispatches a complete higher-timeframe Market Trend Outlook pack (4H / Daily)
+    to the Admin Telegram chat when there are no active trade setups.
+    Includes a high-res 4H trend structure chart and 1-tap copyable TradingView Idea.
+    """
+    admin_id = TELEGRAM_CHAT_ID.split(",")[0].strip() if TELEGRAM_CHAT_ID else ""
+    if not admin_id or admin_id.startswith("@"):
+        return False
+
+    display_pair = f"{pair[:3]}/{pair[3:]}" if len(pair) == 6 else pair
+
+    # 1. Fetch real 4H / Daily candles
+    if df is None and not (os.environ.get("PYTEST_CURRENT_TEST") or "pytest" in sys.modules):
+        try:
+            ticker = SYMBOLS.get(pair, {}).get("ticker", f"{pair}=X")
+            df = fetch_candles(ticker, "1h", range_days="15d")
+        except Exception as e:
+            logger.warning(f"Could not auto-fetch candles for market outlook: {e}")
+
+    chart_bytes = None
+    if df is not None and not df.empty:
+        try:
+            outlook_sig = {"pair": pair, "timeframe": "4H", "direction": "NEUTRAL"}
+            chart_bytes = generate_trade_chart(df, outlook_sig, trade_status="OUTLOOK")
+        except Exception as e:
+            logger.warning(f"Failed to generate outlook chart: {e}")
+
+    # 2. Dispatch chart photo
+    if chart_bytes:
+        photo_caption = (
+            f"📊 <b>HIGHER-TIMEFRAME TREND OUTLOOK · {display_pair} (4H)</b>\n"
+            f"<i>Macro trend structure & key structural zones generated from interbank candles.</i>"
+        )
+        _safe_send_telegram_photo(chart_bytes, photo_caption, specific_chat_id=admin_id, protect_content=False)
+
+    # 3. Dispatch 1-tap copyable text pack
+    from core.marketing.case_study_generator import format_market_outlook_telegram_pack
+    tv_msg = format_market_outlook_telegram_pack(pair=pair, df=df)
     return _safe_send_telegram_alert(tv_msg, specific_chat_id=admin_id, protect_content=False)
 
 
@@ -5247,20 +5295,36 @@ if __name__ == "__main__":
         state = load_state()
         res = check_disboard_bump_reminder(state, force=True)
         print(f"Disboard bump reminder triggered to Admin: {res}")
-    elif len(sys.argv) > 1 and sys.argv[1] == "--tv":
-        records = load_trade_records()
-        completed = records.get("completed_trades", [])
-        active = list(records.get("active_trades", {}).values())
+    elif len(sys.argv) > 1 and sys.argv[1] in ("--tv", "--outlook"):
+        cmd = sys.argv[1]
+        pair_arg = sys.argv[2].upper() if len(sys.argv) > 2 else None
         admin_id = TELEGRAM_CHAT_ID.split(",")[0].strip() if TELEGRAM_CHAT_ID else ""
 
-        target_trade = active[0] if active else (completed[-1] if completed else {
-            "pair": "USDCAD", "direction": "SHORT", "entry": 1.43125, "stop_loss": 1.43345,
-            "take_profit": 1.42735, "timeframe": "15M"
-        })
-        pips = target_trade.get("realized_pips")
-        r_val = target_trade.get("realized_r")
-        res = dispatch_tradingview_admin_pack(target_trade, realized_pips=pips, realized_r=r_val)
-        print(f"TradingView real chart + publication pack dispatched to Admin ({admin_id}): {res}")
+        if cmd == "--outlook" or (pair_arg and pair_arg == "OUTLOOK"):
+            target_pair = pair_arg if (pair_arg and pair_arg != "OUTLOOK") else (sys.argv[2].upper() if cmd == "--outlook" and len(sys.argv) > 2 else "EURUSD")
+            res = dispatch_tradingview_outlook_admin_pack(pair=target_pair)
+            print(f"TradingView higher-timeframe Market Outlook pack ({target_pair}) dispatched to Admin ({admin_id}): {res}")
+        else:
+            records = load_trade_records()
+            completed = records.get("completed_trades", [])
+            active = list(records.get("active_trades", {}).values())
+
+            if active:
+                target_trade = active[0]
+                pips, r_val = None, None
+            elif completed:
+                target_trade = completed[-1]
+                pips = target_trade.get("realized_pips")
+                r_val = target_trade.get("realized_r")
+            else:
+                target_trade = {
+                    "pair": "USDCAD", "direction": "SHORT", "entry": 1.43125, "stop_loss": 1.43345,
+                    "take_profit": 1.42735, "timeframe": "15M"
+                }
+                pips, r_val = None, None
+
+            res = dispatch_tradingview_admin_pack(target_trade, realized_pips=pips, realized_r=r_val)
+            print(f"TradingView real chart + publication pack dispatched to Admin ({admin_id}): {res}")
     elif len(sys.argv) > 1 and sys.argv[1] in ("--engagement", "--news", "--poll", "--ict", "--vip"):
         from core.marketing.engagement_engine import check_and_dispatch_engagement_content
         state = load_state()

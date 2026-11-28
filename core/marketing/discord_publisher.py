@@ -62,16 +62,19 @@ def send_discord_signal(
 
     rr_val = float(sig.get("rr") or sig.get("risk_reward", 1.75))
 
+    sl_pips_clean = abs(float(sig.get("sl_pips", 20.0)))
+    tp_pips_clean = abs(float(sig.get("tp_pips", 35.0)))
+    target_pool = "Buy-Side Liquidity (BSL)" if is_long else "Sell-Side Liquidity (SSL)"
+
     desc = (
         f"🧭 **Order:** **{action_text}**\n"
         f"⏱ **Timeframe:** **{tf_val}**\n\n"
-        f"📋 **EXECUTION PARAMETERS**\n"
-        f"• **Execution Zone:** {zone_str}\n"
-        f"• **Reference Price:** `{sig.get('entry')}`\n"
-        f"• **Stop Loss Distance:** **{sig.get('sl_pips')} Pips** *(approx. `{sig.get('stop_loss')}`)*\n"
-        f"• **Take Profit Distance:** **+{sig.get('tp_pips')} Pips** *(approx. `{sig.get('take_profit')}` · +{rr_val:.2f}R)*\n"
-        f"• **Target Pool (DOL):** **{'Buy-Side Liquidity (BSL)' if is_long else 'Sell-Side Liquidity (SSL)'}**\n"
+        f"📋 **EXECUTION PLAN**\n"
+        f"• **Entry Zone:** {zone_str}\n"
+        f"• **Stop Loss:** `{sig.get('stop_loss')}` *({sl_pips_clean:.1f} pips risk)*\n"
+        f"• **Take Profit:** `{sig.get('take_profit')}` *({tp_pips_clean:.1f} pips target)*\n"
         f"• **Risk / Reward:** **1 : {rr_val:.2f}**\n"
+        f"• **Target Focus:** **{target_pool}**\n"
         f"━━━━━━━━━━━━━━━━━━\n"
         f"🛡️ *Suggested Risk: 0.50% – 1.00% per trade. Trailing stops and profit-locking are managed automatically.*\n\n"
         f"💎 [**Upgrade to QuantFlow VIP Club**]({TELEGRAM_VIP_LINK}) • [**Free Telegram Channel**]({TELEGRAM_PUBLIC_LINK})"
