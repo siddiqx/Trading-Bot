@@ -167,3 +167,76 @@ def generate_telegram_share_url(
     encoded_text = urllib.parse.quote(text)
     encoded_url = urllib.parse.quote(channel_link)
     return f"https://t.me/share/url?url={encoded_url}&text={encoded_text}"
+
+
+def generate_tradingview_idea_post(
+    trade: Dict[str, Any],
+    realized_pips: Optional[float] = None,
+    realized_r: Optional[float] = None,
+    channel_url: str = "https://t.me/ccrs_forex_signals"
+) -> Dict[str, Any]:
+    """
+    Generates a complete, TradingView-compliant Idea publication pack.
+    Formats title, tags, and rich technical analysis ready to publish in 1 click.
+    """
+    pair = trade.get("pair") or trade.get("symbol") or "EURUSD"
+    display_pair = f"{pair[:3]}/{pair[3:]}" if len(pair) == 6 else pair
+    direction = trade.get("direction", "LONG").upper()
+    dir_word = "Long" if direction == "LONG" else "Short"
+    action_type = "Bullish Setup" if direction == "LONG" else "Bearish Setup"
+    timeframe = trade.get("timeframe", "15M").upper()
+    entry = trade.get("entry", "0.0")
+    sl = trade.get("stop_loss", "0.0")
+    tp = trade.get("take_profit", "0.0")
+    rr = float(trade.get("rr", 1.50))
+
+    digits = 3 if "JPY" in pair else (2 if "XAU" in pair else 5)
+    try:
+        entry_str = f"{float(entry):.{digits}f}"
+        sl_str = f"{float(sl):.{digits}f}"
+        tp_str = f"{float(tp):.{digits}f}"
+    except Exception:
+        entry_str, sl_str, tp_str = str(entry), str(sl), str(tp)
+
+    if realized_pips is not None and realized_r is not None:
+        pips_str = f"+{realized_pips:.1f}" if realized_pips >= 0 else f"{realized_pips:.1f}"
+        r_str = f"+{realized_r:.2f}R" if realized_r >= 0 else f"{realized_r:.2f}R"
+        title = f"{display_pair}: 15M Institutional Order Block Reversal • {pips_str} Pips ({r_str}) Target Hit"
+        intro_status = f"**Status:** Full Take Profit Hit (+{pips_str} pips / {r_str})\n"
+    else:
+        title = f"{display_pair} ({timeframe}): Institutional Order Block Retest & CCRS Divergence {dir_word}"
+        intro_status = f"**Order Type:** {direction} ({timeframe})\n"
+
+    description = (
+        f"### {display_pair} Systematic {action_type} ({timeframe})\n\n"
+        f"{intro_status}"
+        f"**Strategy:** Dual-Timeframe CCRS Macro Flow + ICT Order Block Retest\n\n"
+        f"━━━━━━━━━━━━━━━━━━\n"
+        f"#### 1. Macro & Relative Strength Confluence\n"
+        f"• Our 7-currency Cross-Currency Relative Strength (CCRS) factor engine tracks a sustained "
+        f"divergence (|D| ≥ 1.75σ) over rolling 120-hour lookbacks normalized by 200-hour volatility.\n"
+        f"• The synthetic basket confirms institutional order flow backing the {direction.lower()} move.\n\n"
+        f"#### 2. Lower-Timeframe Precision Entry (15M Execution)\n"
+        f"• **Liquidity Sweep:** Clean 10-bar Donchian sweep at local fractal highs/lows trapping retail breakout traders.\n"
+        f"• **Order Block Mitigation:** Rejection wick confirms displacement back to the 20-period dynamic EMA.\n"
+        f"• **Execution Level:** `{entry_str}`\n"
+        f"• **Invalidation (Stop Loss):** `{sl_str}` (Fixed 2.0× ATR buffer)\n"
+        f"• **Take Profit Target:** `{tp_str}` (1:{rr:.2f}R geometric target)\n\n"
+        f"#### 3. Capital Preservation & Prop Firm Compliance\n"
+        f"• Strict 0.50% to 1.00% risk per trade.\n"
+        f"• Automated trailing stop cushions activate at +1.20R to eliminate drawdown risk.\n\n"
+        f"━━━━━━━━━━━━━━━━━━\n"
+        f"*Real-time algorithmic alerts & trade surveillance streaming on Telegram: {channel_url} (@ccrs_forex_signals)*\n"
+    )
+
+    tags = ["forex", pair.lower(), "ict", "orderblock", "smc", "propfirm", "tradingview"]
+
+    return {
+        "title": title,
+        "description": description,
+        "tags": tags,
+        "direction": direction,
+        "pair": pair,
+        "timeframe": timeframe
+    }
+

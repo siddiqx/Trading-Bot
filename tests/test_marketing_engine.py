@@ -11,6 +11,7 @@ from core.marketing import (
     generate_reddit_case_study,
     generate_twitter_thread,
     generate_telegram_share_url,
+    generate_tradingview_idea_post,
     publish_reddit_case_study,
     save_local_draft,
     format_viral_share_footer,
@@ -50,6 +51,33 @@ def test_generate_twitter_thread():
     assert "+37.0 pips" in thread[0]
     assert "The Setup Anatomy" in thread[1]
     assert "t.me" in thread[2]
+
+
+def test_generate_tradingview_idea_post():
+    trade = {
+        "pair": "EURUSD",
+        "direction": "SHORT",
+        "entry": 1.08500,
+        "stop_loss": 1.08750,
+        "take_profit": 1.08125,
+        "timeframe": "15M"
+    }
+    # 1. New Signal Setup
+    tv_post = generate_tradingview_idea_post(trade)
+    assert "EUR/USD" in tv_post["title"]
+    assert "Order Block" in tv_post["title"]
+    assert "1.08500" in tv_post["description"]
+    assert "1.08750" in tv_post["description"]
+    assert "1.08125" in tv_post["description"]
+    assert "t.me/ccrs_forex_signals" in tv_post["description"]
+    assert "forex" in tv_post["tags"]
+
+    # 2. Closed Win Resolution
+    tv_win = generate_tradingview_idea_post(trade, realized_pips=37.5, realized_r=1.50)
+    assert "+37.5 Pips" in tv_win["title"]
+    assert "(+1.50R)" in tv_win["title"]
+    assert "Full Take Profit Hit" in tv_win["description"]
+
 
 
 def test_generate_telegram_share_url():
