@@ -64,7 +64,7 @@ class TestShortsGenerator(unittest.TestCase):
         }, index=dates)
 
         charts = render_inchart_replay_charts(df, pair="XAUUSD", direction="LONG", num_bars=55)
-        self.assertEqual(len(charts), 4)
+        self.assertEqual(len(charts), 5)
         for c in charts:
             self.assertEqual(c.size, (1080, 1650))
 

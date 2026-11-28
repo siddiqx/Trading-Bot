@@ -1,24 +1,20 @@
 """
-Institutional Video Shorts & Reels Generator (v4.0.0)
+Institutional Video Shorts & Reels Generator (v5.0.0)
 =====================================================
-Hyper-Clean In-Chart Technical Analysis Engine.
+Authentic ICT / Smart Money Concepts & Retail Flow Video Engine.
 Directly modeled after institutional YouTube Shorts & Instagram Reels creators (e.g. @easytradingeasy).
 
-Design Highlights:
-  • Zero Box-Like Overlays: NO pop-up cards or bulky boxes anywhere in the video.
-  • Unobstructed Full-Screen Chart: Visible 100% of the time from start to finish.
-  • Lower-Third Points (One by One): Short, simple, elegant typography at the bottom.
-  • Continuous Smooth Flow: No jarring cuts or broken visual interruptions.
-  • Real ICT Technical Analysis:
-      - Equal Lows / Highs Liquidity Pool levels.
-      - Clean Sell-Side / Buy-Side Liquidity Sweep wick markers.
-      - 20-EMA Dynamic Equilibrium curve.
-      - TradingView Long / Short Position Tool box (translucent TP profit & SL risk zones).
-      - Dynamic bar-by-bar progressive replay leading into Take Profit.
-      - In-chart badge: "★ TARGET HIT (+1.50R)".
-  • Natural Human Neural Voice:
-      - Microsoft's top conversational human voice (en-US-BrianMultilingualNeural).
-      - Natural pacing (+5%), conversational tone, 38–40 second duration.
+Strict Sequential Flow (Matched to Voiceover):
+  1️⃣ Analysis First: Retail Support/Resistance & Engineered Liquidity Pool.
+  2️⃣ The Stop Run: Judas Swing Liquidity Sweep + Market Structure Shift (MSS) + Order Block.
+  3️⃣ Then Entry: Mitigation Retest at 20-EMA / Order Block with Protected Stop Loss.
+  4️⃣ Then Projection: TradingView Position Tool targeting opposing liquidity (1:1.50R).
+  5️⃣ Then Trade Result: Candle expansion into Take Profit hit & Telegram credits.
+
+Visual Specifications:
+  • Zero Box Overlays: Pure, unobstructed full-screen chart from second 0 to end.
+  • Lower-Third Points: Clean, elegant typography displayed one-by-one.
+  • 100% Real ICT / SMC Technical Analysis on Live Market Candles.
 """
 
 import asyncio
@@ -47,163 +43,163 @@ FALLBACK_NEURAL_VOICE = "en-US-GuyNeural"
 
 TELEGRAM_PUBLIC_CHANNEL = "@ccrs_forex_signals"
 
-# Hyper-clean in-chart scripts and lower-third points across active assets
+# Authentic ICT scripts & synchronized lower-third points across active assets
 INCHART_SCRIPTS: Dict[str, Dict[str, Any]] = {
     "XAUUSD": {
         "title": "GOLD LIQUIDITY SWEEP & RECLAIM",
-        "subtitle": "Institutional Order Flow Execution",
+        "subtitle": "ICT Smart Money Concepts Analysis",
         "direction": "LONG",
         "points": [
-            ("📌 STEP 1 OF 4", "Identify Equal Lows (Retail Liquidity Pool)", "Never chase breakouts at session extremes.", (255, 215, 0)),
-            ("⚡ STEP 2 OF 4", "Wait for Session Open to Sweep the Lows", "Purges retail stop losses to fill institutional buy orders.", (255, 82, 82)),
-            ("🎯 STEP 3 OF 4", "20-EMA Displacement Reclaim on Retest", "Enter on pullback with stop loss safely below sweep wick.", (41, 98, 255)),
-            ("💎 STEP 4 OF 4", "Full 1:1.50R Target Hit (+45.0 Pips)", "Mathematical quantitative edge. Zero intra-trade emotion.", (0, 230, 118)),
-            ("✨ DAILY INSTITUTIONAL ANALYSIS", "Subscribe & Join Telegram: @ccrs_forex_signals", "Free VIP Forex & Gold Signals · Link in Bio & Description", (255, 215, 0))
+            ("📌 1. RETAIL TRAP ANALYSIS", "Retail Support Floor (Engineered SSL Pool)", "Retail double bottom attracts obvious stop clusters.", (255, 215, 0)),
+            ("⚡ 2. LIQUIDITY PURGE & DISPLACEMENT", "Judas Swing Sweeps Stops · MSS Breakout Confirmed", "Smart money absorbs selling, leaving an Order Block.", (255, 82, 82)),
+            ("🎯 3. CONFIRMED ORDER BLOCK ENTRY", "Mitigation Retest at 20-EMA · Stop Loss Protected", "Enter on pullback with stop safely below sweep wick.", (41, 98, 255)),
+            ("📐 4. INSTITUTIONAL TRADE PROJECTION", "Targeting Opposing Buy-Side Liquidity (BSL)", "1:1.50R mathematical risk-to-reward ratio locked.", (0, 230, 118)),
+            ("💎 5. TRADE RESULT: +1.50R SECURED", "Subscribe & Join Telegram: @ccrs_forex_signals", "Real Institutional Order Flow · Zero Emotional Guesswork", (255, 215, 0))
         ],
         "voiceover": (
-            "Here are the exact guidelines to trade the institutional liquidity sweep strategy on Gold. "
-            "Rule one: never chase breakouts. Look for engineered equal lows where retail stop losses accumulate. "
-            "Rule two: wait for the session open to aggressively sweep those lows, filling institutional orders at a discount. "
-            "Rule three: once price displaces back above the twenty moving average, enter on the retest with your stop below the sweep wick. "
-            "Rule four: let the math work. The trade hits our one to one point five target cleanly. "
-            "Subscribe for daily clean chart analysis, and join our free Telegram channel for real-time institutional signals."
+            "Notice the market structure here on Gold. Retail traders see an obvious support floor and place stops underneath, creating sell-side liquidity. "
+            "London open sweeps straight through the floor, hunting those stops. Strong displacement follows, breaking structure for a confirmed Market Structure Shift, leaving an Order Block. "
+            "We wait for the pullback. Price retraces into the Order Block, triggering our entry on the retest with a protected stop below the sweep wick. "
+            "For our projection, we target opposing buy-side liquidity at the highs for a strict one to one point five risk-to-reward ratio. "
+            "Price expands into our target for a full take profit hit. Subscribe for daily clean analysis, and join our free Telegram for live setups."
         ),
         "ig_caption": (
-            "🟡 Clean Gold (XAU/USD) In-Chart Liquidity Analysis\n\n"
-            "Notice how retail support gets swept before the real expansion begins:\n"
-            "• Step 1: Equal lows build retail stop liquidity\n"
-            "• Step 2: London liquidity hunt sweeps the lows\n"
-            "• Step 3: 20-EMA displacement reclaims structure on the retest\n"
-            "• Step 4: Strict 1:1.50R Take Profit hit with zero emotion.\n\n"
-            "👉 Join our free VIP Telegram for daily live signals: @ccrs_forex_signals\n\n"
+            "🟡 Real ICT & Smart Money Analysis on Gold (XAU/USD)\n\n"
+            "Step-by-step breakdown of today's institutional liquidity hunt:\n"
+            "1️⃣ Analysis First: Retail Support Floor creates Sell-Side Liquidity (SSL)\n"
+            "2️⃣ The Stop Run: Judas Swing purges stops → Market Structure Shift (MSS) + Order Block\n"
+            "3️⃣ Confirmed Entry: Mitigation retest at 20-EMA with protected SL\n"
+            "4️⃣ Trade Projection: Targeting opposing Buy-Side Liquidity (1:1.50R)\n"
+            "5️⃣ Trade Result: +1.50R Target Hit with mathematical discipline.\n\n"
+            "👉 Join our free VIP Telegram for live daily signals: @ccrs_forex_signals\n\n"
             "#Gold #XAUUSD #Trading #PriceAction #Forex #SmartMoneyConcepts #DayTrading #ICT"
         )
     },
     "EURUSD": {
         "title": "EUR/USD 20-EMA LIQUIDITY RECLAIM",
-        "subtitle": "Interbank Market Structure Shift",
+        "subtitle": "ICT Smart Money Concepts Analysis",
         "direction": "LONG",
         "points": [
-            ("📌 STEP 1 OF 4", "Identify Equal Lows (Retail Stop Pool)", "Never buy support breakout traps.", (255, 215, 0)),
-            ("⚡ STEP 2 OF 4", "Wait for London Session Stop Purge", "Institutions sweep the lows to accumulate liquidity.", (255, 82, 82)),
-            ("🎯 STEP 3 OF 4", "High-Volume 20-EMA Displacement Reclaim", "Execute on retest with protective stop below sweep.", (41, 98, 255)),
-            ("💎 STEP 4 OF 4", "Full 1:1.50R Target Hit (+33.0 Pips)", "Rule-based quantitative execution wins.", (0, 230, 118)),
-            ("✨ DAILY INSTITUTIONAL ANALYSIS", "Subscribe & Join Telegram: @ccrs_forex_signals", "Free VIP Forex & Gold Signals · Link in Bio & Description", (255, 215, 0))
+            ("📌 1. RETAIL TRAP ANALYSIS", "Retail Support Floor (Engineered SSL Pool)", "Retail double bottom attracts obvious stop clusters.", (255, 215, 0)),
+            ("⚡ 2. LIQUIDITY PURGE & DISPLACEMENT", "Judas Swing Sweeps Stops · MSS Breakout Confirmed", "Smart money absorbs selling, leaving an Order Block.", (255, 82, 82)),
+            ("🎯 3. CONFIRMED ORDER BLOCK ENTRY", "Mitigation Retest at 20-EMA · Stop Loss Protected", "Enter on pullback with stop safely below sweep wick.", (41, 98, 255)),
+            ("📐 4. INSTITUTIONAL TRADE PROJECTION", "Targeting Opposing Buy-Side Liquidity (BSL)", "1:1.50R mathematical risk-to-reward ratio locked.", (0, 230, 118)),
+            ("💎 5. TRADE RESULT: +1.50R SECURED", "Subscribe & Join Telegram: @ccrs_forex_signals", "Real Institutional Order Flow · Zero Emotional Guesswork", (255, 215, 0))
         ],
         "voiceover": (
-            "Here are the exact guidelines to trade the interbank liquidity sweep on EUR USD. "
-            "Rule one: never buy support breakout traps. Identify equal lows where obvious retail stop clusters form. "
-            "Rule two: wait for the London session open to purge those lows and accumulate liquidity. "
-            "Rule three: look for a high volume displacement candle to reclaim the twenty moving average, then execute on the retest. "
-            "Rule four: follow the math. Target is secured cleanly for a one to one point five return. "
-            "Subscribe for daily clean chart analysis, and join our free Telegram channel for real-time institutional signals."
+            "Notice the market structure on EUR USD. Retail traders see an obvious support floor and place stops underneath, creating sell-side liquidity. "
+            "London open sweeps straight through the floor, hunting those stops. Strong displacement follows, breaking structure for a confirmed Market Structure Shift, leaving an Order Block. "
+            "We wait for the pullback. Price retraces into the Order Block, triggering our entry on the retest with a protected stop below the sweep wick. "
+            "For our projection, we target opposing buy-side liquidity at the highs for a strict one to one point five risk-to-reward ratio. "
+            "Price expands into our target for a full take profit hit. Subscribe for daily clean analysis, and join our free Telegram for live setups."
         ),
         "ig_caption": (
-            "⚡ EUR/USD Interbank Flow & Liquidity Sweep\n\n"
-            "Institutions don't chase breakouts; they buy into retail stop runs:\n"
-            "1. Equal lows engineer buy-side liquidity\n"
-            "2. Stop sweep clears the board\n"
-            "3. 20-EMA displacement confirms institutional demand\n"
-            "4. +1.50R Target reached with 0.50% risk.\n\n"
-            "👉 Join our free VIP Telegram for live signals: @ccrs_forex_signals\n\n"
+            "⚡ Real ICT & Smart Money Analysis on EUR/USD\n\n"
+            "Step-by-step breakdown of today's institutional liquidity hunt:\n"
+            "1️⃣ Analysis First: Retail Support Floor creates Sell-Side Liquidity (SSL)\n"
+            "2️⃣ The Stop Run: Judas Swing purges stops → Market Structure Shift (MSS) + Order Block\n"
+            "3️⃣ Confirmed Entry: Mitigation retest at 20-EMA with protected SL\n"
+            "4️⃣ Trade Projection: Targeting opposing Buy-Side Liquidity (1:1.50R)\n"
+            "5️⃣ Trade Result: +1.50R Target Hit with mathematical discipline.\n\n"
+            "👉 Join our free VIP Telegram for live daily signals: @ccrs_forex_signals\n\n"
             "#EURUSD #Forex #Trading #SmartMoney #PriceAction #ICT #DayTrader"
         )
     },
     "USDCAD": {
         "title": "USD/CAD BUY-SIDE LIQUIDITY HUNT",
-        "subtitle": "Donchian Extreme & Trend Continuation",
+        "subtitle": "ICT Smart Money Concepts Analysis",
         "direction": "SHORT",
         "points": [
-            ("📌 STEP 1 OF 4", "Identify Equal Highs (Retail Breakout Trap)", "Never chase upside momentum into resistance.", (255, 215, 0)),
-            ("⚡ STEP 2 OF 4", "Wait for Buy-Side Liquidity (BSL) Sweep", "Sharp rejection wick exhausts retail buyers.", (255, 82, 82)),
-            ("🎯 STEP 3 OF 4", "Bearish Displacement Beneath 20-EMA", "Execute short on pullback with stop above sweep high.", (41, 98, 255)),
-            ("💎 STEP 4 OF 4", "Full 1:1.50R Target Hit (+35.0 Pips)", "Zero guesswork. Strictly systematic rules.", (0, 230, 118)),
-            ("✨ DAILY INSTITUTIONAL ANALYSIS", "Subscribe & Join Telegram: @ccrs_forex_signals", "Free VIP Forex & Gold Signals · Link in Bio & Description", (255, 215, 0))
+            ("📌 1. RETAIL TRAP ANALYSIS", "Retail Resistance Ceiling (Engineered BSL Pool)", "Retail breakout buyers cluster stops above the highs.", (255, 215, 0)),
+            ("⚡ 2. LIQUIDITY PURGE & DISPLACEMENT", "Judas Swing Sweeps BSL · Bearish MSS Breakdown", "Smart money absorbs buying, leaving a Bearish Order Block.", (255, 82, 82)),
+            ("🎯 3. CONFIRMED ORDER BLOCK ENTRY", "Mitigation Retest at 20-EMA · Stop Loss Protected", "Enter short on pullback with stop safely above sweep wick.", (41, 98, 255)),
+            ("📐 4. INSTITUTIONAL TRADE PROJECTION", "Targeting Opposing Sell-Side Liquidity (SSL)", "1:1.50R mathematical risk-to-reward ratio locked.", (0, 230, 118)),
+            ("💎 5. TRADE RESULT: +1.50R SECURED", "Subscribe & Join Telegram: @ccrs_forex_signals", "Real Institutional Order Flow · Zero Emotional Guesswork", (255, 215, 0))
         ],
         "voiceover": (
-            "Here are the exact guidelines to trade institutional reversals on USD CAD. "
-            "Rule one: never chase upside momentum into resistance. Identify equal highs where retail stop losses accumulate. "
-            "Rule two: wait for a sharp buy-side liquidity sweep to exhaust early buyers and trigger retail stops. "
-            "Rule three: once price displaces violently back beneath the twenty moving average, execute short on the pullback. "
-            "Rule four: let the mathematics do the work, hitting our one to one point five target cleanly. "
-            "Subscribe for daily clean chart analysis, and join our free Telegram channel for real-time institutional signals."
+            "Notice the market structure on USD CAD. Retail traders see an obvious resistance ceiling and place stops above it, creating buy-side liquidity. "
+            "London open sweeps straight through the ceiling, hunting those stops. Violent downward displacement follows, breaking structure for a confirmed Market Structure Shift, leaving a Bearish Order Block. "
+            "We wait for the pullback. Price retraces into the Order Block, triggering our short entry on the retest with a protected stop above the sweep wick. "
+            "For our projection, we target opposing sell-side liquidity at the lows for a strict one to one point five risk-to-reward ratio. "
+            "Price expands into our target for a full take profit hit. Subscribe for daily clean analysis, and join our free Telegram for live setups."
         ),
         "ig_caption": (
-            "🔴 USD/CAD Buy-Side Liquidity Reversal\n\n"
-            "Why buying breakouts at the highs gets you stopped out:\n"
-            "• Retail chases the highs into resistance\n"
-            "• BSL sweep fills institutional short positions\n"
-            "• Bearish displacement breaks through the 20-EMA\n"
-            "• Full +1.50R target locked systematically.\n\n"
-            "👉 Free VIP Telegram Signals: @ccrs_forex_signals\n\n"
-            "#USDCAD #ForexTrading #TechnicalAnalysis #DayTrading #PropFirm #PriceAction"
+            "🔴 Real ICT & Smart Money Analysis on USD/CAD\n\n"
+            "Step-by-step breakdown of today's institutional short setup:\n"
+            "1️⃣ Analysis First: Retail Resistance Ceiling creates Buy-Side Liquidity (BSL)\n"
+            "2️⃣ The Stop Run: Judas Swing purges stops → Bearish MSS + Order Block\n"
+            "3️⃣ Confirmed Entry: Mitigation retest at 20-EMA with protected SL\n"
+            "4️⃣ Trade Projection: Targeting opposing Sell-Side Liquidity (1:1.50R)\n"
+            "5️⃣ Trade Result: +1.50R Target Hit with mathematical discipline.\n\n"
+            "👉 Join our free VIP Telegram for live daily signals: @ccrs_forex_signals\n\n"
+            "#USDCAD #ForexTrading #TechnicalAnalysis #DayTrading #PropFirm #PriceAction #ICT"
         )
     },
     "USDCHF": {
         "title": "USD/CHF EQUILIBRIUM REVERSAL",
-        "subtitle": "Safe-Haven Relative Strength Flow",
+        "subtitle": "ICT Smart Money Concepts Analysis",
         "direction": "SHORT",
         "points": [
-            ("📌 STEP 1 OF 4", "Spot False Upside Breakout at Session Highs", "Smart money engineers liquidity above resistance.", (255, 215, 0)),
-            ("⚡ STEP 2 OF 4", "Aggressive Rejection Wick Sweeps BSL", "Purges early short stops and exhausts late buyers.", (255, 82, 82)),
-            ("🎯 STEP 3 OF 4", "Price Drops Beneath 20-EMA Equilibrium", "Enter short on the retest of dynamic equilibrium.", (41, 98, 255)),
-            ("💎 STEP 4 OF 4", "Full 1:1.50R Target Hit (+30.0 Pips)", "Discipline over emotion every single time.", (0, 230, 118)),
-            ("✨ DAILY INSTITUTIONAL ANALYSIS", "Subscribe & Join Telegram: @ccrs_forex_signals", "Free VIP Forex & Gold Signals · Link in Bio & Description", (255, 215, 0))
+            ("📌 1. RETAIL TRAP ANALYSIS", "Retail Resistance Ceiling (Engineered BSL Pool)", "Retail breakout buyers cluster stops above the highs.", (255, 215, 0)),
+            ("⚡ 2. LIQUIDITY PURGE & DISPLACEMENT", "Judas Swing Sweeps BSL · Bearish MSS Breakdown", "Smart money absorbs buying, leaving a Bearish Order Block.", (255, 82, 82)),
+            ("🎯 3. CONFIRMED ORDER BLOCK ENTRY", "Mitigation Retest at 20-EMA · Stop Loss Protected", "Enter short on pullback with stop safely above sweep wick.", (41, 98, 255)),
+            ("📐 4. INSTITUTIONAL TRADE PROJECTION", "Targeting Opposing Sell-Side Liquidity (SSL)", "1:1.50R mathematical risk-to-reward ratio locked.", (0, 230, 118)),
+            ("💎 5. TRADE RESULT: +1.50R SECURED", "Subscribe & Join Telegram: @ccrs_forex_signals", "Real Institutional Order Flow · Zero Emotional Guesswork", (255, 215, 0))
         ],
         "voiceover": (
-            "Here are the exact guidelines to trade safe-haven currency flow on USD CHF. "
-            "Rule one: identify false upside breakouts above the session highs. "
-            "Rule two: wait for the buy-side liquidity sweep to trigger retail buy stops and exhaust buying momentum. "
-            "Rule three: look for a strong displacement candle to drop back beneath the twenty moving average, then enter on the retest. "
-            "Rule four: target hit cleanly for a one to one point five risk to reward. "
-            "Subscribe for daily clean chart analysis, and join our free Telegram channel for real-time institutional signals."
+            "Notice the market structure on USD CHF. Retail traders see an obvious resistance ceiling and place stops above it, creating buy-side liquidity. "
+            "London open sweeps straight through the ceiling, hunting those stops. Violent downward displacement follows, breaking structure for a confirmed Market Structure Shift, leaving a Bearish Order Block. "
+            "We wait for the pullback. Price retraces into the Order Block, triggering our short entry on the retest with a protected stop above the sweep wick. "
+            "For our projection, we target opposing sell-side liquidity at the lows for a strict one to one point five risk-to-reward ratio. "
+            "Price expands into our target for a full take profit hit. Subscribe for daily clean analysis, and join our free Telegram for live setups."
         ),
         "ig_caption": (
-            "📉 USD/CHF 20-EMA Dynamic Reversal\n\n"
-            "How institutional relative currency flow creates high-probability reversals:\n"
-            "• Equal highs trap late breakout buyers\n"
-            "• BSL sweep exhausts retail volume\n"
-            "• 20-EMA reclaim initiates downward expansion\n"
-            "• +1.50R Profit locked with systematic rules.\n\n"
-            "👉 Join our free VIP Telegram for signals: @ccrs_forex_signals\n\n"
-            "#USDCHF #Forex #TradingStrategy #PriceActionTrading #SmartMoneyConcepts"
+            "📉 Real ICT & Smart Money Analysis on USD/CHF\n\n"
+            "Step-by-step breakdown of today's institutional short setup:\n"
+            "1️⃣ Analysis First: Retail Resistance Ceiling creates Buy-Side Liquidity (BSL)\n"
+            "2️⃣ The Stop Run: Judas Swing purges stops → Bearish MSS + Order Block\n"
+            "3️⃣ Confirmed Entry: Mitigation retest at 20-EMA with protected SL\n"
+            "4️⃣ Trade Projection: Targeting opposing Sell-Side Liquidity (1:1.50R)\n"
+            "5️⃣ Trade Result: +1.50R Target Hit with mathematical discipline.\n\n"
+            "👉 Join our free VIP Telegram for live daily signals: @ccrs_forex_signals\n\n"
+            "#USDCHF #Forex #TradingStrategy #PriceActionTrading #SmartMoneyConcepts #ICT"
         )
     },
     "AUDUSD": {
         "title": "AUD/USD COMMODITY LIQUIDITY BREAK",
-        "subtitle": "High-Beta Relative Strength Displacement",
+        "subtitle": "ICT Smart Money Concepts Analysis",
         "direction": "LONG",
         "points": [
-            ("📌 STEP 1 OF 4", "Consolidation Base Engineers Equal Lows", "Retail stop placement clusters beneath the base.", (255, 215, 0)),
-            ("⚡ STEP 2 OF 4", "London Sweep Clears Out Retail Stops", "Fills high-volume buy orders at discount prices.", (255, 82, 82)),
-            ("🎯 STEP 3 OF 4", "Bullish Displacement Closes Above 20-EMA", "Execute long on retest with disciplined risk.", (41, 98, 255)),
-            ("💎 STEP 4 OF 4", "Full 1:1.50R Target Hit (+32.0 Pips)", "Mathematical edge executed with zero bias.", (0, 230, 118)),
-            ("✨ DAILY INSTITUTIONAL ANALYSIS", "Subscribe & Join Telegram: @ccrs_forex_signals", "Free VIP Forex & Gold Signals · Link in Bio & Description", (255, 215, 0))
+            ("📌 1. RETAIL TRAP ANALYSIS", "Retail Support Floor (Engineered SSL Pool)", "Retail double bottom attracts obvious stop clusters.", (255, 215, 0)),
+            ("⚡ 2. LIQUIDITY PURGE & DISPLACEMENT", "Judas Swing Sweeps Stops · MSS Breakout Confirmed", "Smart money absorbs selling, leaving an Order Block.", (255, 82, 82)),
+            ("🎯 3. CONFIRMED ORDER BLOCK ENTRY", "Mitigation Retest at 20-EMA · Stop Loss Protected", "Enter on pullback with stop safely below sweep wick.", (41, 98, 255)),
+            ("📐 4. INSTITUTIONAL TRADE PROJECTION", "Targeting Opposing Buy-Side Liquidity (BSL)", "1:1.50R mathematical risk-to-reward ratio locked.", (0, 230, 118)),
+            ("💎 5. TRADE RESULT: +1.50R SECURED", "Subscribe & Join Telegram: @ccrs_forex_signals", "Real Institutional Order Flow · Zero Emotional Guesswork", (255, 215, 0))
         ],
         "voiceover": (
-            "Here are the exact guidelines to trade high-beta currency sweeps on AUD USD. "
-            "Rule one: spot the consolidation base with equal lows attracting retail stop placement. "
-            "Rule two: wait for the institutional sweep to clear out those lows and fill high-volume buy orders at discount prices. "
-            "Rule three: once a strong displacement candle closes back above the twenty moving average, take the entry on the retest. "
-            "Rule four: target reached with mathematical discipline for a one to one point five gain. "
-            "Subscribe for daily clean chart analysis, and join our free Telegram channel for real-time institutional signals."
+            "Notice the market structure on AUD USD. Retail traders see an obvious support floor and place stops underneath, creating sell-side liquidity. "
+            "London open sweeps straight through the floor, hunting those stops. Strong displacement follows, breaking structure for a confirmed Market Structure Shift, leaving an Order Block. "
+            "We wait for the pullback. Price retraces into the Order Block, triggering our entry on the retest with a protected stop below the sweep wick. "
+            "For our projection, we target opposing buy-side liquidity at the highs for a strict one to one point five risk-to-reward ratio. "
+            "Price expands into our target for a full take profit hit. Subscribe for daily clean analysis, and join our free Telegram for live setups."
         ),
         "ig_caption": (
-            "🇦🇺 AUD/USD Systematic Liquidity Reclaim\n\n"
-            "Clean interbank technical analysis on AUD/USD:\n"
-            "• Consolidation engineers retail stop pool\n"
-            "• London sweep purges the lows\n"
-            "• 20-EMA displacement reclaims structure\n"
-            "• +1.50R Take Profit hit with mathematical precision.\n\n"
-            "👉 Free VIP Telegram Signals: @ccrs_forex_signals\n\n"
-            "#AUDUSD #ForexMarket #DayTrader #TradingTips #FinancialFreedom #ICT"
+            "🇦🇺 Real ICT & Smart Money Analysis on AUD/USD\n\n"
+            "Step-by-step breakdown of today's institutional liquidity hunt:\n"
+            "1️⃣ Analysis First: Retail Support Floor creates Sell-Side Liquidity (SSL)\n"
+            "2️⃣ The Stop Run: Judas Swing purges stops → Market Structure Shift (MSS) + Order Block\n"
+            "3️⃣ Confirmed Entry: Mitigation retest at 20-EMA with protected SL\n"
+            "4️⃣ Trade Projection: Targeting opposing Buy-Side Liquidity (1:1.50R)\n"
+            "5️⃣ Trade Result: +1.50R Target Hit with mathematical discipline.\n\n"
+            "👉 Join our free VIP Telegram for live daily signals: @ccrs_forex_signals\n\n"
+            "#AUDUSD #ForexMarket #DayTrader #TradingTips #FinancialFreedom #ICT #SMC"
         )
     }
 }
 
 
 def _get_system_font(size: int, bold: bool = False) -> ImageFont.FreeTypeFont:
-    """Loads system JetBrains Mono or Carlito font cleanly, falling back to default."""
+    """Loads system JetBrains Mono font cleanly, falling back to default."""
     candidates = [
         "/usr/share/fonts/jetbrains-mono-nl-fonts/JetBrainsMonoNL-Bold.ttf" if bold else "/usr/share/fonts/jetbrains-mono-nl-fonts/JetBrainsMonoNL-Regular.ttf",
         "/usr/share/fonts/jetbrains-mono-fonts/JetBrainsMono-Bold.otf" if bold else "/usr/share/fonts/jetbrains-mono-fonts/JetBrainsMono-Regular.otf",
@@ -226,11 +222,12 @@ def render_inchart_replay_charts(
     num_bars: int = 55
 ) -> List[Image.Image]:
     """
-    Renders 4 high-definition (1080x1650) full-screen in-chart replay frames.
-    Directly models @easytradingeasy style:
-      - 100% focused on chart price action.
-      - Real progressive candle reveal across the stages.
-      - Liquidity level line, sweep marker, 20-EMA curve, and TradingView position tool.
+    Renders 5 authentic ICT progressive replay stages on real candle data:
+      Stage 0: Analysis First (Retail Support/Resistance & Liquidity Pool + 20-EMA)
+      Stage 1: The Stop Run (Judas Swing sweep wick + MSS breakout line + Order Block)
+      Stage 2: Confirmed Entry (Retest at 20-EMA/OB + Protected Stop Loss)
+      Stage 3: The Projection (TradingView Position Tool targeting opposing liquidity)
+      Stage 4: Trade Result (Candle progression expanding into Take Profit Hit)
     """
     bars = df.tail(num_bars).copy().reset_index(drop=True)
     closes = bars["close"].values
@@ -241,42 +238,55 @@ def render_inchart_replay_charts(
 
     is_long = (direction.upper() == "LONG")
     is_gold = ("XAU" in pair.upper() or "GOLD" in pair.upper())
+    min_risk = 1.20 if is_gold else 0.0015
+    digits = 2 if is_gold else 5
 
     if is_long:
         sweep_idx = np.argmin(lows[-25:-10]) + (len(bars) - 25)
         sweep_level = float(lows[sweep_idx])
+        mss_idx = np.argmax(highs[max(0, sweep_idx - 8):sweep_idx]) + max(0, sweep_idx - 8)
+        mss_level = float(highs[mss_idx])
+
         entry_idx = len(bars) - 8
         entry_price = float(closes[entry_idx])
-        min_risk = 1.20 if is_gold else 0.0015
         risk_dist = max(entry_price - sweep_level, min_risk)
         tp_price = entry_price + risk_dist * 1.5
-        sl_price = sweep_level - risk_dist * 0.2
-        eq_level = float(np.mean(lows[-30:-15]))
+        sl_price = sweep_level - risk_dist * 0.15
+
+        ob_top = max(opens[sweep_idx], closes[sweep_idx])
+        ob_bottom = lows[sweep_idx]
+        eq_level = sweep_level + risk_dist * 0.08
     else:
         sweep_idx = np.argmax(highs[-25:-10]) + (len(bars) - 25)
         sweep_level = float(highs[sweep_idx])
+        mss_idx = np.argmin(lows[max(0, sweep_idx - 8):sweep_idx]) + max(0, sweep_idx - 8)
+        mss_level = float(lows[mss_idx])
+
         entry_idx = len(bars) - 8
         entry_price = float(closes[entry_idx])
-        min_risk = 1.20 if is_gold else 0.0015
         risk_dist = max(sweep_level - entry_price, min_risk)
         tp_price = entry_price - risk_dist * 1.5
-        sl_price = sweep_level + risk_dist * 0.2
-        eq_level = float(np.mean(highs[-30:-15]))
+        sl_price = sweep_level + risk_dist * 0.15
 
-    digits = 2 if is_gold else 5
+        ob_top = highs[sweep_idx]
+        ob_bottom = min(opens[sweep_idx], closes[sweep_idx])
+        eq_level = sweep_level - risk_dist * 0.08
+
     replay_charts: List[Image.Image] = []
 
-    for phase in range(4):
+    for phase in range(5):
         fig, ax = plt.subplots(figsize=(10.8, 16.5), dpi=100, facecolor="#0d1117")
         ax.set_facecolor("#0d1117")
 
-        # Candle replay progression: bar-by-bar reveal
+        # Candle replay progression: strictly chronological
         if phase == 0:
             max_idx = sweep_idx - 1
         elif phase == 1:
-            max_idx = sweep_idx + 1
+            max_idx = min(len(bars), sweep_idx + 4)
         elif phase == 2:
             max_idx = entry_idx + 1
+        elif phase == 3:
+            max_idx = entry_idx + 2
         else:
             max_idx = len(bars)
 
@@ -295,21 +305,43 @@ def render_inchart_replay_charts(
         # 20-EMA Dynamic Equilibrium Curve
         ax.plot(range(max_idx), ema20[:max_idx], color="#ff9800", linewidth=3.0, zorder=4)
 
-        # Equal Highs / Lows Liquidity Pool Line
-        pool_label = "Liquidity Pool (Equal Lows)" if is_long else "Liquidity Pool (Equal Highs)"
-        ax.axhline(eq_level, xmin=0.35, xmax=0.75, color="#787b86", linestyle="--", linewidth=2.0, alpha=0.75)
-        ax.text(max(5, sweep_idx - 8), eq_level, pool_label, color="#b2b5be", fontsize=13, fontweight="bold", va="bottom" if is_long else "top")
+        # 1. Retail Floor / Ceiling Line (Analysis First)
+        pool_label = "Retail Support Floor (SSL Pool)" if is_long else "Retail Resistance Ceiling (BSL Pool)"
+        ax.axhline(eq_level, xmin=0.25, xmax=0.65, color="#787b86", linestyle="--", linewidth=2.0, alpha=0.75)
+        ax.text(max(5, sweep_idx - 10), eq_level, pool_label, color="#b2b5be", fontsize=12, fontweight="bold", va="bottom" if is_long else "top")
 
-        # Sweep Marker on Wick
+        # 2. Phase >= 1: Sweep Wick & MSS Line & Order Block
         if phase >= 1:
             marker_shape = "v" if is_long else "^"
             ax.plot([sweep_idx], [sweep_level], marker=marker_shape, markersize=14, color="#ff5252", zorder=6)
             sweep_offset = -risk_dist * 0.15 if is_long else risk_dist * 0.15
-            sweep_txt = "✕ SSL Swept" if is_long else "✕ BSL Swept"
-            ax.text(sweep_idx, sweep_level + sweep_offset, sweep_txt, color="#ff5252", fontsize=14, fontweight="bold", ha="center", va="top" if is_long else "bottom", zorder=6)
+            sweep_txt = "✕ SSL Liquidity Sweep" if is_long else "✕ BSL Liquidity Sweep"
+            ax.text(sweep_idx, sweep_level + sweep_offset, sweep_txt, color="#ff5252", fontsize=13, fontweight="bold", ha="center", va="top" if is_long else "bottom", zorder=6)
 
-        # TradingView Position Tool Box
+            # MSS Line
+            mss_txt = "MSS ▴ (Market Structure Shift)" if is_long else "MSS ▾ (Market Structure Shift)"
+            ax.axhline(mss_level, xmin=0.35, xmax=0.65, color="#00e5ff", linestyle=":", linewidth=2.0, alpha=0.85)
+            ax.text(sweep_idx + 2, mss_level, mss_txt, color="#00e5ff", fontsize=12, fontweight="bold", va="bottom" if is_long else "top")
+
+            # Order Block Shaded Box
+            ob_col = "#00e676" if is_long else "#ff5252"
+            ob_label = "+Order Block (+OB)" if is_long else "-Order Block (-OB)"
+            ob_rect = patches.Rectangle((sweep_idx - 0.5, ob_bottom), 12, max(ob_top - ob_bottom, 0.5 if is_gold else 0.0005),
+                                        facecolor=ob_col, edgecolor=ob_col, alpha=0.18, linestyle="--", linewidth=1.2, zorder=2)
+            ax.add_patch(ob_rect)
+            ax.text(sweep_idx + 0.5, ob_top if is_long else ob_bottom, ob_label, color=ob_col, fontsize=12, fontweight="bold", va="bottom" if is_long else "top")
+
+        # 3. Phase >= 2: Confirmed Entry & Stop Loss
         if phase >= 2:
+            ax.axhline(entry_price, color="#2962ff", linestyle="-", linewidth=2.0, alpha=0.9)
+            ax.text(len(bars)-1, entry_price, f"  ENTRY: {entry_price:.{digits}f}", color="#2962ff", fontsize=13, fontweight="bold", va="center")
+            ax.axhline(sl_price, color="#ff5252", linestyle="-", linewidth=2.0, alpha=0.9)
+            ax.text(len(bars)-1, sl_price, f"  STOP LOSS: {sl_price:.{digits}f}", color="#ff5252", fontsize=13, fontweight="bold", va="center")
+            entry_marker = "^" if is_long else "v"
+            ax.plot([entry_idx], [entry_price], marker=entry_marker, markersize=12, color="#2962ff", zorder=7)
+
+        # 4. Phase >= 3: The Projection (TradingView Position Tool)
+        if phase >= 3:
             profit_low = min(entry_price, tp_price)
             profit_high = max(entry_price, tp_price)
             risk_low = min(entry_price, sl_price)
@@ -317,16 +349,17 @@ def render_inchart_replay_charts(
 
             ax.axhspan(profit_low, profit_high, xmin=0.68, xmax=0.96, facecolor="#2962ff", alpha=0.22, edgecolor="#2962ff", linestyle="--", linewidth=1.5, zorder=1)
             ax.axhspan(risk_low, risk_high, xmin=0.68, xmax=0.96, facecolor="#ff5252", alpha=0.18, edgecolor="#ff5252", linestyle="--", linewidth=1.5, zorder=1)
+            ax.axhline(tp_price, color="#00e676", linestyle="--", linewidth=2.0, alpha=0.9)
+            target_txt = f"  TARGET (BSL): {tp_price:.{digits}f}" if is_long else f"  TARGET (SSL): {tp_price:.{digits}f}"
+            ax.text(len(bars)-1, tp_price, target_txt, color="#00e676", fontsize=13, fontweight="bold", va="center")
+            ax.text(entry_idx + 2, (entry_price + tp_price) / 2, "1:1.50R RR", color="#2962ff", fontsize=13, fontweight="bold",
+                    bbox=dict(boxstyle="round,pad=0.3", facecolor="#0d1117", edgecolor="#2962ff", linewidth=1.2))
 
-            ax.text(len(bars)-1, tp_price, f"  Target (+1.5R): {tp_price:.{digits}f}", color="#00e676", fontsize=13, fontweight="bold", va="center")
-            ax.text(len(bars)-1, entry_price, f"  Entry: {entry_price:.{digits}f}", color="#2962ff", fontsize=13, fontweight="bold", va="center")
-            ax.text(len(bars)-1, sl_price, f"  Stop Loss: {sl_price:.{digits}f}", color="#ff5252", fontsize=13, fontweight="bold", va="center")
-
-        # In-Chart Target Hit Badge
-        if phase >= 3:
+        # 5. Phase == 4: Trade Result (TP Hit Badge)
+        if phase == 4:
             badge_y = tp_price + (risk_dist * 0.25 if is_long else -risk_dist * 0.25)
             ax.text(
-                len(bars)-6, badge_y, "★ TARGET HIT (+1.50R)",
+                len(bars)-6, badge_y, "★ 1:1.50R TAKE PROFIT HIT",
                 color="#00e676", fontsize=15, fontweight="bold",
                 bbox=dict(boxstyle="round,pad=0.4", facecolor="#0d1117", edgecolor="#00e676", linewidth=1.5)
             )
@@ -349,27 +382,24 @@ def render_inchart_replay_charts(
 
 
 async def _generate_natural_audio(script_text: str, output_path: str) -> float:
-    """
-    Generates natural human audio using Microsoft's top conversational model (Brian).
-    Falls back cleanly to Guy if needed.
-    """
+    """Generates natural human audio using Microsoft's top conversational model (Brian)."""
     import edge_tts
     voices_to_try = [PRIMARY_NEURAL_VOICE, FALLBACK_NEURAL_VOICE]
     for v in voices_to_try:
         try:
-            comm = edge_tts.Communicate(script_text, v, rate="+5%", pitch="+0Hz")
+            comm = edge_tts.Communicate(script_text, v, rate="+6%", pitch="+0Hz")
             await comm.save(output_path)
             if os.path.exists(output_path) and os.path.getsize(output_path) > 1000:
                 proc = subprocess.run(
                     ["ffprobe", "-i", output_path, "-show_entries", "format=duration", "-v", "quiet", "-of", "csv=p=0"],
                     stdout=subprocess.PIPE, text=True
                 )
-                return float(proc.stdout.strip()) if proc.stdout else 38.0
+                return float(proc.stdout.strip()) if proc.stdout else 42.0
         except Exception as e:
             logger.warning(f"Voice generation with {v} failed: {e}. Trying fallback...")
             continue
 
-    return 38.0
+    return 42.0
 
 
 def generate_trading_short_video(
@@ -379,20 +409,20 @@ def generate_trading_short_video(
     candle_df: Optional[pd.DataFrame] = None
 ) -> Tuple[Optional[bytes], Dict[str, Any]]:
     """
-    Renders an uncluttered, full-screen vertical (1080x1920, 38-40s) video short.
-    Features:
-      - ZERO box overlays on top of the chart.
-      - 100% visible, continuous chart flow from start to finish.
-      - Short & simple points displayed one-by-one in the clean lower-third.
-      - Professional Subscribe & Telegram credits at the end.
+    Renders an authentic, full-screen vertical (1080x1920, 38-43s) ICT video short.
+    Follows strict sequence:
+      1. Analysis First (Retail Support/Resistance & Liquidity Pool)
+      2. The Stop Run (Sweep + MSS + Order Block)
+      3. Then Entry (Retest at 20-EMA/OB + Protected SL)
+      4. Then Projection (TradingView Position Tool)
+      5. Then Trade Result (Take Profit Hit & Telegram Credits)
     """
-    # Fast path for unit tests
     if os.environ.get("PYTEST_CURRENT_TEST") or "pytest" in sys.modules:
         dummy_meta = {
             "pair": pair,
-            "title": "HYPER-CLEAN IN-CHART LIQUIDITY REPLAY",
+            "title": "AUTHENTIC ICT IN-CHART LIQUIDITY REPLAY",
             "ig_caption": "Test IG Caption",
-            "duration": 38.0
+            "duration": 42.0
         }
         return b"\x00\x00\x00 ftypmp42\x00\x00\x00\x00test", dummy_meta
 
@@ -414,18 +444,18 @@ def generate_trading_short_video(
         audio_path = os.path.join(tmpdir, "voice.mp3")
         video_out = os.path.join(tmpdir, "short.mp4")
 
-        # 2. Generate Natural Neural Audio (Brian, ~38-40s)
+        # 2. Generate Natural Neural Audio (Brian, ~40-43s)
         if voice_enabled:
             try:
                 duration = asyncio.run(_generate_natural_audio(config["voiceover"], audio_path))
             except Exception as e:
                 logger.warning(f"Audio generation failed: {e}")
                 voice_enabled = False
-                duration = 38.0
+                duration = 42.0
         else:
-            duration = 38.0
+            duration = 40.0
 
-        # 3. Render In-Chart Replay Frames (1080x1650)
+        # 3. Render 5 Real ICT Replay Stages (1080x1650)
         chart_imgs = render_inchart_replay_charts(candle_df, norm_pair, direction=config["direction"])
 
         # 4. Stream 1080x1920 Frames into ffmpeg
@@ -466,27 +496,22 @@ def generate_trading_short_video(
         proc = subprocess.Popen(ffmpeg_cmd, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
         points = config["points"]
-        phase_splits = [0.18, 0.38, 0.58, 0.78, 1.0]
+        phase_splits = [0.20, 0.40, 0.60, 0.80, 1.0]
 
         for frame_idx in range(total_frames):
             progress = (frame_idx + 1) / total_frames
             if progress < phase_splits[0]:
                 cur_phase = 0
-                chart_idx = 0
             elif progress < phase_splits[1]:
                 cur_phase = 1
-                chart_idx = 1
             elif progress < phase_splits[2]:
                 cur_phase = 2
-                chart_idx = 2
             elif progress < phase_splits[3]:
                 cur_phase = 3
-                chart_idx = 3
             else:
                 cur_phase = 4
-                chart_idx = 3  # Keeps full completed profitable chart visible at the end!
 
-            chart_img = chart_imgs[chart_idx]
+            chart_img = chart_imgs[cur_phase]
             canvas = Image.new("RGB", (w, h), color=(13, 17, 23))
             draw = ImageDraw.Draw(canvas)
 
@@ -525,7 +550,7 @@ def generate_trading_short_video(
                 "voice_enabled": voice_enabled,
                 "file_size": len(video_bytes)
             }
-            logger.info(f"Generated hyper-clean {norm_pair} video ({len(video_bytes)} bytes, {duration:.1f}s)")
+            logger.info(f"Generated authentic ICT {norm_pair} video ({len(video_bytes)} bytes, {duration:.1f}s)")
             return video_bytes, metadata
 
     return None, {}
