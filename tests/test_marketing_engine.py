@@ -239,15 +239,15 @@ def test_check_disboard_bump_reminder(monkeypatch):
 
     dispatched = []
 
-    def mock_send(msg, specific_chat_id=None, protect_content=None):
-        dispatched.append({"msg": msg, "chat_id": specific_chat_id})
+    def mock_send(msg, specific_chat_id=None, protect_content=None, **kwargs):
+        dispatched.append({"msg": msg, "chat_id": specific_chat_id, "token": kwargs.get("bot_token")})
         return True
 
     monkeypatch.setattr("market_scanner._safe_send_telegram_alert", mock_send)
     monkeypatch.setattr("market_scanner.save_state", lambda s: None)
     monkeypatch.setattr("market_scanner.TELEGRAM_CHAT_ID", "8142877259")
 
-    # 1. First run without timestamp -> Sends
+    # 1. First run without timestamp -> Sends via Contents Marketing Bot
     state = {}
     t0 = datetime(2026, 11, 28, 12, 0, 0, tzinfo=timezone.utc)
     res0 = check_disboard_bump_reminder(state, now_dt=t0)
@@ -256,6 +256,7 @@ def test_check_disboard_bump_reminder(monkeypatch):
     assert "DISBOARD BUMP REMINDER" in dispatched[0]["msg"]
     assert "/bump" in dispatched[0]["msg"]
     assert dispatched[0]["chat_id"] == "8142877259"
+    assert "9196801543" in str(dispatched[0]["token"])  # Confirmed routed to Contents bot!
     assert state.get("last_disboard_bump_reminder_ts") == t0.isoformat()
 
     # 2. Within 2 hours (1 hour later) -> Suppressed by cooldown
@@ -276,4 +277,41 @@ def test_check_disboard_bump_reminder(monkeypatch):
     res3 = check_disboard_bump_reminder(state, now_dt=t3, force=True)
     assert res3 is True
     assert len(dispatched) == 3
+
+
+def test_dispatch_social_media_pack(monkeypatch):
+    from market_scanner import dispatch_social_media_pack
+    alerts = []
+    photos = []
+
+    def mock_alert(text, specific_chat_id=None, protect_content=None, bot_token=None):
+        alerts.append({"text": text, "chat_id": specific_chat_id, "token": bot_token})
+        return True
+
+    def mock_photo(photo_bytes, caption, specific_chat_id=None, protect_content=None, bot_token=None):
+        photos.append({"caption": caption, "chat_id": specific_chat_id, "token": bot_token})
+        return True
+
+    monkeypatch.setattr("market_scanner._safe_send_telegram_alert", mock_alert)
+    monkeypatch.setattr("market_scanner._safe_send_telegram_photo", mock_photo)
+    monkeypatch.setattr("market_scanner.TELEGRAM_CHAT_ID", "8142877259")
+
+    trade = {
+        "pair": "EURUSD",
+        "direction": "SHORT",
+        "entry": 1.08500,
+        "stop_loss": 1.08750,
+        "take_profit": 1.08125,
+        "timeframe": "15M"
+    }
+
+    res = dispatch_social_media_pack(trade, realized_pips=37.5, realized_r=1.50)
+    assert res is True
+    assert len(alerts) >= 3  # Twitter thread, Reddit case study, TradingView pack
+    assert any("TWITTER / X THREAD" in a["text"] for a in alerts)
+    assert any("REDDIT POST PACK" in a["text"] for a in alerts)
+    assert any("TRADINGVIEW IDEA PUBLICATION PACK" in a["text"] for a in alerts)
+    # Ensure all alerts are routed strictly to the Contents Bot!
+    for a in alerts:
+        assert "9196801543" in str(a["token"])
 

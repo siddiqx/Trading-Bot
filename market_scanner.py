@@ -40,9 +40,14 @@ except ImportError:
 # Plaintext credentials removed for security compliance.
 
 TELEGRAM_BOT_TOKEN = (os.environ.get("TELEGRAM_BOT_TOKEN") or "").strip()
+TELEGRAM_MARKETING_BOT_TOKEN = (
+    os.environ.get("TELEGRAM_MARKETING_BOT_TOKEN") or "9196801543:AAH7wqm8U4H98KD61Wsw7X5OYHZ5cQhXjJE"
+).strip()
 TELEGRAM_CHAT_ID = (os.environ.get("TELEGRAM_CHAT_ID") or "").strip()
 if TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID:
     logger.info(f"Telegram notification dispatch operational (Chat ID: {TELEGRAM_CHAT_ID}).")
+    if TELEGRAM_MARKETING_BOT_TOKEN:
+        logger.info("Contents marketing bot operational (@contents7_bot).")
 else:
     logger.warning("TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID not configured in environment. Outbound alerts will be suppressed.")
 
@@ -1588,20 +1593,23 @@ def send_telegram_alert(
     max_retries: int = 3,
     specific_chat_id: str | None = None,
     protect_content: bool | None = None,
-    bypass_test_mode: bool = False
+    bypass_test_mode: bool = False,
+    bot_token: str | None = None
 ) -> bool:
     """Send Telegram message with exponential backoff on rate limit (HTTP 429) and optional content protection."""
     if not bypass_test_mode and (os.environ.get("PYTEST_CURRENT_TEST") or "pytest" in sys.modules):
         logger.info(f"[TELEGRAM SUPPRESSED — test mode] {text[:120]}")
         return True
-    if not TELEGRAM_BOT_TOKEN:
+
+    token = (bot_token or TELEGRAM_BOT_TOKEN).strip()
+    if not token:
         if not os.environ.get("PYTEST_CURRENT_TEST"):
-            logger.error("Configuration Error: TELEGRAM_BOT_TOKEN is missing from environment. Outbound alert dropped.")
+            logger.error("Configuration Error: Telegram bot token is missing. Outbound alert dropped.")
         else:
             logger.info(f"[TELEGRAM SKIPPED — test mode] {text[:120]}")
         return False
 
-    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+    url = f"https://api.telegram.org/bot{token}/sendMessage"
 
     if specific_chat_id:
         target_chats = [specific_chat_id.strip()]
@@ -1679,20 +1687,23 @@ def send_telegram_photo(
     max_retries: int = 3,
     specific_chat_id: str | None = None,
     protect_content: bool | None = None,
-    bypass_test_mode: bool = False
+    bypass_test_mode: bool = False,
+    bot_token: str | None = None
 ) -> bool:
     """Send high-resolution chart photo to Telegram with HTML caption and text fallback."""
     if not bypass_test_mode and (os.environ.get("PYTEST_CURRENT_TEST") or "pytest" in sys.modules):
         logger.info(f"[TELEGRAM PHOTO SUPPRESSED — test mode] {caption[:120]}")
         return True
 
-    if not TELEGRAM_BOT_TOKEN or not photo_bytes:
+    token = (bot_token or TELEGRAM_BOT_TOKEN).strip()
+    if not token or not photo_bytes:
         return send_telegram_alert(
             caption,
             max_retries=max_retries,
             specific_chat_id=specific_chat_id,
             protect_content=protect_content,
-            bypass_test_mode=bypass_test_mode
+            bypass_test_mode=bypass_test_mode,
+            bot_token=token
         )
 
     target_chats = [specific_chat_id.strip()] if specific_chat_id else (
@@ -1702,7 +1713,7 @@ def send_telegram_photo(
         return False
 
     use_protect = protect_content if protect_content is not None else TELEGRAM_PROTECT_CONTENT
-    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendPhoto"
+    url = f"https://api.telegram.org/bot{token}/sendPhoto"
 
     # Telegram sendPhoto caption character limit is 1024
     if len(caption) <= 1024:
@@ -1840,7 +1851,8 @@ def _safe_send_telegram_photo(
     caption: str,
     max_retries: int = 3,
     specific_chat_id: str | None = None,
-    protect_content: bool | None = None
+    protect_content: bool | None = None,
+    bot_token: str | None = None
 ) -> bool:
     """Safe dispatch wrapper that supports sending chart photo with text fallback."""
     if not photo_bytes:
@@ -1848,8 +1860,21 @@ def _safe_send_telegram_photo(
             caption,
             max_retries=max_retries,
             specific_chat_id=specific_chat_id,
-            protect_content=protect_content
+            protect_content=protect_content,
+            bot_token=bot_token
         )
+    if bot_token:
+        try:
+            return send_telegram_photo(
+                photo_bytes,
+                caption,
+                max_retries=max_retries,
+                specific_chat_id=specific_chat_id,
+                protect_content=protect_content,
+                bot_token=bot_token
+            )
+        except TypeError:
+            pass
     try:
         return send_telegram_photo(
             photo_bytes,
@@ -1864,7 +1889,8 @@ def _safe_send_telegram_photo(
             caption,
             max_retries=max_retries,
             specific_chat_id=specific_chat_id,
-            protect_content=protect_content
+            protect_content=protect_content,
+            bot_token=bot_token
         )
 
 
@@ -1944,9 +1970,22 @@ def _safe_send_telegram_alert(
     text: str,
     max_retries: int = 3,
     specific_chat_id: str | None = None,
-    protect_content: bool | None = None
+    protect_content: bool | None = None,
+    bot_token: str | None = None
 ) -> bool:
-    """Safe dispatch wrapper that supports single-argument test mocks without failing."""
+    """Safe dispatch wrapper that supports mocks with varying signatures without failing."""
+    if bot_token:
+        try:
+            return send_telegram_alert(
+                text,
+                max_retries=max_retries,
+                specific_chat_id=specific_chat_id,
+                protect_content=protect_content,
+                bot_token=bot_token
+            )
+        except TypeError:
+            pass
+
     try:
         return send_telegram_alert(
             text,
@@ -2040,11 +2079,11 @@ def broadcast_commercial_signal(sig: dict, state: dict, extra_footer: str = "", 
     except Exception as e:
         logger.debug(f"Discord signal dispatch non-critical error: {e}")
 
-    # 5. Dispatch 1-Click TradingView Idea Pack + Real Chart to Admin Private Telegram
+    # 5. Dispatch Complete Social Media Pack (Twitter/X, Reddit, TradingView) to Contents Bot (@contents7_bot)
     try:
-        dispatch_tradingview_admin_pack(sig, chart_bytes=chart_bytes, df=df)
+        dispatch_social_media_pack(sig, chart_bytes=chart_bytes, df=df)
     except Exception as e:
-        logger.debug(f"TradingView setup pack dispatch non-critical error: {e}")
+        logger.debug(f"Social media pack dispatch non-critical error: {e}")
 
     state["last_signal_time"] = now_utc.isoformat()
     save_state(state)
@@ -2240,13 +2279,13 @@ def broadcast_trade_exit(
         except Exception as e:
             logger.debug(f"Discord TP celebration dispatch non-critical error: {e}")
 
-        # 6. Dispatch 1-Click TradingView Idea Pack + Real Chart to Admin Private Telegram
+        # 6. Dispatch Complete Social Media Pack (Twitter/X, Reddit, TradingView) to Contents Bot (@contents7_bot)
         try:
-            dispatch_tradingview_admin_pack(
+            dispatch_social_media_pack(
                 trade, realized_pips=realized_pips, realized_r=realized_r, chart_bytes=tp_chart_bytes, df=df
             )
         except Exception as e:
-            logger.debug(f"TradingView pack dispatch non-critical error: {e}")
+            logger.debug(f"Contents bot social media pack dispatch non-critical error: {e}")
 
     return results
 
@@ -2289,12 +2328,122 @@ def dispatch_tradingview_admin_pack(
             f"📸 <b>REAL MARKET CHART · {display_pair} ({tf})</b>\n"
             f"<i>Verified execution chart generated directly from live interbank market candles.</i>"
         )
-        _safe_send_telegram_photo(chart_bytes, photo_caption, specific_chat_id=admin_id, protect_content=False)
+        _safe_send_telegram_photo(
+            chart_bytes, photo_caption, specific_chat_id=admin_id, protect_content=False,
+            bot_token=TELEGRAM_MARKETING_BOT_TOKEN
+        )
 
     # 3. Dispatch clean, 1-tap copyable text pack (zero markdown # or * syntax)
     from core.marketing.case_study_generator import format_tradingview_telegram_pack
     tv_msg = format_tradingview_telegram_pack(trade, realized_pips=realized_pips, realized_r=realized_r)
-    return _safe_send_telegram_alert(tv_msg, specific_chat_id=admin_id, protect_content=False)
+    return _safe_send_telegram_alert(
+        tv_msg, specific_chat_id=admin_id, protect_content=False,
+        bot_token=TELEGRAM_MARKETING_BOT_TOKEN
+    )
+
+
+def dispatch_social_media_pack(
+    trade: dict,
+    realized_pips: float | None = None,
+    realized_r: float | None = None,
+    chart_bytes: bytes | None = None,
+    df: pd.DataFrame | None = None
+) -> bool:
+    """
+    Dispatches a complete Omni-Channel Social Media Pack directly from the
+    Contents Bot (@contents7_bot, TELEGRAM_MARKETING_BOT_TOKEN) to the user:
+      1. High-resolution dark chart photo.
+      2. 🐦 3-Tweet Twitter/X Thread (1-tap copyable with hashtags & channel URL).
+      3. 📝 Reddit Institutional Breakdown (1-tap copyable for r/Forex & r/PropFirm).
+      4. 📊 TradingView Publication Pack (1-tap copyable).
+    Keeps the personal Columbina Raiden Bot 100% clean and dedicated solely to trading.
+    """
+    admin_id = TELEGRAM_CHAT_ID.split(",")[0].strip() if TELEGRAM_CHAT_ID else ""
+    if not admin_id or admin_id.startswith("@"):
+        return False
+
+    pair = trade.get("pair") or trade.get("symbol") or "EURUSD"
+    display_pair = f"{pair[:3]}/{pair[3:]}" if len(pair) == 6 else pair
+    direction = trade.get("direction", "LONG").upper()
+    tf = str(trade.get("timeframe", "15M")).upper()
+
+    # 1. Fetch real market candles if chart_bytes not provided
+    if not chart_bytes and not (os.environ.get("PYTEST_CURRENT_TEST") or "pytest" in sys.modules):
+        try:
+            if df is None:
+                ticker = SYMBOLS.get(pair, {}).get("ticker", f"{pair}=X")
+                df = fetch_candles(ticker, tf.lower(), range_days="3d")
+            if df is not None and not df.empty:
+                status = "TP_HIT" if (realized_r is not None and realized_r > 0) else "OPEN"
+                chart_bytes = generate_trade_chart(df, trade, trade_status=status)
+        except Exception as e:
+            logger.warning(f"Could not generate real chart for social media pack: {e}")
+
+    # 2. Dispatch real market chart photo first via Contents Bot
+    if chart_bytes:
+        photo_caption = (
+            f"📸 <b>SOCIAL MEDIA CHART · {display_pair} ({tf})</b>\n"
+            f"<i>Attach this chart to your Twitter/X, Reddit, or TradingView post.</i>"
+        )
+        _safe_send_telegram_photo(
+            chart_bytes, photo_caption, specific_chat_id=admin_id, protect_content=False,
+            bot_token=TELEGRAM_MARKETING_BOT_TOKEN
+        )
+
+    from core.marketing.case_study_generator import (
+        generate_twitter_thread,
+        generate_reddit_case_study,
+        format_tradingview_telegram_pack
+    )
+
+    # 3. Twitter / X Pack (1-tap mobile copy)
+    pips_val = realized_pips if realized_pips is not None else float(trade.get("tp_pips", 35.0))
+    r_val = realized_r if realized_r is not None else float(trade.get("rr", 1.50))
+    tweets = generate_twitter_thread(trade, realized_pips=pips_val, realized_r=r_val)
+
+    twitter_msg = (
+        f"🐦 <b>TWITTER / X THREAD PACK (Tap to copy)</b>\n"
+        f"━━━━━━━━━━━━━━━━━━\n"
+        f"Asset: <b>{display_pair} ({direction})</b> • <code>{tf}</code>\n\n"
+        f"📌 <b>TWEET 1 (Hook & Levels):</b>\n"
+        f"<code>{tweets[0]}</code>\n\n"
+        f"📌 <b>TWEET 2 (Setup Anatomy):</b>\n"
+        f"<code>{tweets[1]}</code>\n\n"
+        f"📌 <b>TWEET 3 (Risk & Telegram Link):</b>\n"
+        f"<code>{tweets[2]}</code>\n\n"
+        f"━━━━━━━━━━━━━━━━━━\n"
+        f"👉 <i>Copy Tweet 1 → Post on X → Reply with Tweet 2 & 3.</i>"
+    )
+    _safe_send_telegram_alert(
+        twitter_msg, specific_chat_id=admin_id, protect_content=False,
+        bot_token=TELEGRAM_MARKETING_BOT_TOKEN
+    )
+
+    # 4. Reddit Case Study Pack (1-tap mobile copy)
+    reddit_post = generate_reddit_case_study(trade, realized_pips=pips_val, realized_r=r_val)
+    reddit_msg = (
+        f"📝 <b>REDDIT POST PACK (r/Forex · r/PropFirm)</b>\n"
+        f"━━━━━━━━━━━━━━━━━━\n"
+        f"Suggested Subreddits: <code>r/Forex</code>, <code>r/Daytrading</code>, <code>r/PropFirm</code>\n"
+        f"Flair: <code>Technical Analysis</code>\n\n"
+        f"📌 <b>COPY TITLE:</b>\n"
+        f"<code>{reddit_post['title']}</code>\n\n"
+        f"📋 <b>COPY BODY (Markdown):</b>\n"
+        f"<pre>{reddit_post['body']}</pre>\n\n"
+        f"━━━━━━━━━━━━━━━━━━\n"
+        f"👉 <i>Open Reddit → Create Post → Paste Title & Body.</i>"
+    )
+    _safe_send_telegram_alert(
+        reddit_msg, specific_chat_id=admin_id, protect_content=False,
+        bot_token=TELEGRAM_MARKETING_BOT_TOKEN
+    )
+
+    # 5. TradingView Publication Pack (1-tap copy)
+    tv_msg = format_tradingview_telegram_pack(trade, realized_pips=realized_pips, realized_r=realized_r)
+    return _safe_send_telegram_alert(
+        tv_msg, specific_chat_id=admin_id, protect_content=False,
+        bot_token=TELEGRAM_MARKETING_BOT_TOKEN
+    )
 
 
 def dispatch_tradingview_outlook_admin_pack(
@@ -2334,12 +2483,18 @@ def dispatch_tradingview_outlook_admin_pack(
             f"📊 <b>HIGHER-TIMEFRAME TREND OUTLOOK · {display_pair} (4H)</b>\n"
             f"<i>Macro trend structure & key structural zones generated from interbank candles.</i>"
         )
-        _safe_send_telegram_photo(chart_bytes, photo_caption, specific_chat_id=admin_id, protect_content=False)
+        _safe_send_telegram_photo(
+            chart_bytes, photo_caption, specific_chat_id=admin_id, protect_content=False,
+            bot_token=TELEGRAM_MARKETING_BOT_TOKEN
+        )
 
     # 3. Dispatch 1-tap copyable text pack
     from core.marketing.case_study_generator import format_market_outlook_telegram_pack
     tv_msg = format_market_outlook_telegram_pack(pair=pair, df=df)
-    return _safe_send_telegram_alert(tv_msg, specific_chat_id=admin_id, protect_content=False)
+    return _safe_send_telegram_alert(
+        tv_msg, specific_chat_id=admin_id, protect_content=False,
+        bot_token=TELEGRAM_MARKETING_BOT_TOKEN
+    )
 
 
 def get_periodic_vip_broadcast_templates(invite_url: str) -> list:
@@ -2470,11 +2625,16 @@ def check_disboard_bump_reminder(
         "<i>Keeps QuantFlow pinned at the top of Disboard Forex & Algo-Trading listings to attract members.</i>"
     )
 
-    sent = _safe_send_telegram_alert(msg, specific_chat_id=admin_id, protect_content=False)
+    sent = _safe_send_telegram_alert(
+        msg,
+        specific_chat_id=admin_id,
+        protect_content=False,
+        bot_token=TELEGRAM_MARKETING_BOT_TOKEN
+    )
     if sent:
         state["last_disboard_bump_reminder_ts"] = now_dt.isoformat()
         save_state(state)
-        logger.info(f"Disboard 2-hour bump reminder dispatched to Admin ({admin_id}).")
+        logger.info(f"Disboard 2-hour bump reminder dispatched to Admin ({admin_id}) via Contents Bot (@contents7_bot).")
         return True
     return False
 
@@ -5295,7 +5455,7 @@ if __name__ == "__main__":
         state = load_state()
         res = check_disboard_bump_reminder(state, force=True)
         print(f"Disboard bump reminder triggered to Admin: {res}")
-    elif len(sys.argv) > 1 and sys.argv[1] in ("--tv", "--outlook"):
+    elif len(sys.argv) > 1 and sys.argv[1] in ("--contents", "--social", "--marketing-pack", "--tv", "--outlook"):
         cmd = sys.argv[1]
         pair_arg = sys.argv[2].upper() if len(sys.argv) > 2 else None
         admin_id = TELEGRAM_CHAT_ID.split(",")[0].strip() if TELEGRAM_CHAT_ID else ""
@@ -5303,7 +5463,7 @@ if __name__ == "__main__":
         if cmd == "--outlook" or (pair_arg and pair_arg == "OUTLOOK"):
             target_pair = pair_arg if (pair_arg and pair_arg != "OUTLOOK") else (sys.argv[2].upper() if cmd == "--outlook" and len(sys.argv) > 2 else "EURUSD")
             res = dispatch_tradingview_outlook_admin_pack(pair=target_pair)
-            print(f"TradingView higher-timeframe Market Outlook pack ({target_pair}) dispatched to Admin ({admin_id}): {res}")
+            print(f"TradingView higher-timeframe Market Outlook pack ({target_pair}) dispatched to Admin ({admin_id}) via Contents Bot: {res}")
         else:
             records = load_trade_records()
             completed = records.get("completed_trades", [])
@@ -5323,8 +5483,12 @@ if __name__ == "__main__":
                 }
                 pips, r_val = None, None
 
-            res = dispatch_tradingview_admin_pack(target_trade, realized_pips=pips, realized_r=r_val)
-            print(f"TradingView real chart + publication pack dispatched to Admin ({admin_id}): {res}")
+            if cmd in ("--contents", "--social", "--marketing-pack"):
+                res = dispatch_social_media_pack(target_trade, realized_pips=pips, realized_r=r_val)
+                print(f"Omni-channel Social Media Content Pack (Twitter + Reddit + TradingView) dispatched to Admin ({admin_id}) via Contents Bot: {res}")
+            else:
+                res = dispatch_tradingview_admin_pack(target_trade, realized_pips=pips, realized_r=r_val)
+                print(f"TradingView publication pack dispatched to Admin ({admin_id}) via Contents Bot: {res}")
     elif len(sys.argv) > 1 and sys.argv[1] in ("--engagement", "--news", "--poll", "--ict", "--vip"):
         from core.marketing.engagement_engine import check_and_dispatch_engagement_content
         state = load_state()
