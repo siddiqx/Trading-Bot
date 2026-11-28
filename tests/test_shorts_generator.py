@@ -38,8 +38,10 @@ class TestShortsGenerator(unittest.TestCase):
             self.assertIn("title", config)
             self.assertIn("voiceover", config)
             self.assertIn("subtitles", config)
+            self.assertIn("rules", config)
             self.assertIn("ig_caption", config)
-            self.assertEqual(len(config["subtitles"]), 4)
+            self.assertEqual(len(config["subtitles"]), 5)
+            self.assertEqual(len(config["rules"]), 5)
             self.assertTrue(len(config["voiceover"]) > 50)
             self.assertIn("#", config["ig_caption"])
 
