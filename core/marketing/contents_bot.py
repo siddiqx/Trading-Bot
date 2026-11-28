@@ -34,8 +34,45 @@ TELEGRAM_MARKETING_BOT_TOKEN = (
 TELEGRAM_CHAT_ID = (os.environ.get("TELEGRAM_CHAT_ID") or "").strip()
 DEFAULT_CHANNEL_URL = "https://t.me/ccrs_forex_signals"
 
-# Default pairs in active institutional universe
-ACTIVE_PAIRS = ["EURUSD", "USDCAD", "USDCHF", "AUDUSD"]
+# Institutional universe with Gold (XAUUSD) as primary focus alongside major Forex pairs
+ACTIVE_PAIRS = ["XAUUSD", "EURUSD", "USDCAD", "USDCHF", "AUDUSD"]
+
+_LAST_ROTATION_INDEX = 0
+
+
+def normalize_asset_symbol(raw: str) -> str:
+    """Normalizes asset symbols and aliases (e.g. 'gold', 'xau' -> 'XAUUSD')."""
+    s = (raw or "").upper().replace("/", "").replace("=", "").strip()
+    if s in ("GOLD", "XAU", "GC", "GCF", "XAUUSD"):
+        return "XAUUSD"
+    if s in ("EUR", "EURUSD"):
+        return "EURUSD"
+    if s in ("CAD", "USDCAD"):
+        return "USDCAD"
+    if s in ("CHF", "USDCHF"):
+        return "USDCHF"
+    if s in ("AUD", "AUDUSD"):
+        return "AUDUSD"
+    return s if s in ACTIVE_PAIRS else "XAUUSD"
+
+
+def select_dynamic_market_pair(preferred_pair: Optional[str] = None) -> str:
+    """
+    Selects the most compelling market pair for chart and content generation.
+    Rotates dynamically across the universe, heavily prioritizing Gold (XAUUSD ~50% frequency)
+    while ensuring diverse multi-pair market coverage on every generation.
+    """
+    global _LAST_ROTATION_INDEX
+    if preferred_pair:
+        norm = normalize_asset_symbol(preferred_pair)
+        if norm in ACTIVE_PAIRS:
+            return norm
+
+    # Weighted rotation: Gold alternates with Forex majors to ensure variety
+    weighted_cycle = ["XAUUSD", "EURUSD", "XAUUSD", "USDCAD", "XAUUSD", "USDCHF", "AUDUSD"]
+    selected = weighted_cycle[_LAST_ROTATION_INDEX % len(weighted_cycle)]
+    _LAST_ROTATION_INDEX += 1
+    return selected
 
 
 def get_persistent_menu_keyboard() -> dict:
@@ -223,15 +260,45 @@ def get_recent_completed_trade() -> Optional[Tuple[dict, float, float]]:
 
 
 def fetch_candles_for_pair(pair: str, interval: str = "15m", range_days: str = "3d") -> Optional[pd.DataFrame]:
-    """Fetches real market candle data for chart generation."""
+    """Fetches real market candle data for chart generation across Gold and Forex pairs."""
     if os.environ.get("PYTEST_CURRENT_TEST") or "pytest" in sys.modules:
         return None
+    norm_pair = normalize_asset_symbol(pair)
     try:
+        # Dedicated Gold (XAUUSD) continuous futures/spot query
+        if norm_pair == "XAUUSD":
+            for ticker in ("GC=F", "XAUUSD=X"):
+                try:
+                    url = f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?range={range_days}&interval={interval}"
+                    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
+                    with urllib.request.urlopen(req, timeout=12) as resp:
+                        data = json.loads(resp.read().decode("utf-8"))
+                        result = data.get("chart", {}).get("result")
+                        if result:
+                            chart = result[0]
+                            ts = chart.get("timestamp", [])
+                            q = chart.get("indicators", {}).get("quote", [{}])[0]
+                            if ts and q and "open" in q and q.get("open"):
+                                df = pd.DataFrame({
+                                    "time": ts,
+                                    "open": q.get("open"),
+                                    "high": q.get("high"),
+                                    "low": q.get("low"),
+                                    "close": q.get("close"),
+                                    "volume": q.get("volume", [0] * len(ts)),
+                                }).dropna().reset_index(drop=True)
+                                if not df.empty:
+                                    df["time_dt"] = pd.to_datetime(df["time"], unit="s", utc=True)
+                                    df["close_time"] = df["time_dt"] + pd.Timedelta(minutes=15 if interval == "15m" else 60)
+                                    return df.sort_values("time_dt").reset_index(drop=True)
+                except Exception:
+                    continue
+
         from market_scanner import fetch_candles, SYMBOLS
-        ticker = SYMBOLS.get(pair, {}).get("ticker", f"{pair}=X")
+        ticker = SYMBOLS.get(norm_pair, {}).get("ticker", f"{norm_pair}=X")
         return fetch_candles(ticker, interval, range_days=range_days)
     except Exception as e:
-        logger.warning(f"Error fetching candles for {pair}: {e}")
+        logger.warning(f"Error fetching candles for {norm_pair}: {e}")
         return None
 
 
@@ -437,9 +504,8 @@ def handle_contents_bot_update(update: dict, bot_token: Optional[str] = None) ->
         chat_id = str(cb.get("message", {}).get("chat", {}).get("id") or cb.get("from", {}).get("id"))
         answer_callback(cb_id, bot_token=token)
 
-        target_pair = data.split("_")[-1] if "_" in data else (active_trade.get("pair") if active_trade else "EURUSD")
-        if target_pair not in ACTIVE_PAIRS:
-            target_pair = "EURUSD"
+        raw_target = data.split("_")[-1] if "_" in data else (active_trade.get("pair") if active_trade else "XAUUSD")
+        target_pair = normalize_asset_symbol(raw_target)
 
         if data.startswith("btn_tw"):
             if active_trade:
@@ -454,10 +520,10 @@ def handle_contents_bot_update(update: dict, bot_token: Optional[str] = None) ->
                 )
             else:
                 from core.marketing.ai_content_generator import generate_ai_twitter_educational_thread
-                ai_pack = generate_ai_twitter_educational_thread()
+                ai_pack = generate_ai_twitter_educational_thread(pair=target_pair)
                 tweets = ai_pack["tweets"]
                 msg = (
-                    f"🐦 <b>TWITTER / X EDUCATIONAL THREAD (Tap to copy)</b>\n"
+                    f"🐦 <b>TWITTER / X EDUCATIONAL THREAD · {target_pair} (Tap to copy)</b>\n"
                     f"━━━━━━━━━━━━━━━━━━\n"
                     f"Topic: <b>{ai_pack['topic']}</b>\n\n"
                     f"📌 <b>TWEET 1 (Hook):</b>\n<code>{tweets[0]}</code>\n\n"
@@ -478,9 +544,9 @@ def handle_contents_bot_update(update: dict, bot_token: Optional[str] = None) ->
                 )
             else:
                 from core.marketing.ai_content_generator import generate_ai_reddit_educational_post
-                ai_pack = generate_ai_reddit_educational_post()
+                ai_pack = generate_ai_reddit_educational_post(pair=target_pair)
                 msg = (
-                    f"📝 <b>REDDIT EDUCATIONAL POST ({ai_pack.get('subreddit', 'r/Forex')})</b>\n"
+                    f"📝 <b>REDDIT EDUCATIONAL POST · {target_pair} ({ai_pack.get('subreddit', 'r/Forex')})</b>\n"
                     f"━━━━━━━━━━━━━━━━━━\n"
                     f"📌 <b>TITLE:</b>\n<code>{ai_pack['title']}</code>\n\n"
                     f"📋 <b>BODY:</b>\n<pre>{ai_pack['body']}</pre>"
@@ -524,11 +590,11 @@ def handle_contents_bot_update(update: dict, bot_token: Optional[str] = None) ->
             f"Engine Status: <b>{status_text}</b>\n\n"
             f"<b>Commands:</b>\n"
             f"• <code>/signal</code> — Active verified trade signal (or standby status)\n"
-            f"• <code>/twitter</code> — Educational FinTwit thread + real chart pic\n"
-            f"• <code>/reddit</code> — In-depth technical breakdown for r/Forex + chart\n"
-            f"• <code>/chart [PAIR]</code> — Real interbank candlestick chart\n"
-            f"• <code>/outlook [PAIR]</code> — 4H macro trend & liquidity structure\n"
-            f"• <code>/tradingview</code> — Clean publication pack\n\n"
+            f"• <code>/twitter [PAIR]</code> — Viral FinTwit thread + real chart (Gold / Forex rotation)\n"
+            f"• <code>/reddit [PAIR]</code> — Deep educational post for r/Forex & r/PropFirm + chart\n"
+            f"• <code>/chart [PAIR]</code> — Real candlestick chart (e.g. /chart XAUUSD, /chart EURUSD)\n"
+            f"• <code>/outlook [PAIR]</code> — 4H macro trend & liquidity structure (e.g. /outlook XAUUSD)\n"
+            f"• <code>/tradingview [PAIR]</code> — Clean TradingView idea publication pack\n\n"
             f"💡 <i>Tip: Tap the Menu (/) button next to the typing bar to select commands!</i>"
         )
         return send_contents_message(chat_id, welcome_text, reply_markup=get_persistent_menu_keyboard(), bot_token=token)
@@ -553,25 +619,30 @@ def handle_contents_bot_update(update: dict, bot_token: Optional[str] = None) ->
             no_trade_msg = (
                 "📡 <b>NO ACTIVE TRADES IDENTIFIED</b>\n"
                 "━━━━━━━━━━━━━━━━━━\n"
-                "The systematic CCRS quantitative engine currently monitors the 4 institutional pairs:\n\n"
+                "The systematic CCRS quantitative engine currently monitors the institutional universe:\n\n"
+                "• <b>Gold (XAU/USD):</b> Standby (High-priority commodity surveillance)\n"
                 "• <b>EUR/USD:</b> Standby (Evaluating 1H currency relative strength)\n"
                 "• <b>USD/CAD:</b> Neutral (No liquidity sweep identified)\n"
                 "• <b>USD/CHF:</b> Balanced (Divergence below 1.75σ threshold)\n"
                 "• <b>AUD/USD:</b> Standby\n\n"
-                "⚡ <i>Authentic systematic trading requires patience. We execute strictly when mathematical edge confirms (|D| ≥ 1.75σ).</i>\n\n"
-                "👉 Send <code>/outlook</code> to view 4H market structure analysis.\n"
+                "⚡ <i>Authentic systematic trading requires patience. We execute strictly when mathematical edge confirms.</i>\n\n"
+                "👉 Send <code>/outlook XAUUSD</code> for Gold 4H liquidity analysis.\n"
                 "👉 Send <code>/twitter</code> or <code>/reddit</code> for educational content with real charts to post!"
             )
             return send_contents_message(chat_id, no_trade_msg, bot_token=token)
 
     # Command: /twitter
-    elif cmd in ("/twitter", "🐦 twitter thread", "twitter"):
+    elif cmd.startswith("/twitter") or cmd in ("🐦 twitter thread", "twitter"):
         from core.marketing.case_study_generator import generate_twitter_thread
         from core.marketing.ai_content_generator import generate_ai_twitter_educational_thread
 
-        if active_trade:
+        parts = raw_text.split()
+        requested_pair = parts[1].upper() if len(parts) > 1 else None
+        target_pair = select_dynamic_market_pair(requested_pair)
+
+        if active_trade and (not requested_pair or normalize_asset_symbol(active_trade.get("pair")) == target_pair):
             tweets = generate_twitter_thread(active_trade)
-            pair = active_trade.get("pair", "EURUSD")
+            pair = active_trade.get("pair", target_pair)
             chart_bytes = generate_chart_bytes(active_trade, trade_status="OPEN")
             if chart_bytes:
                 send_contents_photo(chat_id, chart_bytes, caption=f"📸 <b>REAL MARKET CHART · {pair} (15M)</b>\n<i>Attach this chart to your tweet.</i>", bot_token=token)
@@ -586,8 +657,8 @@ def handle_contents_bot_update(update: dict, bot_token: Optional[str] = None) ->
             )
             return send_contents_message(chat_id, msg, bot_token=token)
         else:
-            # Generate AI-powered authentic educational thread
-            ai_pack = generate_ai_twitter_educational_thread()
+            # Generate AI-powered authentic educational thread for selected/requested asset
+            ai_pack = generate_ai_twitter_educational_thread(pair=target_pair)
             tweets = ai_pack["tweets"]
             pair = ai_pack["pair"]
             topic = ai_pack["topic"]
@@ -601,7 +672,7 @@ def handle_contents_bot_update(update: dict, bot_token: Optional[str] = None) ->
                 send_contents_photo(chat_id, chart_bytes, caption=caption, bot_token=token)
 
             msg = (
-                f"🐦 <b>TWITTER / X EDUCATIONAL THREAD (Tap to copy)</b>\n"
+                f"🐦 <b>TWITTER / X EDUCATIONAL THREAD · {pair} (Tap to copy)</b>\n"
                 f"━━━━━━━━━━━━━━━━━━\n"
                 f"Topic: <b>{topic}</b>\n\n"
                 f"📌 <b>TWEET 1 (Hook):</b>\n<code>{tweets[0]}</code>\n\n"
@@ -613,13 +684,17 @@ def handle_contents_bot_update(update: dict, bot_token: Optional[str] = None) ->
             return send_contents_message(chat_id, msg, bot_token=token)
 
     # Command: /reddit
-    elif cmd in ("/reddit", "📝 reddit post", "reddit"):
+    elif cmd.startswith("/reddit") or cmd in ("📝 reddit post", "reddit"):
         from core.marketing.case_study_generator import generate_reddit_case_study
         from core.marketing.ai_content_generator import generate_ai_reddit_educational_post
 
-        if active_trade:
+        parts = raw_text.split()
+        requested_pair = parts[1].upper() if len(parts) > 1 else None
+        target_pair = select_dynamic_market_pair(requested_pair)
+
+        if active_trade and (not requested_pair or normalize_asset_symbol(active_trade.get("pair")) == target_pair):
             reddit_post = generate_reddit_case_study(active_trade)
-            pair = active_trade.get("pair", "EURUSD")
+            pair = active_trade.get("pair", target_pair)
             chart_bytes = generate_chart_bytes(active_trade, trade_status="OPEN")
             if chart_bytes:
                 send_contents_photo(chat_id, chart_bytes, caption=f"📸 <b>REAL MARKET CHART · {pair} (15M)</b>\n<i>Attach this chart to your Reddit post.</i>", bot_token=token)
@@ -632,7 +707,7 @@ def handle_contents_bot_update(update: dict, bot_token: Optional[str] = None) ->
             return send_contents_message(chat_id, msg, bot_token=token)
         else:
             # Generate AI-powered authentic educational post
-            ai_pack = generate_ai_reddit_educational_post()
+            ai_pack = generate_ai_reddit_educational_post(pair=target_pair)
             pair = ai_pack["pair"]
             sub = ai_pack.get("subreddit", "r/Forex")
 
@@ -645,7 +720,7 @@ def handle_contents_bot_update(update: dict, bot_token: Optional[str] = None) ->
                 send_contents_photo(chat_id, chart_bytes, caption=caption, bot_token=token)
 
             msg = (
-                f"📝 <b>REDDIT EDUCATIONAL POST ({sub})</b>\n"
+                f"📝 <b>REDDIT EDUCATIONAL POST · {pair} ({sub})</b>\n"
                 f"━━━━━━━━━━━━━━━━━━\n"
                 f"📌 <b>POST TITLE:</b>\n<code>{ai_pack['title']}</code>\n\n"
                 f"📋 <b>POST BODY (Markdown):</b>\n<pre>{ai_pack['body']}</pre>\n\n"
@@ -657,11 +732,18 @@ def handle_contents_bot_update(update: dict, bot_token: Optional[str] = None) ->
     # Command: /chart
     elif cmd.startswith("/chart") or cmd in ("📊 chart", "chart"):
         parts = raw_text.split()
-        target_pair = parts[1].upper() if len(parts) > 1 else (active_trade.get("pair") if active_trade else "EURUSD")
-        if target_pair not in ACTIVE_PAIRS:
-            target_pair = "EURUSD"
-        chart_sig = {"pair": target_pair, "timeframe": "15M", "direction": (active_trade.get("direction") if active_trade and active_trade.get("pair") == target_pair else "NEUTRAL")}
-        chart_bytes = generate_chart_bytes(chart_sig, trade_status="OPEN" if active_trade else "OUTLOOK")
+        requested_pair = parts[1].upper() if len(parts) > 1 else None
+        target_pair = select_dynamic_market_pair(requested_pair)
+
+        chart_sig = {
+            "pair": target_pair,
+            "timeframe": "15M",
+            "direction": (active_trade.get("direction") if active_trade and normalize_asset_symbol(active_trade.get("pair")) == target_pair else "NEUTRAL")
+        }
+        chart_bytes = generate_chart_bytes(
+            chart_sig,
+            trade_status="OPEN" if (active_trade and normalize_asset_symbol(active_trade.get("pair")) == target_pair) else "OUTLOOK"
+        )
         if chart_bytes:
             caption = (
                 f"📊 <b>REAL MARKET CHART · {target_pair} (15M)</b>\n"
@@ -673,9 +755,9 @@ def handle_contents_bot_update(update: dict, bot_token: Optional[str] = None) ->
     # Command: /outlook
     elif cmd.startswith("/outlook") or cmd in ("🌐 4h trend outlook", "outlook"):
         parts = raw_text.split()
-        target_pair = parts[1].upper() if len(parts) > 1 else (active_trade.get("pair") if active_trade else "EURUSD")
-        if target_pair not in ACTIVE_PAIRS:
-            target_pair = "EURUSD"
+        requested_pair = parts[1].upper() if len(parts) > 1 else None
+        target_pair = select_dynamic_market_pair(requested_pair)
+
         from core.marketing.case_study_generator import format_market_outlook_telegram_pack
         df_4h = fetch_candles_for_pair(target_pair, interval="1h", range_days="15d")
         outlook_text = format_market_outlook_telegram_pack(pair=target_pair, df=df_4h)
@@ -686,14 +768,19 @@ def handle_contents_bot_update(update: dict, bot_token: Optional[str] = None) ->
         return send_contents_message(chat_id, outlook_text, bot_token=token)
 
     # Command: /tradingview
-    elif cmd in ("/tradingview", "📈 tradingview idea", "tradingview"):
-        if active_trade:
+    elif cmd.startswith("/tradingview") or cmd in ("📈 tradingview idea", "tradingview"):
+        parts = raw_text.split()
+        requested_pair = parts[1].upper() if len(parts) > 1 else None
+        target_pair = select_dynamic_market_pair(requested_pair)
+
+        if active_trade and (not requested_pair or normalize_asset_symbol(active_trade.get("pair")) == target_pair):
             from core.marketing.case_study_generator import format_tradingview_telegram_pack
             tv_msg = format_tradingview_telegram_pack(active_trade)
             return send_contents_message(chat_id, tv_msg, bot_token=token)
         else:
             from core.marketing.case_study_generator import format_market_outlook_telegram_pack
-            tv_msg = format_market_outlook_telegram_pack(pair="EURUSD")
+            df_4h = fetch_candles_for_pair(target_pair, interval="1h", range_days="15d")
+            tv_msg = format_market_outlook_telegram_pack(pair=target_pair, df=df_4h)
             return send_contents_message(chat_id, tv_msg, bot_token=token)
 
     else:

@@ -37,6 +37,160 @@ MODELS_TO_TRY = [
 
 TOPICS = [
     {
+        "id": "gold_liquidity_sweep",
+        "category": "Commodity / Gold ICT Concepts",
+        "theme": "How Institutional Liquidity Sweeps Really Work on Gold ($XAUUSD)",
+        "key_concept": "$20-$40 Gold volatility sweeps past Asian session highs/lows before NY trend displacement",
+        "pair": "XAUUSD",
+        "tweets": [
+            (
+                "🧵 1/3 Why 90% of retail traders lose trading Gold ($XAUUSD):\n\n"
+                "Gold doesn't respect retail trendlines.\n"
+                "Institutions engineer massive $25-$40 liquidity spikes past session highs just to absorb resting orders.\n\n"
+                "Here is how smart money trades Gold 🧵👇"
+            ),
+            (
+                "2/3 The Anatomy of the Gold Sweep:\n\n"
+                "1. Asian Range: Gold chops inside a tight $15 range.\n"
+                "2. The Judas Spike: London open violently spikes through the high to grab stops.\n"
+                "3. The Reclaim: A 15M candle displaces back below the 20-EMA with volume."
+            ),
+            (
+                "3/3 Gold Risk Rule:\n\n"
+                "Never chase the spike on $XAUUSD.\n"
+                "• Fixed 0.50% risk per trade\n"
+                "• Stop behind sweep wick ($25 wide)\n"
+                "• 1:1.50R target\n\n"
+                "Did Gold trap you today or did you catch the sweep? Share below 👇\n\n"
+                "Live setups: https://t.me/ccrs_forex_signals\n"
+                "#XAUUSD #GOLD"
+            )
+        ],
+        "reddit_title": "Why retail support/resistance gets destroyed on Gold (XAUUSD) — And how to trade liquidity sweeps",
+        "reddit_body": (
+            "Gold (XAU/USD) is without question the most popular asset in modern retail trading, but it is also the fastest account-killer for undisciplined traders.\n\n"
+            "Retail traders draw horizontal lines at round numbers ($2,650, $2,700), place a tight $3-$5 stop loss, and watch in frustration as an aggressive candle spikes through their stop by $15 before reversing in their intended direction.\n\n"
+            "Here is why Gold behaves this way, and how we systematically trade institutional liquidity sweeps on XAU/USD.\n\n"
+            "The Anatomy of Gold Liquidity Engineering\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            "Because Gold is traded globally around the clock with extreme institutional volume, large liquidity providers cannot fill positions inside tight consolidation.\n\n"
+            "• Asian Session Build-up: Between 00:00 and 07:00 UTC, Gold typically consolidates in a $15-$25 range. Breakout traders place buy stops above the high and sell stops below the low.\n"
+            "• The London/NY Judas Sweep: At the session open, algorithmic market makers engineer a rapid $20-$35 impulse move past the Asian range, absorbing retail stops at premium/discount prices.\n"
+            "• The 15M Displacement: Once liquidity is absorbed, price prints an impulsive displacement candle that reclaims the 20-period EMA.\n\n"
+            "How to Trade the Setup\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            "1. Never buy the breakout of session highs or sell the breakout of session lows.\n"
+            "2. Wait for the sweep wick to complete and look for a confirmed 15M Market Structure Shift (MSS).\n"
+            "3. Enter on the pullback into the 20-EMA dynamic equilibrium, placing your stop loss safely protected behind the sweep extreme ($20-$30 ATR buffer).\n"
+            "4. Target the opposing session liquidity pool for a minimum 1:1.50R return.\n\n"
+            "Risk Management on Gold (Non-Negotiable)\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            "1 standard lot on Gold controls 100 troy ounces. A $20 move against a 1.0 lot is -$2,000. Never use static lot sizing on Gold. "
+            "Always calculate lot size so total dollar risk equals exactly 0.50% of your account balance.\n\n"
+            "Question for the community: How do you handle Gold's aggressive volatility? Do you trade the London open, the New York open, or wait for the daily close?"
+        )
+    },
+    {
+        "id": "gold_news_cpi_nfp",
+        "category": "Commodity / Gold Macro Flow",
+        "theme": "Trading Gold ($XAUUSD) Around CPI & US News Spikes (Without Gambling)",
+        "key_concept": "How news spikes engineer two-way liquidity pools on Gold and why waiting for 15M structure shift avoids slippage",
+        "pair": "XAUUSD",
+        "tweets": [
+            (
+                "🧵 1/3 The biggest mistake traders make on Gold ($XAUUSD) during high-impact news:\n\n"
+                "Trying to gamble the CPI or NFP candle.\n"
+                "Institutions use the initial 1-minute spike to wipe out retail stops on BOTH sides of the market.\n\n"
+                "Here is how patient traders exploit it 🧵👇"
+            ),
+            (
+                "2/3 The Post-News Execution Rule:\n\n"
+                "1. The 2-Way Sweep: News runs Buy stops first, then Sell stops.\n"
+                "2. Let Dust Settle: Wait 15 minutes for real institutional order flow.\n"
+                "3. The Reclaim: Enter only on confirmed 20-EMA rejection with displacement."
+            ),
+            (
+                "3/3 Gold News Rule:\n\n"
+                "Spreads widen violently during US data.\n"
+                "• Never trade the initial spike\n"
+                "• Fixed 0.50% account risk\n"
+                "• 1:1.50R target\n\n"
+                "Do you trade Gold during news or wait for close? Share below 👇\n\n"
+                "Alerts: https://t.me/ccrs_forex_signals\n"
+                "#XAUUSD #GOLD"
+            )
+        ],
+        "reddit_title": "Why gambling US CPI / NFP news on Gold (XAUUSD) is a trap — And the 15-minute patience rule",
+        "reddit_body": (
+            "Every month during US CPI or Non-Farm Payrolls (NFP), trading forums and Telegram channels are flooded with screenshots of blown Gold accounts. "
+            "Traders try to guess the release number, enter market orders seconds before the data drops, and suffer massive spread widening and slippage.\n\n"
+            "Here is an institutional perspective on how news really impacts Gold liquidity, and how professional traders trade the aftermath.\n\n"
+            "The Mechanics of News Volatility\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            "When high-impact news drops, interbank liquidity providers immediately pull their limit orders to protect their books. "
+            "With thin liquidity, even modest order flow causes extreme price slippage of $10 to $20 within seconds.\n\n"
+            "1. The Stop-Run Phase: The initial candle almost always spikes in one direction to run stops, before whipping back in the opposite direction to trap breakout orders.\n"
+            "2. The Absorption Phase: Once retail stops on both sides are cleared, institutions begin accumulating positions at true institutional discount/premium levels.\n\n"
+            "The 15-Minute Patience Rule\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            "• Step 1: Hands off the keyboard for the first 15 minutes post-release. Let spreads normalize from $2.00+ back to standard $0.20-$0.35.\n"
+            "• Step 2: Observe which liquidity boundary was swept. Did price run the prior day's high or low?\n"
+            "• Step 3: Wait for a confirmed 15M candle close that displaces back toward the 20-period EMA.\n"
+            "• Step 4: Enter on the retest of the rejection wick, anchoring stop loss behind the news spike high/low with fixed 0.50% risk.\n\n"
+            "Question for the community: Do you keep positions open through CPI/NFP or do you completely flat your book before high-impact US news?"
+        )
+    },
+    {
+        "id": "gold_prop_contract_sizing",
+        "category": "Prop Firm Mathematics",
+        "theme": "Why Gold ($XAUUSD) Blows Prop Firm Challenges: The 100oz Contract Reality",
+        "key_concept": "Contract size math, $1 point value, why oversized lot sizes cause instant challenge failure",
+        "pair": "XAUUSD",
+        "tweets": [
+            (
+                "🧵 1/3 Why Gold ($XAUUSD) blows more prop firm accounts than any Forex pair:\n\n"
+                "Contract sizing. 1 standard lot on Gold controls 100 troy ounces.\n"
+                "A simple $20 move against a 1.0 lot is an instant $2,000 loss (40% of a $5k prop challenge).\n\n"
+                "Here is the math that keeps you funded 🧵👇"
+            ),
+            (
+                "2/3 Sizing Formula for Gold:\n\n"
+                "1. Risk Budget: Fixed 0.50% ($25 on $5k, $500 on $100k).\n"
+                "2. Dynamic Stop: Gold ATR requires a $20 to $30 stop buffer.\n"
+                "3. Micro-Lots: Sizing must scale down to 0.01-0.02 lots. Never trade fixed 1.0 lots on Gold."
+            ),
+            (
+                "3/3 Prop Firm Rule:\n\n"
+                "Consistency is about risk geometry, not guessing.\n"
+                "• Scale lots to dollar risk\n"
+                "• Target 1:1.50R minimum\n"
+                "• Never average down\n\n"
+                "What lot size do you use on Gold? Share below 👇\n\n"
+                "Live alerts: https://t.me/ccrs_forex_signals\n"
+                "#XAUUSD #PropFirm"
+            )
+        ],
+        "reddit_title": "The math behind why Gold (XAUUSD) destroys prop firm challenges: 100oz contract sizing guide",
+        "reddit_body": (
+            "Most traders fail prop firm challenges on Gold not because of their entry strategy, but because they treat Gold like a standard Forex pair (EUR/USD, GBP/USD).\n\n"
+            "Let's break down the exact mathematics of Gold contract specifications and how to size your positions to guarantee you never violate maximum drawdown limits.\n\n"
+            "Contract Geometry: Forex vs Gold\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            "• On EUR/USD: 1 standard lot = 100,000 units. A 1-pip move = $10.00.\n"
+            "• On Gold (XAU/USD): 1 standard lot = 100 Troy Ounces. A $1.00 move in Gold price = $100.00 per standard lot.\n\n"
+            "Because Gold routinely moves $25.00 to $40.00 in a single trading session, an open position of 1.0 lot carries $2,500 to $4,000 of intraday fluctuation.\n"
+            "On a $5,000 challenge account with a $500 max daily loss limit, a 1.0 lot on Gold can blow the account in under 3 minutes.\n\n"
+            "The Prop Firm Gold Formula\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            "To risk exactly 0.50% ($25 on $5k, $500 on $100k) with a standard $25 volatility stop:\n"
+            "• Lot Size = (Account Balance * 0.005) / (Stop Distance in Dollars * 100)\n"
+            "• On a $5,000 account: ($25.00) / ($25.00 * 100) = 0.01 Lots.\n"
+            "• On a $100,000 account: ($500.00) / ($25.00 * 100) = 0.20 Lots.\n\n"
+            "If you trade more than 0.01-0.02 lots on a $5k account or more than 0.20 lots on a $100k account, you are overleveraged for Gold's volatility.\n\n"
+            "Question for the community: What is your strict max lot size when trading Gold on prop firm accounts? Do you calculate risk per trade or trade fixed lots?"
+        )
+    },
+    {
         "id": "ict_liquidity_sweep",
         "category": "ICT / Smart Money Concepts",
         "theme": "Why Retail Support/Resistance Gets Swept Before Real Moves",
@@ -328,13 +482,24 @@ def query_openrouter(messages: List[Dict[str, str]], max_tokens: int = 800) -> O
     return None
 
 
-def generate_ai_twitter_educational_thread(topic_idx: Optional[int] = None) -> Dict[str, Any]:
+def generate_ai_twitter_educational_thread(topic_idx: Optional[int] = None, pair: Optional[str] = None) -> Dict[str, Any]:
     """
     Generates a high-engagement, viral-grade 3-tweet educational FinTwit thread using AI.
     Every tweet is structured, multi-line, full-bodied (220-275 chars), and provides real trading value.
     Falls back to curated institutional knowledge base if offline or low quality.
+    Supports filtering by asset (e.g. 'XAUUSD' / Gold).
     """
-    topic_data = TOPICS[topic_idx % len(TOPICS)] if topic_idx is not None else random.choice(TOPICS)
+    if pair:
+        from core.marketing.contents_bot import normalize_asset_symbol
+        norm_pair = normalize_asset_symbol(pair)
+        matching = [t for t in TOPICS if t["pair"].upper() == norm_pair]
+        if matching:
+            topic_data = matching[topic_idx % len(matching)] if topic_idx is not None else random.choice(matching)
+        else:
+            topic_data = TOPICS[topic_idx % len(TOPICS)] if topic_idx is not None else random.choice(TOPICS)
+    else:
+        topic_data = TOPICS[topic_idx % len(TOPICS)] if topic_idx is not None else random.choice(TOPICS)
+
     pair = topic_data["pair"]
 
     system_prompt = (
@@ -420,11 +585,26 @@ def generate_ai_twitter_educational_thread(topic_idx: Optional[int] = None) -> D
     }
 
 
-def generate_ai_reddit_educational_post(topic_idx: Optional[int] = None, target_subreddit: str = "r/Forex") -> Dict[str, str]:
+def generate_ai_reddit_educational_post(
+    topic_idx: Optional[int] = None,
+    target_subreddit: str = "r/Forex",
+    pair: Optional[str] = None
+) -> Dict[str, str]:
     """
     Generates an in-depth, high-effort Reddit educational breakdown for r/Forex or r/PropFirm.
+    Supports filtering by asset (e.g. 'XAUUSD' / Gold).
     """
-    topic_data = TOPICS[topic_idx % len(TOPICS)] if topic_idx is not None else random.choice(TOPICS)
+    if pair:
+        from core.marketing.contents_bot import normalize_asset_symbol
+        norm_pair = normalize_asset_symbol(pair)
+        matching = [t for t in TOPICS if t["pair"].upper() == norm_pair]
+        if matching:
+            topic_data = matching[topic_idx % len(matching)] if topic_idx is not None else random.choice(matching)
+        else:
+            topic_data = TOPICS[topic_idx % len(TOPICS)] if topic_idx is not None else random.choice(TOPICS)
+    else:
+        topic_data = TOPICS[topic_idx % len(TOPICS)] if topic_idx is not None else random.choice(TOPICS)
+
     pair = topic_data["pair"]
 
     system_prompt = (
