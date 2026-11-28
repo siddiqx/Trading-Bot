@@ -176,3 +176,89 @@ def send_discord_tp_celebration(
     except Exception as e:
         logger.error(f"Error dispatching TP celebration to Discord: {e}")
         return False
+
+
+def send_discord_content(
+    title: str,
+    description: str,
+    category: str = "COMMUNITY",
+    color: int = 0x2962FF,
+    webhook_url: Optional[str] = None
+) -> bool:
+    """Dispatches educational cards, market news, or VIP value content to Discord."""
+    url = webhook_url or DISCORD_WEBHOOK_URL
+    if not url or not url.startswith("https://discord.com/api/webhooks/"):
+        return False
+
+    embed = {
+        "title": title,
+        "description": description,
+        "color": color,
+        "footer": {"text": f"QuantFlow Institutional FX • {category}"}
+    }
+
+    payload = {
+        "username": "QuantFlow Institutional FX",
+        "embeds": [embed]
+    }
+
+    try:
+        with httpx.Client(timeout=10.0) as client:
+            resp = client.post(url, json=payload)
+            if resp.status_code in (200, 204):
+                logger.info(f"Community content dispatched to Discord: {title[:40]}")
+                return True
+            logger.warning(f"Discord content dispatch failed: HTTP {resp.status_code}")
+            return False
+    except Exception as e:
+        logger.error(f"Error dispatching content to Discord: {e}")
+        return False
+
+
+def send_discord_poll(
+    question: str,
+    options: list,
+    webhook_url: Optional[str] = None
+) -> bool:
+    """Dispatches an interactive community poll embed with reaction options to Discord."""
+    url = webhook_url or DISCORD_WEBHOOK_URL
+    if not url or not url.startswith("https://discord.com/api/webhooks/"):
+        return False
+
+    emojis = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣"]
+    opt_lines = []
+    for i, opt in enumerate(options[:len(emojis)]):
+        opt_lines.append(f"{emojis[i]} **{opt}**")
+
+    options_formatted = "\n\n".join(opt_lines)
+
+    desc = (
+        f"{options_formatted}\n\n"
+        f"━━━━━━━━━━━━━━━━━━\n"
+        f"🗳️ *Cast your vote by reacting with the corresponding number emoji below!*\n\n"
+        f"💎 [**QuantFlow VIP Club**]({TELEGRAM_VIP_LINK}) • [**Free Telegram Signals**]({TELEGRAM_PUBLIC_LINK})"
+    )
+
+    embed = {
+        "title": f"📊 COMMUNITY POLL: {question}",
+        "description": desc,
+        "color": 0x2962FF,
+        "footer": {"text": "QuantFlow Community Engine • Voice your market outlook"}
+    }
+
+    payload = {
+        "username": "QuantFlow Community",
+        "embeds": [embed]
+    }
+
+    try:
+        with httpx.Client(timeout=10.0) as client:
+            resp = client.post(url, json=payload)
+            if resp.status_code in (200, 204):
+                logger.info(f"Poll dispatched to Discord: {question[:40]}")
+                return True
+            logger.warning(f"Discord poll dispatch failed: HTTP {resp.status_code}")
+            return False
+    except Exception as e:
+        logger.error(f"Error dispatching poll to Discord: {e}")
+        return False

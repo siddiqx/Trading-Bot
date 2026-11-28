@@ -281,6 +281,7 @@ async def test_telegram_radar_and_prices_structure(monkeypatch):
 
     monkeypatch.setattr(rtb, "fetch_asset_candles", mock_candles)
     monkeypatch.setattr(rtb, "load_trade_records", lambda: {"active_trades": {}, "completed_trades": []})
+    monkeypatch.setattr(rtb, "is_market_open", lambda: True)
 
     radar_text, _ = await rtb.get_radar_payload()
     assert "MARKET SURVEILLANCE RADAR" in radar_text

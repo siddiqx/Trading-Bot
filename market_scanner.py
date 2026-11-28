@@ -1777,6 +1777,64 @@ def send_telegram_photo(
     return overall_success
 
 
+def send_telegram_poll(
+    question: str,
+    options: list[str],
+    specific_chat_id: str | None = None,
+    is_anonymous: bool = True,
+    max_retries: int = 3,
+    bypass_test_mode: bool = False
+) -> bool:
+    """Dispatches a native interactive Telegram poll to the specified chat or public channel."""
+    if not bypass_test_mode and (os.environ.get("PYTEST_CURRENT_TEST") or "pytest" in sys.modules):
+        logger.info(f"[TELEGRAM POLL SUPPRESSED — test mode] {question}")
+        return True
+
+    if not TELEGRAM_BOT_TOKEN:
+        logger.warning("TELEGRAM_BOT_TOKEN missing. Suppressing poll dispatch.")
+        return False
+
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendPoll"
+    target_chats = [specific_chat_id.strip()] if specific_chat_id else (
+        [c.strip() for c in TELEGRAM_CHAT_ID.split(",") if c.strip()] if TELEGRAM_CHAT_ID else []
+    )
+
+    if not target_chats:
+        return False
+
+    overall_success = True
+    for chat in target_chats:
+        payload = {
+            "chat_id": chat,
+            "question": question[:300],
+            "options": json.dumps(options[:10]),
+            "is_anonymous": is_anonymous
+        }
+        sent = False
+        for attempt in range(max_retries):
+            try:
+                with httpx.Client(timeout=10.0) as client:
+                    resp = client.post(url, data=payload)
+                    if resp.status_code == 200:
+                        logger.info(f"Telegram poll dispatched successfully to {chat}.")
+                        sent = True
+                        break
+                    elif resp.status_code == 429:
+                        retry_after = int(resp.headers.get("Retry-After", 5))
+                        time.sleep(retry_after)
+                    else:
+                        logger.error(f"Failed to send Telegram poll to {chat}: {resp.status_code} {resp.text[:200]}")
+                        break
+            except Exception as e:
+                logger.error(f"Error sending Telegram poll to {chat} (attempt {attempt+1}): {e}")
+                if attempt < max_retries - 1:
+                    time.sleep(2 ** attempt)
+        if not sent:
+            overall_success = False
+
+    return overall_success
+
+
 def _safe_send_telegram_photo(
     photo_bytes: bytes | None,
     caption: str,
@@ -4675,6 +4733,13 @@ def run_scan_cycle():
     except Exception as e:
         logger.warning(f"Error checking Disboard bump reminder: {e}")
 
+    # 0.15 Community Engagement & Educational Content Engine (24/7 with 3h cooldown)
+    try:
+        from core.marketing.engagement_engine import check_and_dispatch_engagement_content
+        check_and_dispatch_engagement_content(state, now_dt=scan_start)
+    except Exception as e:
+        logger.warning(f"Error checking community engagement content: {e}")
+
     if not is_forex_market_open():
         logger.info("Forex markets are CLOSED for the weekend (Friday 17:00 NY to Sunday 17:00 NY). Standing down.")
         telemetry["circuit_breaker"] = "MARKET_CLOSED_WEEKEND"
@@ -5118,6 +5183,13 @@ if __name__ == "__main__":
         state = load_state()
         res = check_disboard_bump_reminder(state, force=True)
         print(f"Disboard bump reminder triggered to Admin: {res}")
+    elif len(sys.argv) > 1 and sys.argv[1] in ("--engagement", "--news", "--poll", "--ict", "--vip"):
+        from core.marketing.engagement_engine import check_and_dispatch_engagement_content
+        state = load_state()
+        arg = sys.argv[1].replace("--", "").upper()
+        content_type = "AUTO" if arg == "ENGAGEMENT" else arg
+        success, reason = check_and_dispatch_engagement_content(state, force=True, content_type=content_type)
+        print(f"Engagement content dispatch ({content_type}): {success} - {reason}")
     elif len(sys.argv) > 1 and sys.argv[1] in ("--marketing", "--recap"):
         from core.marketing import (
             generate_weekly_performance_digest,

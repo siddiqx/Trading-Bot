@@ -17,6 +17,15 @@ from core.marketing.telegram_growth import (
 from core.marketing.discord_publisher import (
     send_discord_signal,
     send_discord_tp_celebration,
+    send_discord_content,
+    send_discord_poll,
+)
+from core.marketing.engagement_engine import (
+    generate_daily_news_briefing,
+    get_community_poll,
+    get_ict_educational_card,
+    get_vip_promotion_card,
+    check_and_dispatch_engagement_content,
 )
 
 __all__ = [
@@ -30,4 +39,11 @@ __all__ = [
     "generate_weekly_performance_digest",
     "send_discord_signal",
     "send_discord_tp_celebration",
+    "send_discord_content",
+    "send_discord_poll",
+    "generate_daily_news_briefing",
+    "get_community_poll",
+    "get_ict_educational_card",
+    "get_vip_promotion_card",
+    "check_and_dispatch_engagement_content",
 ]
