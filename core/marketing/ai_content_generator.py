@@ -121,13 +121,13 @@ def generate_ai_twitter_educational_thread(topic_idx: Optional[int] = None) -> D
     pair = topic_data["pair"]
 
     system_prompt = (
-        "You are an institutional algorithmic currency trader and quantitative analyst. "
-        "Write a punchy, ultra-valuable 3-tweet educational thread for Twitter/FinTwit. "
+        "You are an experienced, full-time currency trader who shares real market insights with peers. "
+        "Write a punchy, highly engaging 3-tweet educational thread for Twitter/FinTwit. "
         "Strict rules:\n"
-        "1. NO generic guru motivational fluff. Deep, authentic technical mechanics only.\n"
-        "2. Tweet 1: Hook about the topic with a counter-intuitive truth. Under 240 chars.\n"
-        "3. Tweet 2: Step-by-step institutional breakdown or mechanics. Under 260 chars.\n"
-        "4. Tweet 3: Practical actionable takeaway for prop firm / serious traders, cashtags (#EURUSD #ICT #Forex), and a clean link.\n"
+        "1. Write conversationally like a real human trader talking to other traders. Zero robot-speak, zero academic math jargon (no sigma, z-score, regression, or algorithms).\n"
+        "2. Tweet 1: Hook the reader with a common trap or relatable observation about ${pair} liquidity. Keep under 240 chars.\n"
+        "3. Tweet 2: Simple 3-step breakdown of how the move actually plays out (liquidity sweep, 15M structure shift, 20-EMA tap). Keep under 260 chars.\n"
+        "4. Tweet 3: Risk rule (0.50% risk, 1:1.50R target), an engaging question to prompt replies, and clean tags with link. Keep under 270 chars.\n"
         "Format output strictly as JSON with keys 'tweet_1', 'tweet_2', 'tweet_3'."
     )
     user_prompt = f"Topic: {topic_data['theme']}\nCore concept: {topic_data['key_concept']}\nAsset focus: ${pair}"
@@ -157,24 +157,23 @@ def generate_ai_twitter_educational_thread(topic_idx: Optional[int] = None) -> D
 
     # Built-in Institutional Knowledge Base Fallback
     t1 = (
-        f"🧵 1/3 The uncomfortable truth about ${pair} liquidity sweeps:\n\n"
-        f"Retail traders view support and resistance as barriers. Institutional algorithms view them as liquidity pools containing resting stop-loss orders.\n\n"
-        f"If you buy obvious support, your stop is the exact fuel smart money needs to enter."
+        f"🧵 1/3 An uncomfortable truth about trading ${pair}:\n\n"
+        f"Most traders treat support and resistance as hard walls. In reality, they are giant liquidity pools where resting retail stop-losses sit.\n\n"
+        f"When you buy an obvious support bounce, your stop is often the exact fuel institutions need to fill their positions."
     )
     t2 = (
-        f"2/3 The Institutional Mechanics:\n\n"
-        f"1. Consolidation builds retail buy/sell stops outside the range.\n"
-        f"2. London/NY Open: Aggressive Judas sweep runs stops at Buy-Side Liquidity (BSL).\n"
-        f"3. 15M Market Structure Shift (MSS) + tap into -Order Block confirms true direction."
+        f"2/3 How the setup actually unfolds:\n\n"
+        f"1. Consolidation builds stop orders above and below session levels.\n"
+        f"2. A quick spike sweeps through the high/low, trapping breakout traders.\n"
+        f"3. Structure shifts cleanly on the 15M chart, retesting the 20-EMA for entry."
     )
     t3 = (
-        f"3/3 Systematic Edge for Prop Traders:\n\n"
-        f"• Wait for the sweep to confirm FIRST — never anticipate.\n"
-        f"• Risk max 0.50% per execution with 2.0x ATR stops.\n"
-        f"• Target opposing liquidity at 1:1.50R minimum.\n\n"
-        f"Follow institutional macro flows free in our surveillance cockpit:\n"
-        f"👉 {DEFAULT_CHANNEL_URL}\n\n"
-        f"#{pair} #ICT #SmartMoneyConcepts #Forex #PropFirm"
+        f"3/3 How we trade it:\n\n"
+        f"• Wait for the trap to spring first — never chase the initial breakout.\n"
+        f"• Keep risk fixed at 0.50% per trade with a 1:1.50R minimum target.\n\n"
+        f"Have you ever been stopped out right before the market ran in your direction? Let me know below 👇\n\n"
+        f"Free daily trade surveillance & insights: {DEFAULT_CHANNEL_URL}\n"
+        f"#{pair} #Forex #Trading #PriceAction #PropFirm"
     )
     return {
         "tweets": [t1, t2, t3],
@@ -191,11 +190,10 @@ def generate_ai_reddit_educational_post(topic_idx: Optional[int] = None, target_
     pair = topic_data["pair"]
 
     system_prompt = (
-        "You are an experienced quantitative currency trader who has passed multiple institutional prop firm challenges. "
-        "Write an authoritative, highly educational Reddit post for r/Forex or r/PropFirm. "
+        "You are an experienced, funded prop firm currency trader writing a peer-to-peer educational post for r/Forex or r/PropFirm. "
         "Strict rules:\n"
-        "1. NO promotional spam. Zero guru claims. Pure value, mathematical edge, and institutional mechanics.\n"
-        "2. Include detailed sections: Introduction, The Institutional Reality, Technical Mechanics (SMC/ICT), Risk Management Rules, and Key Takeaway.\n"
+        "1. Speak conversationally and authentically, like a seasoned trader talking to fellow traders. Zero robotic jargon, zero academic math equations, zero sales pitches.\n"
+        "2. Structure cleanly: Relatable Introduction, The Retail Trap vs Market Reality, Step-by-Step Price Action Guide (Liquidity Sweeps & 20-EMA Retests), Prop Risk Rules (0.50% risk per trade, 1:1.50R target), and an engaging open-ended question at the end to spark community discussion.\n"
         "3. Output strictly as JSON with keys 'title' and 'body' (in clean markdown format)."
     )
     user_prompt = f"Topic: {topic_data['theme']}\nCore concept: {topic_data['key_concept']}\nSubreddit: {target_subreddit}\nAsset: {pair}"
@@ -225,34 +223,29 @@ def generate_ai_reddit_educational_post(topic_idx: Optional[int] = None, target_
             pass
 
     # Built-in Institutional Knowledge Base Fallback
-    title = f"[Deep Dive] {topic_data['theme']}: An Institutional Perspective on {pair}"
+    title = f"Why retail support/resistance gets swept before big moves on {pair} (And how to stop getting trapped)"
     body = (
-        f"## Introduction\n\n"
-        f"Most retail traders focus entirely on static indicators (RSI, MACD, generic Bollinger Bands) "
-        f"on single currency pairs without understanding the underlying mechanics of institutional order flow.\n\n"
-        f"In this breakdown, we examine **{topic_data['theme']}**, breaking down how interbank algorithms "
-        f"engineer liquidity and how quantitative traders exploit this with asymmetric risk management.\n\n"
-        f"---\n\n"
-        f"### 1. The Institutional Reality vs Retail Belief\n"
-        f"Retail technical analysis teaches traders to buy support and sell resistance with tight stops just beyond the level. "
-        f"Large liquidity providers and institutional funds cannot enter sizable positions without counterpart liquidity. "
-        f"Resting retail stop-loss orders provide the exact volume required for absorption.\n\n"
-        f"* **Buy-Side Liquidity (BSL):** Retail buy stops and breakout orders sitting above equal swing highs.\n"
-        f"* **Sell-Side Liquidity (SSL):** Retail sell stops sitting below prominent swing lows.\n\n"
-        f"### 2. Smart Money Concepts (ICT) Execution Framework\n"
-        f"To avoid being trapped during liquidity engineering:\n"
-        f"1. **Patience for the Sweep:** Allow price to aggressively pierce the swing high/low. Do not trade the initial breakout.\n"
-        f"2. **Confirmed Market Structure Shift (MSS):** Wait for an impulsive candle close breaking counter-structure with displacement.\n"
-        f"3. **Equilibrium Mitigation:** Enter on the retest of the confirmed Order Block or Fair Value Gap confluence with the 20-EMA.\n\n"
-        f"### 3. Prop Firm Compliance & Mathematical Edge\n"
-        f"* **Risk Budget:** Never risk more than 0.50% to 0.75% per execution. A 5-loss streak at 0.50% is only 2.5% drawdown, leaving 75% of your prop drawdown buffer intact.\n"
-        f"* **Asymmetric Geometry:** Anchor your Take Profit to opposing unmitigated liquidity at a **minimum 1:1.50R target**.\n"
-        f"* **Stealth Execution:** Trade with market orders at true spread to minimize broker slippage footprint.\n\n"
-        f"---\n\n"
-        f"### Key Takeaway for Systematic Traders\n"
-        f"Consistency is not about predicting every tick. It is about understanding where market liquidity resides, "
-        f"waiting for institutional participation to confirm, and executing with uncompromising mathematical risk control.\n\n"
-        f"*What are your rules for identifying genuine liquidity sweeps vs trend continuations? Let's discuss below.*"
+        f"Most traders start their journey drawing support and resistance lines, only to watch price aggressively spike through their level, stop them out by a couple of pips, and then immediately reverse straight toward their original target.\n\n"
+        f"If that has happened to you, it is not bad luck — it is simply how market liquidity operates.\n\n"
+        f"The Retail Trap vs Market Reality\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"Retail textbooks teach traders to buy support and sell resistance with tight stops just outside the range.\n\n"
+        f"Large liquidity providers and institutional participants cannot enter sizable positions without counterpart liquidity. "
+        f"Resting retail stop-loss orders provide the exact volume required for absorption:\n\n"
+        f"• Buy-Side Liquidity: Retail buy stops and breakout orders sitting above equal swing highs.\n"
+        f"• Sell-Side Liquidity: Retail sell stops sitting below prominent swing lows.\n\n"
+        f"The 3-Step Execution Framework\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"Instead of buying the first touch of a level, here is how we approach the market systematically:\n\n"
+        f"1. Patience for the Sweep: Allow price to aggressively pierce the session high or low. Never try to front-run the breakout.\n"
+        f"2. Confirmed Market Structure Shift: Wait for a decisive 15-minute candle to displace back inside the range, confirming institutional participation.\n"
+        f"3. Retest of Equilibrium: Look for an entry on the pullback into the 20-period EMA, offering a clean, tight invalidation level.\n\n"
+        f"Risk Rules That Keep You Funded\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"No strategy wins 100% of the time, and you don't need it to. Prop firm survival comes down to two rules:\n\n"
+        f"• Risk 0.50% per trade: A 4-trade losing streak is only a 2% drawdown, leaving 80% of your maximum allowable drawdown completely safe.\n"
+        f"• Minimum 1:1.50R Target: Even with a 45% win rate, positive risk-to-reward ensures long-term compounding.\n\n"
+        f"Question for the community: How do you handle fakeouts around key levels? Do you wait for a candle close or enter on limit orders? Curious to hear different perspectives below!"
     )
     return {
         "title": title,

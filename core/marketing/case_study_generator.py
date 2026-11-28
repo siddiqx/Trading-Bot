@@ -37,61 +37,54 @@ def generate_reddit_case_study(
     r_val = f"+{realized_r:.2f}R" if realized_r >= 0 else f"{realized_r:.2f}R"
     pips_val = f"+{realized_pips:.1f}" if realized_pips >= 0 else f"{realized_pips:.1f}"
 
-    # Adaptive Title based on target subreddit
+    # Human, conversational title based on target subreddit
     if "prop" in target_subreddit.lower():
         title = (
-            f"[Prop Firm Execution] How 15M Institutional Liquidity Sweeps Caught "
-            f"{pips_val} Pips on {display_pair} ({r_val}) with 0.50% Fixed Risk"
+            f"How waiting for the session liquidity sweep caught {pips_val} pips on {display_pair} ({r_val}) with 0.5% risk"
         )
     elif "ict" in target_subreddit.lower():
         title = (
-            f"[SMC/ICT Breakdown] Clean {direction} Order Block & Liquidity Sweep "
-            f"on {display_pair} • Full Take Profit Swept ({pips_val} Pips / {r_val})"
+            f"Clean {direction} on {display_pair}: liquidity sweep, 15M structure shift, and full {pips_val} pips hit ({r_val})"
         )
     else:
         title = (
-            f"[Trade Breakdown] Systematic Dual-Timeframe CCRS Execution on {display_pair}: "
-            f"{pips_val} Pips ({r_val}) Full Take Profit Hit"
+            f"Trade breakdown on {display_pair}: why patience around session highs/lows pays off ({pips_val} pips / {r_val})"
         )
 
-    action_verb = "Bullish Demand Order Block (+OB)" if direction == "LONG" else "Bearish Supply Order Block (-OB)"
-    sweep_type = "Sell-Side Liquidity (SSL)" if direction == "LONG" else "Buy-Side Liquidity (BSL)"
+    action_verb = "Demand Zone / Bullish Demand Order Block (+OB)" if direction == "LONG" else "Supply Zone / Bearish Supply Order Block (-OB)"
+    sweep_type = "session lows (Sell-Side Liquidity (SSL))" if direction == "LONG" else "session highs (Buy-Side Liquidity (BSL))"
     target_pool = "Buy-Side Liquidity (BSL)" if direction == "LONG" else "Sell-Side Liquidity (SSL)"
     mss_type = "Bullish Market Structure Shift (MSS ▴)" if direction == "LONG" else "Bearish Market Structure Shift (MSS ▾)"
 
     body = (
-        f"## Trade Overview: {direction} {display_pair} ({timeframe})\n\n"
-        f"* **Asset:** {display_pair}\n"
-        f"* **Direction:** {direction}\n"
-        f"* **Execution Price:** `{entry}`\n"
-        f"* **Take Profit Exit:** `{exit_px}`\n"
-        f"* **Net Result:** **{pips_val} Pips ({r_val})**\n"
-        f"* **Execution Timestamp:** `{datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}`\n\n"
+        f"Hey everyone, wanted to share a quick breakdown of today's trade on **{display_pair} ({direction})** on the 15M timeframe.\n\n"
+        f"Too many traders jump into positions the moment price starts moving fast, only to get trapped by an institutional stop run. "
+        f"Here is how waiting for the sweep gave us a clean **{pips_val} pips ({r_val})** outcome with zero stress.\n\n"
         f"---\n\n"
-        f"### 1. Macro Context & Currency Strength Alignment\n"
-        f"Before entering on the 15M chart, our quantitative scanner evaluated the 1-hour "
-        f"rolling currency relative strength (CCRS) across the institutional basket. "
-        f"The setup triggered once macro divergence surpassed our **1.75σ threshold**, "
-        f"guaranteeing momentum alignment before probing lower-timeframe structure.\n\n"
-        f"### 2. Smart Money Concepts (ICT) Trigger\n"
-        f"* **Liquidity Sweep:** Price swept prior retail stops at the key {sweep_type} pool, "
-        f"triggering institutional absorption.\n"
-        f"* **Market Structure Shift:** Confirmed 15M {mss_type} with impulsive displacement.\n"
-        f"* **Order Block Mitigation:** The subsequent reaction confirmed a clean tap into the 15M {action_verb} & 20-EMA dynamic confluence, "
-        f"providing asymmetrical risk-to-reward geometry.\n"
-        f"* **Draw on Liquidity (DOL):** Systematic target swept cleanly at the opposing {target_pool} cluster.\n\n"
-        f"### 3. Risk Management & Prop Firm Compliance\n"
-        f"* **Risk Budget:** 0.50% static risk with dynamic volatility-anchored stop (2.0× ATR).\n"
-        f"* **Anti-Copy Protection:** Execution executed via broker API at true market spread, "
-        f"securing first-mover fill priority.\n"
-        f"* **Exit Management:** Zero manual discretion. Order resolved at full 1:1.75R target cleanly.\n\n"
+        f"### 📊 Trade Summary\n"
+        f"* **Pair:** {display_pair} ({direction})\n"
+        f"* **Timeframe:** {timeframe}\n"
+        f"* **Entry:** `{entry}`\n"
+        f"* **Target Exit:** `{exit_px}`\n"
+        f"* **Result:** **{pips_val} Pips ({r_val})**\n\n"
         f"---\n\n"
-        f"### Key Takeaway for Systematic Traders\n"
-        f"Retail stop clusters consistently provide the liquidity institutional algorithms require to enter. "
-        f"Combining macro flow filters with local liquidity sweeps eliminates over-trading and "
-        f"delivers repeatable positive mathematical expectancy.\n\n"
-        f"*Data logged live via automated cTrader execution ledger. "
-        f"Check profile bio for open-source research and live surveillance tracking.*"
+        f"### 1. Macro Context & Market Flow\n"
+        f"Before entering, higher-timeframe currency strength was clearly tilted in favor of {display_pair}. "
+        f"However, price was consolidating near key levels during the morning session. Instead of guessing the direction "
+        f"and getting chopped up, the rule is always the same: **let the market show its hand first**.\n\n"
+        f"### 2. Smart Money Concepts (SMC) Setup & Trigger\n"
+        f"* **The Liquidity Sweep:** Price aggressively spiked past {sweep_type}, clearing out resting retail stop-loss orders.\n"
+        f"* **The Structure Shift:** Immediately following the stop hunt, price rejected hard and closed with an impulsive 15M candle ({mss_type}).\n"
+        f"* **The Retest Entry:** We waited for price to pull back into the {action_verb} and tap the 20-EMA dynamic equilibrium before entering.\n"
+        f"* **The Exit:** Target was anchored directly to the opposing {target_pool} cluster for a clean 1:1.50R target.\n\n"
+        f"### 3. Risk & Psychology for Prop Traders\n"
+        f"On funded and challenge accounts, capital preservation is 90% of the game. We risked strictly **0.50%** on this execution. "
+        f"By waiting for the liquidity sweep to confirm before entering, our invalidation level was protected by the sweep spike, "
+        f"giving us asymmetrical risk-to-reward without sweat.\n\n"
+        f"---\n\n"
+        f"### 💬 Question for the Community\n"
+        f"How do you handle entries when price sweeps session highs or lows? Do you take the rejection candle immediately, "
+        f"or do you wait for a confirmed market structure shift on the 15M? Let's discuss in the comments below!"
     )
 
     return {
@@ -119,40 +112,41 @@ def generate_twitter_thread(
     pips_val = f"+{realized_pips:.1f}" if realized_pips >= 0 else f"{realized_pips:.1f}"
 
     tweet_1 = (
-        f"🎯 FULL TAKE PROFIT HIT: {cashtag} {direction}\n\n"
-        f"• Realized: {pips_val} pips ({r_val})\n"
+        f"🎯 Direct hit on {cashtag} ({direction})!\n\n"
+        f"{pips_val} pips ({r_val}) banked clean.\n"
         f"• Entry: {trade.get('entry')}\n"
         f"• Target: {trade.get('take_profit')}\n\n"
-        f"Institutional 15M Liquidity Sweep + CCRS Dual-Timeframe Macro Alignment swept clean. "
-        f"Full trade breakdown below 🧵👇\n\n"
-        f"#Forex #ICT #TradingView #PropFirm #FTMO"
+        f"Waited patiently for the session liquidity run before stepping in. "
+        f"The reaction off the 20-EMA was textbook.\n\n"
+        f"Full 3-step breakdown below 🧵👇\n\n"
+        f"#Forex #Trading #PriceAction #PropFirm #FTMO"
     )
 
     if direction == "SHORT":
-        tweet_2_sweep = "2. 15M Liquidity Sweep: Buy-Side Liquidity (BSL) swept at session highs"
-        tweet_2_ob = "3. Structure & Retest: MSS ▾ + Bearish Order Block (-OB) rejection at 20-EMA"
-        tweet_2_target = f"4. Draw on Liquidity: Sell-Side Liquidity (SSL) target swept at {trade.get('take_profit')}"
+        trap_line = "Early longs got baited as price swept above session highs"
+        trigger_line = "Confirmed 15M structure shift downward + clean rejection at 20-EMA"
+        target_line = f"Rode the displacement directly into resting sell-side liquidity at {trade.get('take_profit')}"
     else:
-        tweet_2_sweep = "2. 15M Liquidity Sweep: Sell-Side Liquidity (SSL) swept below session lows"
-        tweet_2_ob = "3. Structure & Retest: MSS ▴ + Bullish Order Block (+OB) rejection at 20-EMA"
-        tweet_2_target = f"4. Draw on Liquidity: Buy-Side Liquidity (BSL) target swept at {trade.get('take_profit')}"
+        trap_line = "Early shorts got trapped as price swept below session lows"
+        trigger_line = "Confirmed 15M structure shift upward + clean reclaim of the 20-EMA"
+        target_line = f"Rode the displacement directly into resting buy-side liquidity at {trade.get('take_profit')}"
 
     tweet_2 = (
         f"2/ The Setup Anatomy:\n\n"
-        f"1. 1H Macro Divergence: Base vs Quote flow > 1.75σ\n"
-        f"{tweet_2_sweep}\n"
-        f"{tweet_2_ob}\n"
-        f"{tweet_2_target}\n\n"
-        f"Systematic rules. Zero emotion. 1:1.75R geometric target."
+        f"1. Directional Bias: Strong relative currency divergence on the 1H timeframe.\n"
+        f"2. The Trap: {trap_line}.\n"
+        f"3. The Trigger: {trigger_line}.\n"
+        f"4. The Exit: {target_line}.\n\n"
+        f"Zero FOMO. Waited for the trap to spring before executing."
     )
 
     tweet_3 = (
-        f"3/ Risk & Prop Firm Compliance:\n\n"
-        f"• Fixed 0.50% account risk\n"
-        f"• Automated cTrader execution\n"
-        f"• Zero copy-trading footprint (stealth orders)\n\n"
-        f"Track all institutional setups and live surveillance free in our Telegram:\n"
-        f"👉 {channel_url}"
+        f"3/ Risk & Execution Rule:\n\n"
+        f"• Fixed 0.50% account risk per trade\n"
+        f"• Planned 1:1.50R target with zero hesitation\n"
+        f"• Partial profit lock to protect drawdown\n\n"
+        f"Did you catch this move on {cashtag} today or did the session open fake you out? Drop your thoughts below 👇\n\n"
+        f"Join our free live trading community: {channel_url}"
     )
 
     return [tweet_1, tweet_2, tweet_3]
