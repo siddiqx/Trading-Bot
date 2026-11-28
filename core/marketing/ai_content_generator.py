@@ -435,6 +435,149 @@ TOPICS = [
             "When price pulls back to mitigate the order block, we look for confluence with the 20-period dynamic EMA. If the order block holds and prints a rejection wick, we enter with our stop safely protected behind the structural swing.\n\n"
             "Question for the community: How do you personally identify order blocks? Do you refine them down to the 5M/1M chart or do you stick to higher timeframes?"
         )
+    },
+    {
+        "id": "cad_oil_flow",
+        "category": "Macro Commodity Flow",
+        "theme": "The Crude Oil (WTI) Connection: How Energy Flow Dictates USDCAD",
+        "key_concept": "Crude oil export correlation driving Canadian Dollar relative strength during NY session",
+        "pair": "USDCAD",
+        "tweets": [
+            (
+                "🧵 1/3 The hidden driver behind $USDCAD moves that retail charts miss:\n\n"
+                "Crude Oil (WTI). Canada is a major net exporter of crude. When oil rallies, CAD strengthens, "
+                "pushing USDCAD down regardless of intraday chart patterns.\n\n"
+                "Here is how to trade the correlation 🧵👇"
+            ),
+            (
+                "2/3 The Execution Blueprint:\n\n"
+                "1. Macro Interlock: Check WTI momentum before trading USDCAD.\n"
+                "2. NY Killzone (12:00-15:00 UTC): Wait for US/Canadian morning stops to clear.\n"
+                "3. The Trigger: Enter on 15M structure shift back into the 20-EMA."
+            ),
+            (
+                "3/3 Prop Trader Rule:\n\n"
+                "Never trade USDCAD in isolation.\n"
+                "• Confirm oil flow alignment\n"
+                "• Fixed 0.50% risk per trade\n"
+                "• Target 1:1.50R minimum\n\n"
+                "Do you track crude oil before executing on USDCAD? Share below 👇\n\n"
+                "Live alerts: https://t.me/ccrs_forex_signals\n"
+                "#USDCAD #Forex"
+            )
+        ],
+        "reddit_title": "Why trading USDCAD without tracking Crude Oil (WTI) is like trading blind",
+        "reddit_body": (
+            "Many Forex traders treat USD/CAD as just another US Dollar pair, wondering why clean technical patterns suddenly get invalidated without warning.\n\n"
+            "Canada is one of the world's largest net oil exporters. The Canadian Dollar is fundamentally linked to global energy demand and WTI crude futures.\n\n"
+            "The Energy Interlock\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            "• Rising Crude Prices: Boost Canadian trade terms, driving institutional capital into CAD and forcing USD/CAD lower.\n"
+            "• Falling Crude Prices: Weaken the Loonie, providing tailwinds for USD/CAD rallies even when the broader US Dollar is flat.\n\n"
+            "The New York Session Playbook\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            "1. Monitor WTI crude futures direction at 12:00 UTC.\n"
+            "2. Wait for the 13:30 UTC US/Canadian economic data release to clear resting liquidity.\n"
+            "3. Enter on the 15M pullback to the 20-EMA when crude momentum aligns with currency relative strength.\n"
+            "4. Risk fixed 0.50% per trade with a 1:1.50R minimum target.\n\n"
+            "Question for the community: Do you watch intermarket correlations (like Oil or Yields) when trading Forex pairs?"
+        )
+    },
+    {
+        "id": "chf_safe_haven_flow",
+        "category": "Macro Safe-Haven Dynamics",
+        "theme": "How Geopolitical Panic & Safe-Haven Flows Shape USDCHF Liquidity",
+        "key_concept": "Safe-haven capital flight into Swiss Franc and how to avoid getting trapped against sovereign flows",
+        "pair": "USDCHF",
+        "tweets": [
+            (
+                "🧵 1/3 How geopolitical risk and safe-haven flows dictate $USDCHF:\n\n"
+                "During market panic, institutional capital flees into the Swiss Franc. "
+                "Support levels on USDCHF get sliced through because macro hedging overwhelms retail limit orders.\n\n"
+                "Here is how to navigate it 🧵👇"
+            ),
+            (
+                "2/3 The Safe-Haven Dynamic:\n\n"
+                "1. Risk-Off Sentiment: Global capital seeks Swiss sovereignty and Franc liquidity.\n"
+                "2. The False Bounce: Retail buys support; smart money sells rallies.\n"
+                "3. Structure Shift: Wait for 15M displacement before entering."
+            ),
+            (
+                "3/3 Risk Management Rule:\n\n"
+                "Trading safe-havens requires patience.\n"
+                "• Never catch a falling knife\n"
+                "• 0.50% fixed account risk\n"
+                "• 1:1.50R target aligned with flow\n\n"
+                "How do you handle safe-haven volatility on CHF? Share below 👇\n\n"
+                "Alerts: https://t.me/ccrs_forex_signals\n"
+                "#USDCHF #Forex"
+            )
+        ],
+        "reddit_title": "How global safe-haven flows impact USDCHF (And why retail support fails during risk-off)",
+        "reddit_body": (
+            "During periods of global geopolitical tension or banking stress, the Swiss Franc (CHF) acts as one of the world's premier safe-haven currencies.\n\n"
+            "Retail traders often try to buy USD/CHF at 'historical support', only to get run over as billions of dollars in macro capital hedge into Franc assets.\n\n"
+            "The Safe-Haven Order Flow Reality\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            "When risk-off sentiment hits global markets:\n"
+            "• Equity and bond market funds systematically buy CHF as an insurance hedge.\n"
+            "• Intraday oscillators and support zones offer zero resistance to sovereign-level capital flow.\n\n"
+            "How to Trade USDCHF Safely\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            "1. Check the broader VIX and global sentiment before taking long USD/CHF setups.\n"
+            "2. Never front-run support during risk-off days.\n"
+            "3. Look for liquidity sweeps of session highs to join short continuation moves on the 15M 20-EMA retest.\n"
+            "4. Strict 0.50% risk with asymmetric 1:1.50R targets.\n\n"
+            "Question for the community: Do you adjust your trading rules when geopolitical events trigger safe-haven flows?"
+        )
+    },
+    {
+        "id": "aud_commodity_beta",
+        "category": "Session Killzones & Beta",
+        "theme": "Why AUDUSD is the Premier High-Beta Commodity Currency in Forex",
+        "key_concept": "Australian Dollar sensitivity to global risk appetite and Asian-to-London session liquidity transitions",
+        "pair": "AUDUSD",
+        "tweets": [
+            (
+                "🧵 1/3 Why $AUDUSD is the premier high-beta commodity currency in Forex:\n\n"
+                "The Australian Dollar is heavily tied to iron ore and global risk appetite. "
+                "When Asian markets expand, AUDUSD leads the move before London even opens.\n\n"
+                "Here is how to trade the transition 🧵👇"
+            ),
+            (
+                "2/3 The Asian-to-London Playbook:\n\n"
+                "1. Asian Range: Mark the boundaries established during the Tokyo session.\n"
+                "2. The London Sweep: Watch for the initial spike past the Asian high to trap longs.\n"
+                "3. The 20-EMA Retest: Enter on confirmed 15M structure shift."
+            ),
+            (
+                "3/3 Prop Challenge Rule:\n\n"
+                "AUDUSD moves clean when aligned with market flow.\n"
+                "• Wait for London sweep\n"
+                "• Strict 0.50% account risk\n"
+                "• Target 1:1.50R minimum\n\n"
+                "Did today's open fake you out or did you wait? Let's discuss 👇\n\n"
+                "Alerts: https://t.me/ccrs_forex_signals\n"
+                "#AUDUSD #Forex"
+            )
+        ],
+        "reddit_title": "Trading the Asian-to-London transition on AUDUSD: How institutional liquidity flows",
+        "reddit_body": (
+            "AUD/USD is unique among the major Forex pairs because its liquidity is active across both the Asian trading day and the European session.\n\n"
+            "Here is how professional currency desks trade the transition from Tokyo close into the London open.\n\n"
+            "The Liquidity Bridge\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            "Between 00:00 and 06:00 UTC, the Reserve Bank of Australia (RBA) and Asian equity markets establish key intraday price discovery.\n\n"
+            "As European desks log on at 07:00 UTC, their first order of business is testing whether the Asian range contains resting liquidity.\n"
+            "A fast 15-20 pip spike beyond the Asian high or low triggers breakout orders, providing the counterpart volume institutions need.\n\n"
+            "Execution Checklist\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            "1. Draw Asian High and Low at 06:45 UTC.\n"
+            "2. Do not enter the first 15-minute candle of the London open.\n"
+            "3. Look for a liquidity sweep followed by a confirmed Market Structure Shift (MSS) back inside the Asian range.\n"
+            "4. Enter on the 20-EMA tap with stops protected by the sweep wick.\n\n"
+            "Question for the community: Do you trade the Asian session or do you wait for London/NY volume before trading AUDUSD?"
+        )
     }
 ]
 

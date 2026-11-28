@@ -23,6 +23,8 @@ import urllib.parse
 from datetime import datetime, timezone
 from typing import Dict, Any, Optional, Tuple, List
 
+import random
+import numpy as np
 import pandas as pd
 
 logger = logging.getLogger("ContentsBot")
@@ -37,7 +39,7 @@ DEFAULT_CHANNEL_URL = "https://t.me/ccrs_forex_signals"
 # Institutional universe with Gold (XAUUSD) as primary focus alongside major Forex pairs
 ACTIVE_PAIRS = ["XAUUSD", "EURUSD", "USDCAD", "USDCHF", "AUDUSD"]
 
-_LAST_ROTATION_INDEX = 0
+_RECENT_PAIRS_HISTORY: List[str] = []
 
 
 def normalize_asset_symbol(raw: str) -> str:
@@ -58,21 +60,72 @@ def normalize_asset_symbol(raw: str) -> str:
 
 def select_dynamic_market_pair(preferred_pair: Optional[str] = None) -> str:
     """
-    Selects the most compelling market pair for chart and content generation.
-    Rotates dynamically across the universe, heavily prioritizing Gold (XAUUSD ~50% frequency)
-    while ensuring diverse multi-pair market coverage on every generation.
+    Intelligently selects an asset based on live market conditions, recent volatility,
+    and anti-repetition tracking across the active portfolio (XAUUSD, EURUSD, USDCAD, USDCHF, AUDUSD).
+    
+    If preferred_pair is provided, honors that choice.
+    Otherwise:
+      1. Evaluates live price action / ATR volatility / liquidity sweep proximity.
+      2. Penalizes pairs that were recently posted to guarantee continuous dynamic variety.
+      3. Never gets stuck on any single asset (neither Gold nor EURUSD).
     """
-    global _LAST_ROTATION_INDEX
+    global _RECENT_PAIRS_HISTORY
     if preferred_pair:
         norm = normalize_asset_symbol(preferred_pair)
         if norm in ACTIVE_PAIRS:
+            _RECENT_PAIRS_HISTORY.append(norm)
+            if len(_RECENT_PAIRS_HISTORY) > 5:
+                _RECENT_PAIRS_HISTORY.pop(0)
             return norm
 
-    # Weighted rotation: Gold alternates with Forex majors to ensure variety
-    weighted_cycle = ["XAUUSD", "EURUSD", "XAUUSD", "USDCAD", "XAUUSD", "USDCHF", "AUDUSD"]
-    selected = weighted_cycle[_LAST_ROTATION_INDEX % len(weighted_cycle)]
-    _LAST_ROTATION_INDEX += 1
-    return selected
+    # Real-time market condition scoring across active pairs
+    scores: Dict[str, float] = {}
+    for pair in ACTIVE_PAIRS:
+        try:
+            df = fetch_candles_for_pair(pair, interval="1h", range_days="4d")
+            if df is not None and len(df) >= 15:
+                highs = df["high"].values
+                lows = df["low"].values
+                closes = df["close"].values
+                # 14-bar ATR calculation
+                tr = np.maximum(highs[1:] - lows[1:], np.maximum(np.abs(highs[1:] - closes[:-1]), np.abs(lows[1:] - closes[:-1])))
+                atr = float(np.mean(tr[-14:]))
+                recent_range = float(np.max(highs[-3:]) - np.min(lows[-3:]))
+                vol_ratio = (recent_range / atr) if atr > 0 else 1.0
+
+                # Proximity to 20-bar Donchian high/low (liquidity boundary)
+                recent_max = float(np.max(highs[-20:]))
+                recent_min = float(np.min(lows[-20:]))
+                cur_px = float(closes[-1])
+                pos = (cur_px - recent_min) / (recent_max - recent_min) if (recent_max - recent_min) > 0 else 0.5
+                sweep_proximity = 1.0 - 2.0 * abs(pos - 0.5)
+
+                score = vol_ratio * 1.5 + sweep_proximity * 1.0
+            else:
+                score = random.uniform(1.0, 2.0)
+        except Exception:
+            score = random.uniform(1.0, 2.0)
+
+        # Anti-repetition penalty: strongly penalize recent pairs to prevent repeat posts
+        if _RECENT_PAIRS_HISTORY:
+            if pair == _RECENT_PAIRS_HISTORY[-1]:
+                score -= 10.0  # Cannot be the exact same pair back-to-back
+            elif len(_RECENT_PAIRS_HISTORY) >= 2 and pair == _RECENT_PAIRS_HISTORY[-2]:
+                score -= 4.0
+            elif len(_RECENT_PAIRS_HISTORY) >= 3 and pair == _RECENT_PAIRS_HISTORY[-3]:
+                score -= 2.0
+
+        scores[pair] = score
+
+    # Pick the pair with highest dynamic market score
+    sorted_pairs = sorted(scores.items(), key=lambda x: x[1], reverse=True)
+    best_pair = sorted_pairs[0][0]
+
+    _RECENT_PAIRS_HISTORY.append(best_pair)
+    if len(_RECENT_PAIRS_HISTORY) > 5:
+        _RECENT_PAIRS_HISTORY.pop(0)
+
+    return best_pair
 
 
 def get_persistent_menu_keyboard() -> dict:
