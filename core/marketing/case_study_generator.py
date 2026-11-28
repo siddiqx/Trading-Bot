@@ -116,37 +116,34 @@ def generate_twitter_thread(
         f"{pips_val} pips ({r_val}) banked clean.\n"
         f"• Entry: {trade.get('entry')}\n"
         f"• Target: {trade.get('take_profit')}\n\n"
-        f"Waited patiently for the session liquidity run before stepping in. "
-        f"The reaction off the 20-EMA was textbook.\n\n"
-        f"Full 3-step breakdown below 🧵👇\n\n"
-        f"#Forex #Trading #PriceAction #PropFirm #FTMO"
+        f"Waited for session stops to clear before entering. The reaction off the 20-EMA was textbook.\n\n"
+        f"Full trade breakdown below 🧵👇\n"
+        f"#Forex #Trading #PropFirm"
     )
 
     if direction == "SHORT":
-        trap_line = "Early longs got baited as price swept above session highs"
-        trigger_line = "Confirmed 15M structure shift downward + clean rejection at 20-EMA"
-        target_line = f"Rode the displacement directly into resting sell-side liquidity at {trade.get('take_profit')}"
+        trap_line = "Longs trapped as price swept session highs"
+        trigger_line = "15M structure shift ▾ + 20-EMA rejection"
     else:
-        trap_line = "Early shorts got trapped as price swept below session lows"
-        trigger_line = "Confirmed 15M structure shift upward + clean reclaim of the 20-EMA"
-        target_line = f"Rode the displacement directly into resting buy-side liquidity at {trade.get('take_profit')}"
+        trap_line = "Shorts trapped as price swept session lows"
+        trigger_line = "15M structure shift ▴ + 20-EMA reclaim"
 
     tweet_2 = (
         f"2/ The Setup Anatomy:\n\n"
-        f"1. Directional Bias: Strong relative currency divergence on the 1H timeframe.\n"
-        f"2. The Trap: {trap_line}.\n"
-        f"3. The Trigger: {trigger_line}.\n"
-        f"4. The Exit: {target_line}.\n\n"
-        f"Zero FOMO. Waited for the trap to spring before executing."
+        f"1. Bias: Currency strength divergence on 1H.\n"
+        f"2. Trap: {trap_line}.\n"
+        f"3. Trigger: {trigger_line}.\n"
+        f"4. Exit: Rode displacement into {trade.get('take_profit')}.\n\n"
+        f"Patience first. Waited for the trap to spring."
     )
 
     tweet_3 = (
         f"3/ Risk & Execution Rule:\n\n"
         f"• Fixed 0.50% account risk per trade\n"
-        f"• Planned 1:1.50R target with zero hesitation\n"
-        f"• Partial profit lock to protect drawdown\n\n"
-        f"Did you catch this move on {cashtag} today or did the session open fake you out? Drop your thoughts below 👇\n\n"
-        f"Join our free live trading community: {channel_url}"
+        f"• Disciplined 1:1.50R target\n"
+        f"• Zero FOMO, protected drawdown\n\n"
+        f"Did you catch this move on {cashtag} today or did the open fake you out? Share below 👇\n\n"
+        f"Free live setups: {channel_url}"
     )
 
     return [tweet_1, tweet_2, tweet_3]
