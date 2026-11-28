@@ -1,16 +1,25 @@
 """
-Institutional Video Shorts & Reels Generator (v1.0.0)
+Institutional Video Shorts & Reels Generator (v2.0.0)
 =====================================================
-Generates high-definition, vertical (1080x1920, 9:16 aspect ratio), watermark-free
-video clips for YouTube Shorts and Instagram Reels.
+Clean In-Chart Technical Analysis & Natural Voiceover Engine.
+Directly modeled after institutional YouTube Shorts & Instagram Reels creators (e.g. @easytradingeasy).
 
-Aesthetic & Engineering Highlights:
-  • Institutional Dark Terminal (#0d1117 / #131722) Bloomberg / TradingView look.
-  • Live Candlestick Price Action: High-resolution candles with 20-EMA Dynamic Equilibrium curve.
-  • Smart Money Concepts (ICT/SMC): Liquidity sweep marks (SSL/BSL), displacement reclaims, TP/SL targets.
-  • Kinetic Educational Overlay: Step-by-step 4-phase institutional setup walkthrough.
-  • Crystal-Clear Neural Voiceover: Deep, calm broadcast audio (en-US-ChristopherNeural) via edge-tts.
-  • Zero watermarks, zero third-party branding.
+Design Highlights:
+  • Full-Screen Visuals (85%+ canvas): Dedicated purely to the TradingView / Bloomberg candlestick chart.
+  • Zero External Clutter: No stacked explanation boxes or separate card widgets.
+  • 100% In-Chart Analysis:
+      - Equal Highs / Lows liquidity levels drawn right on price.
+      - Liquidity sweep wicks with clean in-chart markers.
+      - 20-EMA Dynamic Equilibrium curve.
+      - TradingView Long / Short Position Tool box (translucent TP profit & SL risk zones).
+      - Dynamic bar-by-bar progressive replay leading into Take Profit.
+      - Sleek in-chart badge: "★ 1:1.50R TARGET REACHED".
+  • Natural Human Neural Voice:
+      - Microsoft's top conversational human voice (en-US-BrianMultilingualNeural).
+      - Natural pacing (+0%) and conversational phrasing (speaks like a real seasoned trader).
+  • Sleek Minimalist Overlays:
+      - Top pill badge: Asset symbol & timeframe.
+      - Bottom bar: 1-line subtitle & progress indicator.
 """
 
 import asyncio
@@ -34,171 +43,140 @@ from PIL import Image, ImageDraw, ImageFont
 logger = logging.getLogger("ShortsGenerator")
 logger.setLevel(logging.INFO)
 
-# High-quality neural voice for authoritative, calm financial commentary
-DEFAULT_NEURAL_VOICE = "en-US-ChristopherNeural"
+# Primary natural voice: Brian Multilingual (warm, natural conversational tone)
+PRIMARY_NEURAL_VOICE = "en-US-BrianMultilingualNeural"
+FALLBACK_NEURAL_VOICE = "en-US-GuyNeural"
 
-# Setup Scenarios & Scripts tailored for high engagement on YouTube Shorts & Instagram Reels
-SHORTS_SCRIPTS: Dict[str, Dict[str, Any]] = {
+# Clean, conversational in-chart scripts across the active institutional universe
+INCHART_SCRIPTS: Dict[str, Dict[str, Any]] = {
     "XAUUSD": {
-        "title": "ALGORITHMIC GOLD LIQUIDITY HUNT",
-        "subtitle": "Asian Range Sweep & 20-EMA Displacement",
-        "action": "BUY / LONG",
+        "title": "GOLD LIQUIDITY SWEEP & RECLAIM",
+        "subtitle": "Institutional Order Flow Execution",
         "direction": "LONG",
-        "steps": [
-            ("1️⃣ THE ASIAN RANGE TRAP", "Asian session consolidates & engineers equal retail liquidity pools.", "Notice how Gold engineered liquidity right here, trapping retail traders before the move."),
-            ("2️⃣ INSTITUTIONAL SWEEP", "London open purges sell-side liquidity with a sharp institutional wick.", "A swift liquidity sweep purges those stop losses to fuel smart money positioning."),
-            ("3️⃣ 20-EMA DISPLACEMENT", "Aggressive candle displaces back through 20-EMA. Entry on retest.", "Price displaces aggressively through the twenty EMA. We execute on the retest."),
-            ("4️⃣ TARGET REACHED (+1.50R)", "Mathematical 1:1.50R take profit secured. Systematic execution.", "Target hit cleanly for a one point five R gain. Trade the math, not emotions.")
-        ],
         "voiceover": (
-            "Notice how Gold engineered liquidity right here, trapping retail traders before the real move. "
-            "A swift liquidity sweep purges those stop losses to fuel smart money positioning. "
-            "Then price displaces aggressively back through the twenty EMA. We execute on the retest with a strict two ATR stop loss. "
-            "Target hit for a one point five R gain. Systematic quantitative rules, zero emotion."
+            "First, notice how the market builds equal lows right here, engineering liquidity for smart money. "
+            "Then, London session sweeps straight through those lows, clearing out all retail stop losses. "
+            "As soon as price breaks back above the twenty moving average, we take our entry on the retest. "
+            "Stop loss stays below the sweep, and the target is hit cleanly for a one to one point five risk to reward."
         ),
-        "metrics": [
-            ("SETUP PATTERN", "Liquidity Sweep", (41, 98, 255)),
-            ("CAPITAL RISK", "0.50% ($25.00)", (255, 82, 82)),
-            ("PROFIT TARGET", "+45.0 Pips / +1.5R", (0, 230, 118))
+        "subtitles": [
+            "\"First, notice how the market builds equal lows right here, engineering liquidity.\"",
+            "\"Then, London sweeps straight through those lows, clearing out retail stop losses.\"",
+            "\"As soon as price breaks back above the 20 moving average, we take our entry on the retest.\"",
+            "\"Stop loss stays below the sweep, and the target is hit cleanly for a 1:1.50 risk-to-reward.\""
         ],
         "ig_caption": (
-            "🟡 Why Retail Traders Get Stopped Out on Gold (XAU/USD)\n\n"
-            "Here is the institutional mechanics behind today's liquidity sweep:\n"
-            "1. Asian Range builds equal highs & lows (engineered retail liquidity)\n"
-            "2. London Open delivers a swift sweep into Sell-Side Liquidity (SSL)\n"
-            "3. Institutional displacement reclaims the 20-EMA dynamic equilibrium\n"
-            "4. Retest entry with 2.0x ATR stop loss → Full 1:1.50R target secured.\n\n"
-            "Systematic rules beat emotions every single time.\n\n"
-            "#Gold #XAUUSD #Trading #Forex #PriceAction #SmartMoneyConcepts #DayTrading #PropFirm #ICT #Investing"
+            "🟡 Clean Gold (XAU/USD) In-Chart Liquidity Analysis\n\n"
+            "Notice how retail support gets swept before the real expansion begins:\n"
+            "• Step 1: Equal lows build retail stop liquidity\n"
+            "• Step 2: London liquidity hunt sweeps the lows\n"
+            "• Step 3: 20-EMA displacement reclaims structure on the retest\n"
+            "• Step 4: Strict 1:1.50R Take Profit hit with zero emotion.\n\n"
+            "#Gold #XAUUSD #Trading #PriceAction #Forex #SmartMoneyConcepts #DayTrading #ICT"
         )
     },
     "EURUSD": {
-        "title": "EUR/USD INSTITUTIONAL DISPLACEMENT",
-        "subtitle": "Macro CCRS Flow & 20-EMA Equilibrium",
-        "action": "BUY / LONG",
+        "title": "EUR/USD 20-EMA LIQUIDITY RECLAIM",
+        "subtitle": "Interbank Market Structure Shift",
         "direction": "LONG",
-        "steps": [
-            ("1️⃣ EQUAL HIGHS & LOWS", "Retail support forms predictable stop clusters beneath the floor.", "Notice how retail support formed here, creating an obvious cluster of stop orders."),
-            ("2️⃣ STOP-RUN LIQUIDITY SWEEP", "Smart money drives price through the floor to collect market liquidity.", "Institutions sweep those stops, triggering retail panic while accumulating contracts."),
-            ("3️⃣ 20-EMA EQUILIBRIUM RECLAIM", "High-volume displacement candle shifts 15M market structure.", "A high-volume displacement candle reclaims the twenty EMA equilibrium."),
-            ("4️⃣ 1:1.50R TARGET SECURED", "Rule-based mathematical take profit reached with zero intra-trade stress.", "Take profit hit cleanly for a one point five R return. Quantitative discipline wins.")
-        ],
         "voiceover": (
-            "Notice how retail support formed here, creating an obvious cluster of stop orders. "
-            "Institutions sweep those stops, triggering retail panic while accumulating contracts. "
-            "A high-volume displacement candle reclaims the twenty EMA equilibrium. "
-            "Take profit hit cleanly for a one point five R return. Quantitative discipline wins."
+            "Look at how retail support formed right here, creating an obvious cluster of stop orders. "
+            "Institutions sweep straight through the floor, triggering retail panic and accumulating orders. "
+            "A strong displacement candle reclaims the twenty moving average equilibrium. "
+            "We enter on the retest, and the target is reached with mathematical precision."
         ),
-        "metrics": [
-            ("SETUP PATTERN", "BSL/SSL Sweep", (41, 98, 255)),
-            ("CAPITAL RISK", "0.50% ($25.00)", (255, 82, 82)),
-            ("PROFIT TARGET", "+33.0 Pips / +1.5R", (0, 230, 118))
+        "subtitles": [
+            "\"Look at how retail support formed right here, creating an obvious cluster of stop orders.\"",
+            "\"Institutions sweep straight through the floor, triggering retail panic.\"",
+            "\"A strong displacement candle reclaims the 20 moving average equilibrium.\"",
+            "\"We enter on the retest, and the target is reached with mathematical precision.\""
         ],
         "ig_caption": (
-            "⚡ EUR/USD Liquidity Sweep & 20-EMA Reclaim\n\n"
-            "Notice how retail 'support' gets smashed right before the real expansion?\n"
-            "Institutions don't buy breakouts; they buy into retail stop runs.\n\n"
-            "• Step 1: Equal lows build retail sell stops\n"
-            "• Step 2: London liquidity hunt sweeps the lows\n"
-            "• Step 3: 20-EMA displacement confirms smart money demand\n"
-            "• Step 4: +1.50R Take Profit hit with 0.50% risk discipline\n\n"
-            "#EURUSD #Forex #Trading #ForexTrader #ICT #SMC #FinancialFreedom #Algorithm #RiskManagement"
+            "⚡ EUR/USD Interbank Flow & Liquidity Sweep\n\n"
+            "Institutions don't chase breakouts; they buy into retail stop runs:\n"
+            "1. Equal lows engineer buy-side liquidity\n"
+            "2. Stop sweep clears the board\n"
+            "3. 20-EMA displacement confirms institutional demand\n"
+            "4. +1.50R Target reached with 0.50% risk.\n\n"
+            "#EURUSD #Forex #Trading #SmartMoney #PriceAction #ICT #DayTrader"
         )
     },
     "USDCAD": {
-        "title": "USD/CAD STRUCTURAL REVERSAL",
-        "subtitle": "Donchian Extreme & 20-EMA Trend Continuation",
-        "action": "SELL / SHORT",
+        "title": "USD/CAD BUY-SIDE LIQUIDITY HUNT",
+        "subtitle": "Donchian Extreme & Trend Continuation",
         "direction": "SHORT",
-        "steps": [
-            ("1️⃣ BUY-SIDE LIQUIDITY TRAP", "Retail breakout traders chase upside momentum into resistance.", "Retail buyers chase momentum right into higher-timeframe resistance."),
-            ("2️⃣ BSL LIQUIDITY SWEEP", "Sharp rejection wick purges early short stops and exhausts buyers.", "A swift buy-side liquidity sweep purges early stops and traps late buyers."),
-            ("3️⃣ BEARISH DISPLACEMENT", "Violent downward impulse candle smashes below the 20-EMA line.", "Price then displaces violently downward, closing beneath the twenty EMA."),
-            ("4️⃣ FULL TARGET HIT (+1.50R)", "Stop-loss trailed to breakeven, final profit target locked.", "Target hit with precision. Zero guesswork, strictly systematic.")
-        ],
         "voiceover": (
-            "Retail buyers chase momentum right into higher-timeframe resistance. "
-            "A swift buy-side liquidity sweep purges early stops and traps late buyers. "
-            "Price then displaces violently downward, closing beneath the twenty EMA. "
-            "Target hit with precision. Zero guesswork, strictly systematic."
+            "Notice retail buyers chasing momentum right into higher timeframe resistance. "
+            "A sharp buy-side liquidity sweep purges early stops and exhausts buying pressure. "
+            "Price displaces violently downward, closing beneath the twenty moving average. "
+            "We enter short on the pullback, and target is secured for a clean one point five gain."
         ),
-        "metrics": [
-            ("SETUP PATTERN", "BSL Stop Hunt", (255, 82, 82)),
-            ("CAPITAL RISK", "0.50% ($25.00)", (255, 82, 82)),
-            ("PROFIT TARGET", "+35.0 Pips / +1.5R", (0, 230, 118))
+        "subtitles": [
+            "\"Notice retail buyers chasing momentum right into higher timeframe resistance.\"",
+            "\"A sharp buy-side liquidity sweep purges early stops and exhausts buying pressure.\"",
+            "\"Price displaces violently downward, closing beneath the 20 moving average.\"",
+            "\"We enter short on the pullback, and target is secured for a clean 1:1.50 gain.\""
         ],
         "ig_caption": (
-            "🔴 USD/CAD Liquidity Sweep Reversal\n\n"
-            "Stop chasing breakouts at the highs. Here is how institutional order flow works:\n"
-            "1. Retail buys the high of day\n"
-            "2. Smart money sweeps the BSL to fill massive short orders\n"
-            "3. Bearish displacement breaks through the 20-EMA\n"
-            "4. Retest short executes → Full +1.50R target locked.\n\n"
-            "#USDCAD #ForexTrading #DayTrader #TechnicalAnalysis #PriceAction #PropFirm #ForexSignals"
+            "🔴 USD/CAD Buy-Side Liquidity Reversal\n\n"
+            "Why buying breakouts at the highs gets you stopped out:\n"
+            "• Retail chases the highs into resistance\n"
+            "• BSL sweep fills institutional short positions\n"
+            "• Bearish displacement breaks through the 20-EMA\n"
+            "• Full +1.50R target locked systematically.\n\n"
+            "#USDCAD #ForexTrading #TechnicalAnalysis #DayTrading #PropFirm #PriceAction"
         )
     },
     "USDCHF": {
-        "title": "USD/CHF EQUILIBRIUM EXPANSION",
-        "subtitle": "Institutional Safe-Haven Relative Strength Flow",
-        "action": "SELL / SHORT",
+        "title": "USD/CHF EQUILIBRIUM REVERSAL",
+        "subtitle": "Safe-Haven Relative Strength Flow",
         "direction": "SHORT",
-        "steps": [
-            ("1️⃣ RANGE EXPANSION TRAP", "Price creates false upward breakout during quiet market hours.", "False upward breakout luring in early breakout traders."),
-            ("2️⃣ LIQUIDITY PURGE", "Aggressive rejection wick confirms smart money distribution.", "Aggressive rejection wick exhausts retail buying power."),
-            ("3️⃣ 20-EMA RECLAIM", "Bearish displacement reclaims the dynamic equilibrium zone.", "Displacement candle reclaims the twenty EMA equilibrium."),
-            ("4️⃣ TARGET REACHED (+1.50R)", "Systematic mathematical exit executed at +1.50R with 0 bias.", "Full target secured. Systematic trading over emotional guessing.")
-        ],
         "voiceover": (
-            "Notice this false upward breakout luring in early breakout traders. "
+            "Here we see price engineering a false upside breakout above the session high. "
             "An aggressive rejection wick instantly exhausts retail buying power. "
-            "A strong displacement candle reclaims the twenty EMA equilibrium. "
-            "Full target secured. Systematic trading over emotional guessing."
+            "The market drops back beneath the twenty moving average, confirming the reversal. "
+            "We take the short retest, and the full target is secured without intra-trade stress."
         ),
-        "metrics": [
-            ("SETUP PATTERN", "Macro Flow Reversal", (255, 82, 82)),
-            ("CAPITAL RISK", "0.50% ($25.00)", (255, 82, 82)),
-            ("PROFIT TARGET", "+30.0 Pips / +1.5R", (0, 230, 118))
+        "subtitles": [
+            "\"Here we see price engineering a false upside breakout above the session high.\"",
+            "\"An aggressive rejection wick instantly exhausts retail buying power.\"",
+            "\"The market drops back beneath the 20 moving average, confirming the reversal.\"",
+            "\"We take the short retest, and the full target is secured without intra-trade stress.\""
         ],
         "ig_caption": (
-            "📉 USD/CHF 20-EMA Equilibrium Trade\n\n"
-            "When relative currency strength diverges, the institutional footprint becomes unmistakable.\n"
-            "• Step 1: Liquidity engineered at Asian range high\n"
-            "• Step 2: BSL sweep exhausts retail buyers\n"
-            "• Step 3: 20-EMA displacement confirms short flow\n"
-            "• Step 4: +1.50R Take Profit hit with strict risk parameters\n\n"
-            "#USDCHF #ForexSignals #SmartMoney #PriceActionTrading #TradingStrategy #ForexLife"
+            "📉 USD/CHF 20-EMA Dynamic Reversal\n\n"
+            "How institutional relative currency flow creates high-probability reversals:\n"
+            "• Equal highs trap late breakout buyers\n"
+            "• BSL sweep exhausts retail volume\n"
+            "• 20-EMA reclaim initiates downward expansion\n"
+            "• +1.50R Profit locked with systematic rules.\n\n"
+            "#USDCHF #Forex #TradingStrategy #PriceActionTrading #SmartMoneyConcepts"
         )
     },
     "AUDUSD": {
         "title": "AUD/USD COMMODITY LIQUIDITY BREAK",
-        "subtitle": "High-Beta Currency Relative Strength Displacement",
-        "action": "BUY / LONG",
+        "subtitle": "High-Beta Relative Strength Displacement",
         "direction": "LONG",
-        "steps": [
-            ("1️⃣ CONSOLIDATION BASE", "Equal lows attract liquidity and stop-loss placement.", "Consolidation base forms with equal lows attracting retail stop placement."),
-            ("2️⃣ SSL STOP PURGE", "Smart money sweeps the lows into institutional liquidity pools.", "Institutions sweep the lows to fill high-volume buy orders."),
-            ("3️⃣ 20-EMA DISPLACEMENT", "Bullish expansion candle closes firmly above the 20-EMA.", "Bullish expansion candle reclaims the twenty EMA dynamic curve."),
-            ("4️⃣ TARGET HIT (+1.50R)", "Risk-reward realized with disciplined rules and mathematical edge.", "Target reached cleanly for a one point five R gain. Follow the math.")
-        ],
         "voiceover": (
-            "A consolidation base forms with equal lows attracting retail stop placement. "
-            "Institutions sweep the lows to fill high-volume buy orders. "
-            "A bullish expansion candle reclaims the twenty EMA dynamic curve. "
-            "Target reached cleanly for a one point five R gain. Follow the math."
+            "Notice how a consolidation base forms here, with equal lows attracting retail stop placement. "
+            "Institutions sweep the lows to fill high volume buy orders at discount prices. "
+            "A bullish expansion candle reclaims the twenty moving average curve. "
+            "We enter on the retest, and the target is reached cleanly for a one to one point five risk to reward."
         ),
-        "metrics": [
-            ("SETUP PATTERN", "SSL Liquidity Sweep", (41, 98, 255)),
-            ("CAPITAL RISK", "0.50% ($25.00)", (255, 82, 82)),
-            ("PROFIT TARGET", "+32.0 Pips / +1.5R", (0, 230, 118))
+        "subtitles": [
+            "\"Notice how a consolidation base forms here, with equal lows attracting retail stop placement.\"",
+            "\"Institutions sweep the lows to fill high volume buy orders at discount prices.\"",
+            "\"A bullish expansion candle reclaims the 20 moving average curve.\"",
+            "\"We enter on the retest, and the target is reached cleanly for a 1:1.50 risk-to-reward.\""
         ],
         "ig_caption": (
-            "🇦🇺 AUD/USD Institutional Liquidity Setup\n\n"
-            "How systematic traders catch the move right when retail gets shaken out:\n"
-            "1. Equal lows form liquidity pool\n"
-            "2. Swift SSL sweep triggers retail stops\n"
-            "3. 20-EMA displacement reclaims structure\n"
-            "4. +1.50R Target reached with mathematical precision.\n\n"
-            "#AUDUSD #ForexAnalysis #ForexEducation #TradingTips #FinancialMarkets #ICT"
+            "🇦🇺 AUD/USD Systematic Liquidity Reclaim\n\n"
+            "Clean interbank technical analysis on AUD/USD:\n"
+            "• Consolidation engineers retail stop pool\n"
+            "• London sweep purges the lows\n"
+            "• 20-EMA displacement reclaims structure\n"
+            "• +1.50R Take Profit hit with mathematical precision.\n\n"
+            "#AUDUSD #ForexMarket #DayTrader #TradingTips #FinancialFreedom #ICT"
         )
     }
 }
@@ -221,15 +199,18 @@ def _get_system_font(size: int, bold: bool = False) -> ImageFont.FreeTypeFont:
     return ImageFont.load_default()
 
 
-def render_phase_charts(
+def render_inchart_replay_charts(
     df: pd.DataFrame,
     pair: str,
     direction: str = "LONG",
-    num_bars: int = 45
+    num_bars: int = 55
 ) -> List[Image.Image]:
     """
-    Renders 4 high-contrast institutional candlestick charts corresponding to the 4 video phases.
-    Uses institutional dark palette (#131722), Royal Blue / Dark Slate candles, 20-EMA, and ICT markup.
+    Renders 4 high-definition (1080x1650) full-screen in-chart replay frames.
+    Directly models @easytradingeasy style:
+      - 100% focused on chart price action.
+      - Real progressive candle reveal across the 4 stages.
+      - Liquidity level line, sweep marker, 20-EMA curve, and TradingView position tool.
     """
     bars = df.tail(num_bars).copy().reset_index(drop=True)
     closes = bars["close"].values
@@ -238,102 +219,136 @@ def render_phase_charts(
     opens = bars["open"].values
     ema20 = pd.Series(closes).ewm(span=20, adjust=False).mean().values
 
-    # Key technical levels
     is_long = (direction.upper() == "LONG")
+    is_gold = ("XAU" in pair.upper() or "GOLD" in pair.upper())
+
     if is_long:
-        sweep_idx = np.argmin(lows[-25:-8]) + (len(bars) - 25)
+        sweep_idx = np.argmin(lows[-25:-10]) + (len(bars) - 25)
         sweep_level = float(lows[sweep_idx])
-        entry_idx = len(bars) - 7
+        entry_idx = len(bars) - 8
         entry_price = float(closes[entry_idx])
-        risk_dist = max(entry_price - sweep_level, 0.0010)
+        min_risk = 1.20 if is_gold else 0.0015
+        risk_dist = max(entry_price - sweep_level, min_risk)
         tp_price = entry_price + risk_dist * 1.5
         sl_price = sweep_level - risk_dist * 0.2
-        sweep_label = "  ✕ SSL SWEPT"
-        sweep_color = "#ff5252"
+        eq_level = float(np.mean(lows[-30:-15]))
     else:
-        sweep_idx = np.argmax(highs[-25:-8]) + (len(bars) - 25)
+        sweep_idx = np.argmax(highs[-25:-10]) + (len(bars) - 25)
         sweep_level = float(highs[sweep_idx])
-        entry_idx = len(bars) - 7
+        entry_idx = len(bars) - 8
         entry_price = float(closes[entry_idx])
-        risk_dist = max(sweep_level - entry_price, 0.0010)
+        min_risk = 1.20 if is_gold else 0.0015
+        risk_dist = max(sweep_level - entry_price, min_risk)
         tp_price = entry_price - risk_dist * 1.5
         sl_price = sweep_level + risk_dist * 0.2
-        sweep_label = "  ✕ BSL SWEPT"
-        sweep_color = "#ff5252"
+        eq_level = float(np.mean(highs[-30:-15]))
 
-    phase_charts: List[Image.Image] = []
+    digits = 2 if is_gold else 5
+    replay_charts: List[Image.Image] = []
 
     for phase in range(4):
-        fig, ax = plt.subplots(figsize=(10, 8.2), dpi=100, facecolor="#131722")
+        fig, ax = plt.subplots(figsize=(10.8, 16.5), dpi=100, facecolor="#131722")
         ax.set_facecolor("#131722")
 
-        # Candlesticks
-        for idx in range(len(bars)):
+        # Candle replay progression: bar-by-bar reveal
+        if phase == 0:
+            max_idx = sweep_idx - 1
+        elif phase == 1:
+            max_idx = sweep_idx + 1
+        elif phase == 2:
+            max_idx = entry_idx + 1
+        else:
+            max_idx = len(bars)
+
+        # Draw Candlesticks
+        for idx in range(max_idx):
             o, h, l, c = opens[idx], highs[idx], lows[idx], closes[idx]
             is_bull = c >= o
             body_color = "#2962ff" if is_bull else "#363a45"
             edge_color = "#2962ff" if is_bull else "#787b86"
-            ax.plot([idx, idx], [l, h], color=edge_color, linewidth=1.5, zorder=2)
+            ax.plot([idx, idx], [l, h], color=edge_color, linewidth=2.0, zorder=2)
             rect_y = min(o, c)
             rect_h = max(abs(c - o), 0.0001)
-            rect = patches.Rectangle((idx - 0.35, rect_y), 0.7, rect_h, facecolor=body_color, edgecolor=edge_color, linewidth=1.0, zorder=3)
+            rect = patches.Rectangle((idx - 0.38, rect_y), 0.76, rect_h, facecolor=body_color, edgecolor=edge_color, linewidth=1.2, zorder=3)
             ax.add_patch(rect)
 
         # 20-EMA Dynamic Equilibrium Curve
-        ax.plot(range(len(bars)), ema20, color="#ff9800", linewidth=2.5, zorder=4)
+        ax.plot(range(max_idx), ema20[:max_idx], color="#ff9800", linewidth=3.0, zorder=4)
 
-        # Phase 0: Range bounds
-        range_top = float(np.max(highs[-25:-8]))
-        range_bot = float(np.min(lows[-25:-8]))
-        ax.axhline(range_top, color="#787b86", linestyle=":", linewidth=1.2, alpha=0.55)
-        ax.axhline(range_bot, color="#787b86", linestyle=":", linewidth=1.2, alpha=0.55)
+        # Phase 0+: Equal Highs / Lows Liquidity Pool Line
+        pool_label = "Liquidity Pool (Equal Lows)" if is_long else "Liquidity Pool (Equal Highs)"
+        ax.axhline(eq_level, xmin=0.35, xmax=0.75, color="#787b86", linestyle="--", linewidth=2.0, alpha=0.75)
+        ax.text(max(5, sweep_idx - 8), eq_level, pool_label, color="#b2b5be", fontsize=13, fontweight="bold", va="bottom" if is_long else "top")
 
-        # Phase 1: Liquidity sweep highlighted
+        # Phase 1+: Sweep Marker on Wick
         if phase >= 1:
-            ax.axhline(sweep_level, color=sweep_color, linestyle="--", linewidth=1.8, alpha=0.9, zorder=1)
-            ax.text(sweep_idx, sweep_level, sweep_label, color=sweep_color, fontsize=11, fontweight="bold", va="bottom" if is_long else "top", zorder=5)
+            marker_shape = "v" if is_long else "^"
+            ax.plot([sweep_idx], [sweep_level], marker=marker_shape, markersize=14, color="#ff5252", zorder=6)
+            sweep_offset = -risk_dist * 0.15 if is_long else risk_dist * 0.15
+            ax.text(sweep_idx, sweep_level + sweep_offset, "✕ Liquidity Sweep", color="#ff5252", fontsize=14, fontweight="bold", ha="center", va="top" if is_long else "bottom", zorder=6)
 
-        # Phase 2: Entry and SL locked
+        # Phase 2+: TradingView Position Tool Box
         if phase >= 2:
-            ax.axhline(sl_price, color="#ff5252", linestyle="-", linewidth=2.0, alpha=0.9)
-            ax.text(len(bars)-1, sl_price, "  SL (2.0x ATR)", color="#ff5252", fontsize=11, fontweight="bold", va="center")
-            ax.axhline(entry_price, color="#2962ff", linestyle="-", linewidth=2.0, alpha=0.9)
-            ax.text(len(bars)-1, entry_price, "  ENTRY (20-EMA RETEST)", color="#2962ff", fontsize=11, fontweight="bold", va="center")
-            ax.axhspan(min(entry_price, sl_price), max(entry_price, sl_price), xmin=0.60, xmax=0.98, facecolor="#ff5252", alpha=0.15)
+            profit_low = min(entry_price, tp_price)
+            profit_high = max(entry_price, tp_price)
+            risk_low = min(entry_price, sl_price)
+            risk_high = max(entry_price, sl_price)
 
-        # Phase 3: TP reached
+            ax.axhspan(profit_low, profit_high, xmin=0.68, xmax=0.96, facecolor="#2962ff", alpha=0.22, edgecolor="#2962ff", linestyle="--", linewidth=1.5, zorder=1)
+            ax.axhspan(risk_low, risk_high, xmin=0.68, xmax=0.96, facecolor="#ff5252", alpha=0.18, edgecolor="#ff5252", linestyle="--", linewidth=1.5, zorder=1)
+
+            ax.text(len(bars)-1, tp_price, f"  Target (+1.5R): {tp_price:.{digits}f}", color="#00e676", fontsize=13, fontweight="bold", va="center")
+            ax.text(len(bars)-1, entry_price, f"  Entry: {entry_price:.{digits}f}", color="#2962ff", fontsize=13, fontweight="bold", va="center")
+            ax.text(len(bars)-1, sl_price, f"  Stop Loss: {sl_price:.{digits}f}", color="#ff5252", fontsize=13, fontweight="bold", va="center")
+
+        # Phase 3: In-Chart Target Hit Badge
         if phase >= 3:
-            ax.axhline(tp_price, color="#00e676", linestyle="-", linewidth=2.2, alpha=0.95)
-            ax.text(len(bars)-1, tp_price, "  TARGET HIT (+1.50R)", color="#00e676", fontsize=12, fontweight="bold", va="center")
-            ax.axhspan(min(entry_price, tp_price), max(entry_price, tp_price), xmin=0.60, xmax=0.98, facecolor="#00e676", alpha=0.20)
+            badge_y = tp_price + (risk_dist * 0.25 if is_long else -risk_dist * 0.25)
+            ax.text(
+                len(bars)-6, badge_y, "★ 1:1.50R TARGET REACHED",
+                color="#00e676", fontsize=15, fontweight="bold",
+                bbox=dict(boxstyle="round,pad=0.5", facecolor="#131722", edgecolor="#00e676", linewidth=2.0)
+            )
 
-        # Institutional Styling
-        ax.grid(True, color="#2a2e39", linestyle="-", linewidth=0.8, alpha=0.6)
+        ax.set_xlim(-1, len(bars) + 5)
+        ax.set_ylim(min(lows) - risk_dist * 0.8, max(highs) + risk_dist * 0.8)
+        ax.grid(True, color="#2a2e39", linestyle="-", linewidth=0.8, alpha=0.5)
         for spine in ax.spines.values():
             spine.set_color("#2a2e39")
-        ax.tick_params(colors="#787b86", labelsize=10)
-        plt.tight_layout(pad=1.2)
+        ax.tick_params(colors="#787b86", labelsize=11)
 
+        plt.tight_layout(pad=1.5)
         buf = io.BytesIO()
         plt.savefig(buf, format="png", facecolor=fig.get_facecolor(), edgecolor="none", dpi=100)
         plt.close(fig)
         buf.seek(0)
-        phase_charts.append(Image.open(buf))
+        replay_charts.append(Image.open(buf))
 
-    return phase_charts
+    return replay_charts
 
 
-async def _generate_voiceover_audio(script_text: str, output_path: str, voice: str = DEFAULT_NEURAL_VOICE) -> float:
-    """Generates natural neural audio via edge-tts and returns duration in seconds."""
+async def _generate_natural_audio(script_text: str, output_path: str) -> float:
+    """
+    Generates natural human audio using Microsoft's top conversational model (Brian).
+    Falls back cleanly to Guy if needed.
+    """
     import edge_tts
-    comm = edge_tts.Communicate(script_text, voice, rate="+8%")
-    await comm.save(output_path)
+    voices_to_try = [PRIMARY_NEURAL_VOICE, FALLBACK_NEURAL_VOICE]
+    for v in voices_to_try:
+        try:
+            comm = edge_tts.Communicate(script_text, v, rate="+0%", pitch="+0Hz")
+            await comm.save(output_path)
+            if os.path.exists(output_path) and os.path.getsize(output_path) > 1000:
+                proc = subprocess.run(
+                    ["ffprobe", "-i", output_path, "-show_entries", "format=duration", "-v", "quiet", "-of", "csv=p=0"],
+                    stdout=subprocess.PIPE, text=True
+                )
+                return float(proc.stdout.strip()) if proc.stdout else 22.0
+        except Exception as e:
+            logger.warning(f"Voice generation with {v} failed: {e}. Trying fallback...")
+            continue
 
-    proc = subprocess.run(
-        ["ffprobe", "-i", output_path, "-show_entries", "format=duration", "-v", "quiet", "-of", "csv=p=0"],
-        stdout=subprocess.PIPE, text=True
-    )
-    return float(proc.stdout.strip()) if proc.stdout else 22.0
+    return 22.0
 
 
 def generate_trading_short_video(
@@ -343,59 +358,58 @@ def generate_trading_short_video(
     candle_df: Optional[pd.DataFrame] = None
 ) -> Tuple[Optional[bytes], Dict[str, Any]]:
     """
-    Renders a vertical 1080x1920 MP4 video for YouTube Shorts and Instagram Reels.
-    Returns (video_bytes, metadata_pack).
+    Renders an uncluttered, full-screen vertical (1080x1920) in-chart analysis video short.
+    Directly modeled after @easytradingeasy style.
     """
-    # Unit test fast-path
+    # Fast path for unit tests
     if os.environ.get("PYTEST_CURRENT_TEST") or "pytest" in sys.modules:
         dummy_meta = {
             "pair": pair,
-            "title": "ALGORITHMIC LIQUIDITY HUNT",
+            "title": "CLEAN IN-CHART LIQUIDITY REPLAY",
             "ig_caption": "Test IG Caption",
             "duration": 20.0
         }
         return b"\x00\x00\x00 ftypmp42\x00\x00\x00\x00test", dummy_meta
 
     norm_pair = pair.upper().replace("/", "").replace("=", "").strip()
-    config = SHORTS_SCRIPTS.get(norm_pair, SHORTS_SCRIPTS["XAUUSD"])
+    config = INCHART_SCRIPTS.get(norm_pair, INCHART_SCRIPTS["XAUUSD"])
 
     # 1. Fetch live candles if not provided
-    if candle_df is None or len(candle_df) < 30:
+    if candle_df is None or len(candle_df) < 35:
         from core.marketing.contents_bot import fetch_candles_for_pair
-        candle_df = fetch_candles_for_pair(norm_pair, interval=timeframe.lower(), range_days="3d")
-        if candle_df is None or len(candle_df) < 30:
-            candle_df = fetch_candles_for_pair("EURUSD", interval="15m", range_days="3d")
+        candle_df = fetch_candles_for_pair(norm_pair, interval=timeframe.lower(), range_days="4d")
+        if candle_df is None or len(candle_df) < 35:
+            candle_df = fetch_candles_for_pair("EURUSD", interval="15m", range_days="4d")
 
-    if candle_df is None or len(candle_df) < 25:
-        logger.error(f"Insufficient candle data to generate video for {norm_pair}")
+    if candle_df is None or len(candle_df) < 30:
+        logger.error(f"Insufficient candle data for {norm_pair}")
         return None, {}
 
     with tempfile.TemporaryDirectory() as tmpdir:
         audio_path = os.path.join(tmpdir, "voice.mp3")
         video_out = os.path.join(tmpdir, "short.mp4")
 
-        # 2. Generate Voiceover Audio (or default 20s if silent)
+        # 2. Generate Natural Neural Audio (Brian)
         if voice_enabled:
             try:
-                duration = asyncio.run(_generate_voiceover_audio(config["voiceover"], audio_path))
+                duration = asyncio.run(_generate_natural_audio(config["voiceover"], audio_path))
             except Exception as e:
-                logger.warning(f"Voiceover generation failed, falling back to silent: {e}")
+                logger.warning(f"Audio generation failed: {e}")
                 voice_enabled = False
                 duration = 20.0
         else:
             duration = 18.0
 
-        # 3. Render 4 Phase Charts
-        chart_imgs = render_phase_charts(candle_df, norm_pair, direction=config["direction"])
+        # 3. Render In-Chart Replay Frames (1080x1650)
+        chart_imgs = render_inchart_replay_charts(candle_df, norm_pair, direction=config["direction"])
 
-        # 4. Stream Frames into ffmpeg
+        # 4. Stream 1080x1920 Frames into ffmpeg
         w, h = 1080, 1920
         fps = 24
         total_frames = int(duration * fps)
 
-        font_bold_md = _get_system_font(26, bold=True)
-        font_bold_sm = _get_system_font(20, bold=True)
-        font_reg_md = _get_system_font(22, bold=False)
+        font_bold_md = _get_system_font(30, bold=True)
+        font_reg_md = _get_system_font(24, bold=False)
         font_reg_sm = _get_system_font(18, bold=False)
 
         ffmpeg_cmd = [
@@ -425,63 +439,35 @@ def generate_trading_short_video(
 
         proc = subprocess.Popen(ffmpeg_cmd, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
-        steps_meta = config["steps"]
+        subtitles = config["subtitles"]
         phase_dur = total_frames / 4.0
 
         for frame_idx in range(total_frames):
             cur_phase = min(3, int(frame_idx / phase_dur))
             chart_img = chart_imgs[cur_phase]
 
-            canvas = Image.new("RGB", (w, h), color=(13, 17, 23))
+            canvas = Image.new("RGB", (w, h), color=(19, 23, 34))
             draw = ImageDraw.Draw(canvas)
 
-            # Top Header Bar
-            draw.rectangle([0, 0, w, 140], fill=(19, 23, 34))
-            draw.line([0, 140, w, 140], fill=(42, 46, 57), width=2)
-            draw.rectangle([40, 35, 460, 105], fill=(30, 34, 45), outline=(41, 98, 255), width=2)
-            draw.text((60, 52), f"🟡 {norm_pair} · {timeframe}", font=font_bold_md, fill=(255, 215, 0))
-            draw.text((500, 45), config["title"], font=font_bold_md, fill=(255, 255, 255))
-            draw.text((500, 80), config["subtitle"], font=font_reg_sm, fill=(120, 123, 134))
+            # Top Floating Header Bar (y: 0 to 115)
+            draw.rectangle([0, 0, w, 115], fill=(13, 17, 23))
+            draw.line([0, 115, w, 115], fill=(42, 46, 57), width=1)
+            draw.rectangle([40, 25, 430, 90], fill=(24, 30, 44), outline=(41, 98, 255), width=2)
+            draw.text((60, 42), f"🟡 {norm_pair} · {timeframe}", font=font_bold_md, fill=(255, 215, 0))
+            draw.text((460, 35), config["title"], font=font_bold_md, fill=(255, 255, 255))
+            draw.text((460, 72), config["subtitle"], font=font_reg_sm, fill=(120, 123, 134))
 
-            # Metrics Row
-            card_w = (w - 80 - 40) // 3
-            for i, (m_title, m_val, m_col) in enumerate(config["metrics"]):
-                cx = 40 + i * (card_w + 20)
-                draw.rectangle([cx, 160, cx + card_w, 260], fill=(19, 23, 34), outline=(42, 46, 57), width=1)
-                draw.text((cx + 16, 175), m_title, font=font_reg_sm, fill=(120, 123, 134))
-                draw.text((cx + 16, 208), m_val, font=font_bold_sm, fill=m_col)
+            # Paste Full-Screen In-Chart Replay (y: 120 to 1770)
+            canvas.paste(chart_img, (0, 120))
 
-            # Paste Chart
-            chart_x = (w - chart_img.width) // 2
-            canvas.paste(chart_img, (chart_x, 280))
-            draw.rectangle([chart_x, 280, chart_x + chart_img.width, 280 + chart_img.height], outline=(42, 46, 57), width=1)
+            # Bottom Subtitle Area (y: 1770 to 1920)
+            draw.rectangle([0, 1770, w, 1920], fill=(13, 17, 23))
+            draw.line([0, 1770, w, 1770], fill=(42, 46, 57), width=1)
+            draw.text((540, 1835), subtitles[cur_phase], font=font_reg_md, fill=(255, 255, 255), anchor="mm")
 
-            # 4-Step Narrative Walkthrough Cards
-            step_y = 1120
-            for s_idx, (stitle, sdesc, _) in enumerate(steps_meta):
-                is_active = (s_idx == cur_phase)
-                card_outline = (41, 98, 255) if is_active else (42, 46, 57)
-                card_bg = (24, 34, 60) if is_active else (19, 23, 34)
-                title_col = (255, 215, 0) if is_active else (255, 255, 255)
-                border_w = 3 if is_active else 1
-
-                draw.rectangle([40, step_y, w - 40, step_y + 125], fill=card_bg, outline=card_outline, width=border_w)
-                draw.text((65, step_y + 16), stitle, font=font_bold_md, fill=title_col)
-                draw.text((65, step_y + 58), sdesc, font=font_reg_md, fill=(210, 215, 225) if is_active else (150, 155, 165))
-                step_y += 145
-
-            # Dynamic Caption / Subtitle Bar
-            _, _, caption_text = steps_meta[cur_phase]
-            draw.rectangle([40, 1730, w - 40, 1840], fill=(13, 20, 36), outline=(41, 98, 255), width=1)
-            draw.text((65, 1745), f"🎙️ INSTITUTIONAL WALKTHROUGH · PHASE {cur_phase + 1}/4", font=font_bold_sm, fill=(41, 98, 255))
-            draw.text((65, 1780), f'"{caption_text}"', font=font_bold_md, fill=(255, 255, 255))
-
-            # Progress Bar across bottom
-            draw.rectangle([40, 1870, w - 40, 1880], fill=(30, 34, 45))
+            # Sleek 3px Progress Line at the very bottom
             progress_ratio = (frame_idx + 1) / total_frames
-            draw.rectangle([40, 1870, int(40 + (w - 80) * progress_ratio), 1880], fill=(0, 230, 118))
-
-            draw.text((40, 1895), "SYSTEMATIC ALGORITHMIC EXECUTION · VERIFIED DATA", font=font_reg_sm, fill=(120, 123, 134))
+            draw.rectangle([0, 1915, int(w * progress_ratio), 1920], fill=(0, 230, 118))
 
             proc.stdin.write(canvas.tobytes())
 
@@ -499,7 +485,7 @@ def generate_trading_short_video(
                 "voice_enabled": voice_enabled,
                 "file_size": len(video_bytes)
             }
-            logger.info(f"Generated {norm_pair} short video ({len(video_bytes)} bytes, {duration:.1f}s)")
+            logger.info(f"Generated clean in-chart {norm_pair} video ({len(video_bytes)} bytes, {duration:.1f}s)")
             return video_bytes, metadata
 
     return None, {}

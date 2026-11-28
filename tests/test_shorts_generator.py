@@ -16,9 +16,9 @@ import numpy as np
 
 from core.marketing.shorts_generator import (
     generate_trading_short_video,
-    SHORTS_SCRIPTS,
+    INCHART_SCRIPTS,
     _get_system_font,
-    render_phase_charts
+    render_inchart_replay_charts
 )
 from core.marketing.contents_bot import (
     send_contents_video,
@@ -33,14 +33,13 @@ class TestShortsGenerator(unittest.TestCase):
         """Verify all active trading assets have complete short video scripts."""
         expected_assets = ["XAUUSD", "EURUSD", "USDCAD", "USDCHF", "AUDUSD"]
         for asset in expected_assets:
-            self.assertIn(asset, SHORTS_SCRIPTS)
-            config = SHORTS_SCRIPTS[asset]
+            self.assertIn(asset, INCHART_SCRIPTS)
+            config = INCHART_SCRIPTS[asset]
             self.assertIn("title", config)
             self.assertIn("voiceover", config)
-            self.assertIn("steps", config)
-            self.assertIn("metrics", config)
+            self.assertIn("subtitles", config)
             self.assertIn("ig_caption", config)
-            self.assertEqual(len(config["steps"]), 4)
+            self.assertEqual(len(config["subtitles"]), 4)
             self.assertTrue(len(config["voiceover"]) > 50)
             self.assertIn("#", config["ig_caption"])
 
@@ -53,8 +52,8 @@ class TestShortsGenerator(unittest.TestCase):
         self.assertIn("title", meta)
         self.assertIn("ig_caption", meta)
 
-    def test_render_phase_charts(self):
-        """Verify chart rendering across 4 progressive phases."""
+    def test_render_inchart_replay_charts(self):
+        """Verify full-screen in-chart replay rendering across 4 progressive phases."""
         dates = pd.date_range("2026-01-01", periods=60, freq="15min")
         df = pd.DataFrame({
             "open": np.linspace(2650, 2680, 60),
@@ -64,10 +63,10 @@ class TestShortsGenerator(unittest.TestCase):
             "volume": [1000] * 60
         }, index=dates)
 
-        charts = render_phase_charts(df, pair="XAUUSD", direction="LONG", num_bars=45)
+        charts = render_inchart_replay_charts(df, pair="XAUUSD", direction="LONG", num_bars=55)
         self.assertEqual(len(charts), 4)
         for c in charts:
-            self.assertEqual(c.size, (1000, 820))
+            self.assertEqual(c.size, (1080, 1650))
 
     def test_send_contents_video_suppressed(self):
         """Verify send_contents_video is safely suppressed in test mode."""
