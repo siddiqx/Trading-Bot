@@ -7,6 +7,7 @@ Generates copy-ready content for Twitter/X and Reddit, or runs a 24/7 listener.
 
 Usage:
   python contents_bot.py --loop       # Run live real-time Telegram listener
+  python contents_bot.py --short      # Dispatch 1080x1920 video short (YouTube/Reels)
   python contents_bot.py --signal     # Dispatch clean signal & chart to your chat
   python contents_bot.py --twitter    # Dispatch Twitter/X thread
   python contents_bot.py --reddit     # Dispatch Reddit case study
@@ -45,7 +46,13 @@ def main():
 
     cmd = sys.argv[1] if len(sys.argv) > 1 else "--help"
 
-    if cmd in ("--signal", "-s"):
+    if cmd in ("--short", "-v", "--video"):
+        pair = sys.argv[2] if len(sys.argv) > 2 else ""
+        mock_update = {"message": {"chat": {"id": admin_id}, "text": f"/short {pair}".strip()}}
+        res = handle_contents_bot_update(mock_update)
+        print(f"Dispatched institutional video short to {admin_id}: {res}")
+
+    elif cmd in ("--signal", "-s"):
         mock_update = {"message": {"chat": {"id": admin_id}, "text": "/signal"}}
         res = handle_contents_bot_update(mock_update)
         print(f"Dispatched clean trade signal & chart to {admin_id}: {res}")

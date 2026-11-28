@@ -18,3 +18,4 @@ service-identity>=23.0.0
 PySocks>=1.7.1
 matplotlib>=3.8.0
 mplfinance>=0.12.10b0
+edge-tts>=7.0.0

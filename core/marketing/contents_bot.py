@@ -144,6 +144,9 @@ def get_inline_action_keyboard(pair: str = "EURUSD") -> dict:
     return {
         "inline_keyboard": [
             [
+                {"text": "🎬 Generate Short Video", "callback_data": f"btn_sh_{p}"}
+            ],
+            [
                 {"text": "🐦 Twitter Thread", "callback_data": f"btn_tw_{p}"},
                 {"text": "📝 Reddit Post", "callback_data": f"btn_rd_{p}"}
             ],
@@ -237,6 +240,91 @@ def send_contents_photo(
         logger.error(f"Contents bot sendPhoto error: {e}")
         # Fallback to text message
         return send_contents_message(chat_id, caption, reply_markup=reply_markup, bot_token=token)
+
+
+def send_contents_video(
+    chat_id: str,
+    video_bytes: bytes,
+    caption: str = "",
+    reply_markup: Optional[dict] = None,
+    bot_token: Optional[str] = None
+) -> bool:
+    """Send MP4 video with HTML caption via Telegram sendVideo API."""
+    token = (bot_token or TELEGRAM_MARKETING_BOT_TOKEN).strip()
+    if not token or not chat_id or not video_bytes:
+        return False
+    if os.environ.get("PYTEST_CURRENT_TEST") or "pytest" in sys.modules:
+        logger.info(f"[TEST SUPPRESSED] send_contents_video to {chat_id}")
+        return True
+
+    url = f"https://api.telegram.org/bot{token}/sendVideo"
+    boundary = "----WebKitFormBoundaryContentsBotVideo7MA"
+    body = bytearray()
+
+    def add_field(name: str, value: str):
+        body.extend(f"--{boundary}\r\n".encode())
+        body.extend(f'Content-Disposition: form-data; name="{name}"\r\n\r\n'.encode())
+        body.extend(f"{value}\r\n".encode())
+
+    add_field("chat_id", str(chat_id).strip())
+    add_field("caption", caption[:1024])
+    add_field("parse_mode", "HTML")
+    add_field("supports_streaming", "true")
+    add_field("width", "1080")
+    add_field("height", "1920")
+    if reply_markup:
+        add_field("reply_markup", json.dumps(reply_markup))
+
+    body.extend(f"--{boundary}\r\n".encode())
+    body.extend(f'Content-Disposition: form-data; name="video"; filename="short.mp4"\r\n'.encode())
+    body.extend(b"Content-Type: video/mp4\r\n\r\n")
+    body.extend(video_bytes)
+    body.extend(b"\r\n")
+    body.extend(f"--{boundary}--\r\n".encode())
+
+    try:
+        req = urllib.request.Request(
+            url, data=bytes(body),
+            headers={"Content-Type": f"multipart/form-data; boundary={boundary}"}
+        )
+        with urllib.request.urlopen(req, timeout=35) as resp:
+            return resp.status == 200
+    except Exception as e:
+        logger.error(f"Contents bot sendVideo error: {e}")
+        return False
+
+
+def setup_contents_bot_commands(bot_token: Optional[str] = None) -> bool:
+    """
+    Registers the command list with Telegram API so that tapping the Menu (/)
+    or 3-dot options immediately shows the commands cleanly.
+    """
+    token = (bot_token or TELEGRAM_MARKETING_BOT_TOKEN).strip()
+    if not token or os.environ.get("PYTEST_CURRENT_TEST") or "pytest" in sys.modules:
+        return True
+
+    url = f"https://api.telegram.org/bot{token}/setMyCommands"
+    commands = [
+        {"command": "short", "description": "🎬 YouTube Shorts & IG Reels Video (1080x1920)"},
+        {"command": "signal", "description": "⚡ Latest Active Trade Signal"},
+        {"command": "chart", "description": "📊 Live High-Res Candlestick Chart"},
+        {"command": "twitter", "description": "🐦 Twitter / X Thread (1-Tap Copy)"},
+        {"command": "reddit", "description": "📝 Reddit Educational Post + Chart"},
+        {"command": "outlook", "description": "🌐 4H Trend Outlook & Liquidity Map"},
+        {"command": "tradingview", "description": "📈 TradingView Publication Pack"},
+        {"command": "help", "description": "ℹ️ Command Cockpit & Guide"}
+    ]
+    try:
+        req = urllib.request.Request(
+            url,
+            data=json.dumps({"commands": commands}).encode("utf-8"),
+            headers={"Content-Type": "application/json"}
+        )
+        with urllib.request.urlopen(req, timeout=8) as resp:
+            return resp.status == 200
+    except Exception as e:
+        logger.warning(f"Could not register commands with Telegram: {e}")
+        return False
 
 
 def answer_callback(callback_query_id: str, text: str = "", bot_token: Optional[str] = None) -> bool:
@@ -624,6 +712,30 @@ def handle_contents_bot_update(update: dict, bot_token: Optional[str] = None) ->
                 send_contents_photo(chat_id, chart_bytes, caption=f"🌐 <b>4H MARKET OUTLOOK · {target_pair}</b>", bot_token=token)
             return send_contents_message(chat_id, outlook_text, bot_token=token)
 
+        elif data.startswith("btn_sh"):
+            from core.marketing.shorts_generator import generate_trading_short_video
+            send_contents_message(
+                chat_id,
+                f"🎬 <i>Rendering high-definition 1080x1920 video short for {target_pair} (ICT setup, 24fps, neural voiceover)... This takes ~3-4s.</i>",
+                bot_token=token
+            )
+            v_bytes, v_meta = generate_trading_short_video(pair=target_pair, timeframe="15M", voice_enabled=True)
+            if v_bytes:
+                caption = (
+                    f"🎬 <b>INSTITUTIONAL SHORT VIDEO · {target_pair}</b>\n"
+                    f"<i>1080x1920 (9:16) · Watermark-Free · Natural Neural Audio</i>\n\n"
+                    f"Ready to upload directly to <b>YouTube Shorts</b> & <b>Instagram Reels</b>!"
+                )
+                send_contents_video(chat_id, v_bytes, caption=caption, reply_markup=get_inline_action_keyboard(target_pair), bot_token=token)
+                copy_pack = (
+                    f"📱 <b>COPY-PASTE CAPTION & HASHTAGS (Tap to copy)</b>\n"
+                    f"━━━━━━━━━━━━━━━━━━\n"
+                    f"<code>{v_meta.get('ig_caption', '')}</code>"
+                )
+                return send_contents_message(chat_id, copy_pack, bot_token=token)
+            else:
+                return send_contents_message(chat_id, f"⚠️ Unable to render video for {target_pair} right now.", bot_token=token)
+
         return True
 
     # 2. Handle Text Messages & Slash Commands
@@ -642,6 +754,7 @@ def handle_contents_bot_update(update: dict, bot_token: Optional[str] = None) ->
             f"🚀 <b>QUANTFLOW CONTENTS COCKPIT (@contents7_bot)</b>\n"
             f"Engine Status: <b>{status_text}</b>\n\n"
             f"<b>Commands:</b>\n"
+            f"• <code>/short [PAIR]</code> — 🎬 High-def 1080x1920 Video Short for YouTube Shorts & IG Reels\n"
             f"• <code>/signal</code> — Active verified trade signal (or standby status)\n"
             f"• <code>/twitter [PAIR]</code> — Viral FinTwit thread + real chart (Gold / Forex rotation)\n"
             f"• <code>/reddit [PAIR]</code> — Deep educational post for r/Forex & r/PropFirm + chart\n"
@@ -651,6 +764,48 @@ def handle_contents_bot_update(update: dict, bot_token: Optional[str] = None) ->
             f"💡 <i>Tip: Tap the Menu (/) button next to the typing bar to select commands!</i>"
         )
         return send_contents_message(chat_id, welcome_text, reply_markup=get_persistent_menu_keyboard(), bot_token=token)
+
+    # Command: /short or /video
+    elif cmd.startswith("/short") or cmd.startswith("/video") or cmd in ("🎬 short video", "short", "video"):
+        from core.marketing.shorts_generator import generate_trading_short_video
+        parts = raw_text.split()
+        voice_mode = True
+        requested_pair = None
+        for p in parts[1:]:
+            if p.lower() in ("silent", "mute", "no-voice", "novoice"):
+                voice_mode = False
+            else:
+                requested_pair = p.upper()
+
+        target_pair = select_dynamic_market_pair(requested_pair)
+        voice_desc = "Natural Neural Voiceover" if voice_mode else "Silent (Ready for Trending Audio)"
+
+        send_contents_message(
+            chat_id,
+            f"🎬 <b>Rendering 1080x1920 Video Short for {target_pair}</b>\n"
+            f"• Format: 9:16 Vertical HD (YouTube Shorts / IG Reels)\n"
+            f"• Audio: {voice_desc}\n"
+            f"• Visuals: Institutional Dark Terminal, ICT Markup, 20-EMA\n"
+            f"⏳ <i>Generating frames and muxing audio... Please hold (~3-4s).</i>",
+            bot_token=token
+        )
+
+        v_bytes, v_meta = generate_trading_short_video(pair=target_pair, timeframe="15M", voice_enabled=voice_mode)
+        if v_bytes:
+            caption = (
+                f"🎬 <b>INSTITUTIONAL SHORT VIDEO · {target_pair}</b>\n"
+                f"<i>1080x1920 (9:16) · Watermark-Free · {voice_desc}</i>\n\n"
+                f"Ready to upload directly to <b>YouTube Shorts</b> & <b>Instagram Reels</b>!"
+            )
+            send_contents_video(chat_id, v_bytes, caption=caption, reply_markup=get_inline_action_keyboard(target_pair), bot_token=token)
+            copy_pack = (
+                f"📱 <b>COPY-PASTE CAPTION & HASHTAGS (Tap to copy)</b>\n"
+                f"━━━━━━━━━━━━━━━━━━\n"
+                f"<code>{v_meta.get('ig_caption', '')}</code>"
+            )
+            return send_contents_message(chat_id, copy_pack, bot_token=token)
+        else:
+            return send_contents_message(chat_id, f"⚠️ Unable to render short video for {target_pair} right now.", bot_token=token)
 
     # Command: /signal
     elif cmd in ("/signal", "⚡ latest signal", "signal"):
@@ -886,6 +1041,7 @@ def run_contents_bot_loop(
     Enables sub-second interactive responses when run as a background service or GitHub Actions runner.
     """
     token = (bot_token or TELEGRAM_MARKETING_BOT_TOKEN).strip()
+    setup_contents_bot_commands(bot_token=token)
     print(f"🚀 Contents Marketing Bot (@contents7_bot) live listener starting...")
     offset = None
     import time
