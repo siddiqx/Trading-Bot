@@ -54,7 +54,7 @@ def test_generate_twitter_thread():
 
 
 def test_generate_tradingview_idea_post():
-    trade = {
+    trade_short = {
         "pair": "EURUSD",
         "direction": "SHORT",
         "entry": 1.08500,
@@ -62,21 +62,40 @@ def test_generate_tradingview_idea_post():
         "take_profit": 1.08125,
         "timeframe": "15M"
     }
-    # 1. New Signal Setup
-    tv_post = generate_tradingview_idea_post(trade)
-    assert "EUR/USD" in tv_post["title"]
-    assert "Order Block" in tv_post["title"]
-    assert "1.08500" in tv_post["description"]
-    assert "1.08750" in tv_post["description"]
-    assert "1.08125" in tv_post["description"]
-    assert "t.me/ccrs_forex_signals" in tv_post["description"]
-    assert "forex" in tv_post["tags"]
+    # 1. New Short Signal Setup: BSL sweep + MSS ▾ + -OB + SSL target
+    tv_post_short = generate_tradingview_idea_post(trade_short)
+    assert "EUR/USD" in tv_post_short["title"]
+    assert "Order Block" in tv_post_short["title"]
+    assert "1.08500" in tv_post_short["description"]
+    assert "1.08750" in tv_post_short["description"]
+    assert "1.08125" in tv_post_short["description"]
+    assert "Buy-Side Liquidity (BSL)" in tv_post_short["description"]
+    assert "Market Structure Shift (MSS ▾)" in tv_post_short["description"]
+    assert "Bearish Order Block (-OB / Supply)" in tv_post_short["description"]
+    assert "Sell-Side Liquidity (SSL)" in tv_post_short["description"]
+    assert "t.me/ccrs_forex_signals" in tv_post_short["description"]
+    assert "forex" in tv_post_short["tags"]
     # Ensure zero markdown hash or asterisk symbols in description
-    assert "#" not in tv_post["description"]
-    assert "*" not in tv_post["description"]
+    assert "#" not in tv_post_short["description"]
+    assert "*" not in tv_post_short["description"]
 
-    # 2. Closed Win Resolution
-    tv_win = generate_tradingview_idea_post(trade, realized_pips=37.5, realized_r=1.50)
+    # 2. New Long Signal Setup: SSL sweep + MSS ▴ + +OB + BSL target
+    trade_long = {
+        "pair": "USDCAD",
+        "direction": "LONG",
+        "entry": 1.38500,
+        "stop_loss": 1.38280,
+        "take_profit": 1.38830,
+        "timeframe": "15M"
+    }
+    tv_post_long = generate_tradingview_idea_post(trade_long)
+    assert "Sell-Side Liquidity (SSL)" in tv_post_long["description"]
+    assert "Market Structure Shift (MSS ▴)" in tv_post_long["description"]
+    assert "Bullish Order Block (+OB / Demand)" in tv_post_long["description"]
+    assert "Buy-Side Liquidity (BSL)" in tv_post_long["description"]
+
+    # 3. Closed Win Resolution
+    tv_win = generate_tradingview_idea_post(trade_short, realized_pips=37.5, realized_r=1.50)
     assert "+37.5 Pips" in tv_win["title"]
     assert "(+1.50R)" in tv_win["title"]
     assert "Full Take Profit Hit" in tv_win["description"]
@@ -91,17 +110,66 @@ def test_generate_telegram_share_url():
 
 
 def test_publish_reddit_case_study_local_draft():
-    trade = {
+    trade_long = {
         "pair": "USDCHF",
         "direction": "LONG",
         "entry": 0.88500,
         "take_profit": 0.88850
     }
-    case_study = generate_reddit_case_study(trade, realized_pips=35.0, realized_r=1.75)
-    res = publish_reddit_case_study(case_study)
+    case_study_long = generate_reddit_case_study(trade_long, realized_pips=35.0, realized_r=1.75)
+    assert "Sell-Side Liquidity (SSL)" in case_study_long["body"]
+    assert "Buy-Side Liquidity (BSL)" in case_study_long["body"]
+    assert "Market Structure Shift (MSS ▴)" in case_study_long["body"]
+    assert "Bullish Demand Order Block (+OB)" in case_study_long["body"]
+
+    trade_short = {
+        "pair": "EURUSD",
+        "direction": "SHORT",
+        "entry": 1.08500,
+        "take_profit": 1.08150
+    }
+    case_study_short = generate_reddit_case_study(trade_short, realized_pips=35.0, realized_r=1.75)
+    assert "Buy-Side Liquidity (BSL)" in case_study_short["body"]
+    assert "Sell-Side Liquidity (SSL)" in case_study_short["body"]
+    assert "Market Structure Shift (MSS ▾)" in case_study_short["body"]
+    assert "Bearish Supply Order Block (-OB)" in case_study_short["body"]
+
+    res = publish_reddit_case_study(case_study_long)
     assert res["status"] in ("DRAFT_SAVED", "PUBLISHED", "COOLDOWN_ACTIVE")
     assert "url" in res
     assert Path(res["url"]).exists() or res["url"].startswith("http")
+
+
+def test_channel_signal_message_directional_ict():
+    from market_scanner import format_channel_signal_message
+
+    sig_short = {
+        "pair": "EURUSD",
+        "direction": "SHORT",
+        "entry": 1.08500,
+        "stop_loss": 1.08720,
+        "take_profit": 1.08150,
+        "sl_pips": 22.0,
+        "tp_pips": 35.0,
+        "rr": 1.59,
+        "timeframe": "15M"
+    }
+    msg_short = format_channel_signal_message(sig_short)
+    assert "Sell-Side Liquidity (SSL)" in msg_short
+
+    sig_long = {
+        "pair": "USDCAD",
+        "direction": "LONG",
+        "entry": 1.38500,
+        "stop_loss": 1.38280,
+        "take_profit": 1.38850,
+        "sl_pips": 22.0,
+        "tp_pips": 35.0,
+        "rr": 1.59,
+        "timeframe": "15M"
+    }
+    msg_long = format_channel_signal_message(sig_long)
+    assert "Buy-Side Liquidity (BSL)" in msg_long
 
 
 def test_generate_weekly_performance_digest():

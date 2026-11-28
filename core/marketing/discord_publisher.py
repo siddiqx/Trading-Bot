@@ -70,6 +70,7 @@ def send_discord_signal(
         f"• **Reference Price:** `{sig.get('entry')}`\n"
         f"• **Stop Loss Distance:** **{sig.get('sl_pips')} Pips** *(approx. `{sig.get('stop_loss')}`)*\n"
         f"• **Take Profit Distance:** **+{sig.get('tp_pips')} Pips** *(approx. `{sig.get('take_profit')}` · +{rr_val:.2f}R)*\n"
+        f"• **Target Pool (DOL):** **{'Buy-Side Liquidity (BSL)' if is_long else 'Sell-Side Liquidity (SSL)'}**\n"
         f"• **Risk / Reward:** **1 : {rr_val:.2f}**\n"
         f"━━━━━━━━━━━━━━━━━━\n"
         f"🛡️ *Suggested Risk: 0.50% – 1.00% per trade. Trailing stops and profit-locking are managed automatically.*\n\n"

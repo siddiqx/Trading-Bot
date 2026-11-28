@@ -1910,6 +1910,7 @@ def format_channel_signal_message(sig: dict) -> str:
         f"• <b>Reference Price:</b> <code>{sig['entry']}</code>\n"
         f"• <b>Stop Loss Distance:</b> <b>{sig['sl_pips']} Pips</b> <i>(approx. <code>{sig['stop_loss']}</code>)</i>\n"
         f"• <b>Take Profit Distance:</b> <b>+{sig['tp_pips']} Pips</b> <i>(approx. <code>{sig['take_profit']}</code> · +{rr_val:.2f}R)</i>\n"
+        f"• <b>Target Pool (DOL):</b> <b>{'Buy-Side Liquidity (BSL)' if is_long else 'Sell-Side Liquidity (SSL)'}</b>\n"
         f"• <b>Risk / Reward:</b> <b>1 : {rr_val:.2f}</b>\n"
         f"━━━━━━━━━━━━━━━━━━\n"
         f"🛡️ <i>Suggested Risk: 0.50% – 1.00% per trade. Trailing stops and profit-locking are managed automatically.</i>"

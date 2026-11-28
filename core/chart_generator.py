@@ -169,6 +169,15 @@ def generate_trade_chart(
                 ax.text(sweep_x + 3, sweep_level - (0.00015 if not is_jpy else 0.015),
                         "Liquidity Sweep (SSL)", color="#FF5252", fontsize=7.5, weight="bold", va="top")
 
+                # 3. Market Structure Shift (MSS ▴)
+                pre_sweep = search_window.loc[:sweep_bar_idx]
+                mss_bar_idx = pre_sweep["high"].idxmax() if len(pre_sweep) >= 2 else search_window["high"].idxmax()
+                mss_level = float(search_window.loc[mss_bar_idx, "high"])
+                mss_x = plot_df.index.get_loc(mss_bar_idx)
+                ax.hlines(mss_level, mss_x, min(n + 6, mss_x + 14), colors="#00E5FF", linestyles=":", linewidth=1.1, zorder=4)
+                ax.text(min(n + 3, mss_x + 13), mss_level + (0.00010 if not is_jpy else 0.010),
+                        "MSS ▴", color="#00E5FF", fontsize=7.5, weight="bold", va="bottom", ha="right")
+
         else:
             # 1. Bearish Order Block / Supply Liquidity Zone: Highest up-candle prior to sell-off
             up_candles = search_window[search_window["close"] >= search_window["open"]]
@@ -201,6 +210,15 @@ def generate_trade_chart(
                 ax.plot(sweep_x, sweep_level, "x", color="#FF5252", markersize=6, markeredgewidth=1.5, zorder=5)
                 ax.text(sweep_x + 3, sweep_level + (0.00015 if not is_jpy else 0.015),
                         "Liquidity Sweep (BSL)", color="#FF5252", fontsize=7.5, weight="bold", va="bottom")
+
+                # 3. Market Structure Shift (MSS ▾)
+                pre_sweep = search_window.loc[:sweep_bar_idx]
+                mss_bar_idx = pre_sweep["low"].idxmin() if len(pre_sweep) >= 2 else search_window["low"].idxmin()
+                mss_level = float(search_window.loc[mss_bar_idx, "low"])
+                mss_x = plot_df.index.get_loc(mss_bar_idx)
+                ax.hlines(mss_level, mss_x, min(n + 6, mss_x + 14), colors="#FF9800", linestyles=":", linewidth=1.1, zorder=4)
+                ax.text(min(n + 3, mss_x + 13), mss_level - (0.00010 if not is_jpy else 0.010),
+                        "MSS ▾", color="#FF9800", fontsize=7.5, weight="bold", va="top", ha="right")
 
         # ==============================================================================
         # TradingView Long / Short Position Tool Geometry
@@ -259,16 +277,28 @@ def generate_trade_chart(
         ax.hlines(tp, box_start, box_end, colors="#2962FF", linestyles="-", linewidth=1.2, zorder=5)
         ax.hlines(sl, box_start, box_end, colors="#787B86", linestyles="-", linewidth=1.2, zorder=5)
 
+        # Target Draw on Liquidity (DOL) annotation on Take Profit level
+        tp_target_name = "Target: Buy-Side Liquidity (BSL)" if is_long else "Target: Sell-Side Liquidity (SSL)"
+        ax.text(box_start + 0.8, tp + (0.00012 if is_long else -0.00012) if not is_jpy else tp + (0.012 if is_long else -0.012),
+                tp_target_name, color="#2962FF", fontsize=7.5, weight="bold",
+                va="bottom" if is_long else "top", zorder=6)
+
+        # Invalidation annotation on Stop Loss level
+        ax.text(box_start + 0.8, sl - (0.00012 if is_long else -0.00012) if not is_jpy else sl - (0.012 if is_long else -0.012),
+                "Invalidation (SL)", color="#787B86", fontsize=7.0, weight="bold",
+                va="top" if is_long else "bottom", zorder=6)
+
         # Current market price crosshair line
         ax.axhline(cur_px, color="#787B86", linestyle=":", linewidth=0.7, alpha=0.6, zorder=4)
 
         # TradingView Box Info Pill (Open PnL / Take Profit Status)
         pip_mult = 100 if is_jpy else 10000
+        target_badge = "BSL Target" if is_long else "SSL Target"
         if is_running:
             pnl_pips = (cur_px - entry) * pip_mult if is_long else (entry - cur_px) * pip_mult
             sl_pips_val = float(sig.get("sl_pips", 20.0))
             r_val = pnl_pips / sl_pips_val if sl_pips_val > 0 else 0.0
-            pill_text = f"Open PnL: {pnl_pips:+.1f} pips (+{r_val:.2f}R)\nRisk/reward ratio: {rr_val:.2f}"
+            pill_text = f"{target_badge} • Open PnL: {pnl_pips:+.1f} pips (+{r_val:.2f}R)\nRisk/reward ratio: {rr_val:.2f}"
             pill_x = box_start + 1.2
             pill_y = entry + (tp - entry) * 0.25
             ax.text(pill_x, pill_y, pill_text, color="#FFFFFF", fontsize=8.0, weight="bold",
@@ -276,7 +306,7 @@ def generate_trade_chart(
                     bbox=dict(boxstyle="round,pad=0.35", facecolor="#1E222D", edgecolor="#2962FF", alpha=0.80, linewidth=0.8))
         elif is_tp_hit:
             tp_pips_val = float(sig.get("tp_pips", 35.0))
-            pill_text = f"Target: +{tp_pips_val:.1f} pips (+{rr_val:.2f}R)\nStatus: Target Reached"
+            pill_text = f"{target_badge} Swept: +{tp_pips_val:.1f} pips (+{rr_val:.2f}R)\nStatus: Target Reached"
             pill_x = box_start + 1.2
             pill_y = entry + (tp - entry) * 0.50
             ax.text(pill_x, pill_y, pill_text, color="#FFFFFF", fontsize=8.0, weight="bold",
@@ -284,7 +314,7 @@ def generate_trade_chart(
                     bbox=dict(boxstyle="round,pad=0.35", facecolor="#1E222D", edgecolor="#00E676", alpha=0.85, linewidth=0.8))
         else:
             tp_pips_val = float(sig.get("tp_pips", 35.0))
-            pill_text = f"Target: +{tp_pips_val:.1f} pips (+{rr_val:.2f}R)\nRisk/reward ratio: {rr_val:.2f}"
+            pill_text = f"{target_badge}: +{tp_pips_val:.1f} pips (+{rr_val:.2f}R)\nRisk/reward ratio: {rr_val:.2f}"
             pill_x = box_start + 1.2
             pill_y = entry + (tp - entry) * 0.35
             ax.text(pill_x, pill_y, pill_text, color="#FFFFFF", fontsize=8.0, weight="bold",
@@ -334,6 +364,7 @@ def generate_trade_chart(
         # ==============================================================================
         # Top-Left: Clean pair name and timeframe (e.g. "EUR/USD  •  15M")
         fig.text(0.038, 0.955, f"{display_pair}  •  {tf_display}", fontsize=14, weight="bold", color="#FFFFFF")
+        fig.text(0.038, 0.925, "ICT SMC Precision Execution • 20-EMA • Liquidity Sweeps • MSS", fontsize=8.2, color="#787B86")
 
         # Top-Right: Institutional branding aligned to right margin (zero overlap)
         fig.text(0.890, 0.955, "QuantFlow Institutional Analysis", fontsize=9.5, color="#787B86", ha="right")

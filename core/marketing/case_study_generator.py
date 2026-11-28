@@ -54,8 +54,10 @@ def generate_reddit_case_study(
             f"{pips_val} Pips ({r_val}) Full Take Profit Hit"
         )
 
-    action_verb = "Demand Order Block (+OB)" if direction == "LONG" else "Supply Order Block (-OB)"
+    action_verb = "Bullish Demand Order Block (+OB)" if direction == "LONG" else "Bearish Supply Order Block (-OB)"
     sweep_type = "Sell-Side Liquidity (SSL)" if direction == "LONG" else "Buy-Side Liquidity (BSL)"
+    target_pool = "Buy-Side Liquidity (BSL)" if direction == "LONG" else "Sell-Side Liquidity (SSL)"
+    mss_type = "Bullish Market Structure Shift (MSS ▴)" if direction == "LONG" else "Bearish Market Structure Shift (MSS ▾)"
 
     body = (
         f"## Trade Overview: {direction} {display_pair} ({timeframe})\n\n"
@@ -74,8 +76,10 @@ def generate_reddit_case_study(
         f"### 2. Smart Money Concepts (ICT) Trigger\n"
         f"* **Liquidity Sweep:** Price swept prior retail stops at the key {sweep_type} pool, "
         f"triggering institutional absorption.\n"
-        f"* **Mitigation:** The subsequent reaction confirmed a clean tap into the 15M {action_verb}, "
-        f"providing asymmetrical risk-to-reward geometry.\n\n"
+        f"* **Market Structure Shift:** Confirmed 15M {mss_type} with impulsive displacement.\n"
+        f"* **Order Block Mitigation:** The subsequent reaction confirmed a clean tap into the 15M {action_verb} & 20-EMA dynamic confluence, "
+        f"providing asymmetrical risk-to-reward geometry.\n"
+        f"* **Draw on Liquidity (DOL):** Systematic target swept cleanly at the opposing {target_pool} cluster.\n\n"
         f"### 3. Risk Management & Prop Firm Compliance\n"
         f"* **Risk Budget:** 0.50% static risk with dynamic volatility-anchored stop (2.0× ATR).\n"
         f"* **Anti-Copy Protection:** Execution executed via broker API at true market spread, "
@@ -124,11 +128,21 @@ def generate_twitter_thread(
         f"#Forex #ICT #TradingView #PropFirm #FTMO"
     )
 
+    if direction == "SHORT":
+        tweet_2_sweep = "2. 15M Liquidity Sweep: Buy-Side Liquidity (BSL) swept at session highs"
+        tweet_2_ob = "3. Structure & Retest: MSS ▾ + Bearish Order Block (-OB) rejection at 20-EMA"
+        tweet_2_target = f"4. Draw on Liquidity: Sell-Side Liquidity (SSL) target swept at {trade.get('take_profit')}"
+    else:
+        tweet_2_sweep = "2. 15M Liquidity Sweep: Sell-Side Liquidity (SSL) swept below session lows"
+        tweet_2_ob = "3. Structure & Retest: MSS ▴ + Bullish Order Block (+OB) rejection at 20-EMA"
+        tweet_2_target = f"4. Draw on Liquidity: Buy-Side Liquidity (BSL) target swept at {trade.get('take_profit')}"
+
     tweet_2 = (
         f"2/ The Setup Anatomy:\n\n"
         f"1. 1H Macro Divergence: Base vs Quote flow > 1.75σ\n"
-        f"2. 15M Liquidity Sweep: Trapped retail stops swept at local fractal swing\n"
-        f"3. Order Block Mitigation: Immediate rejection with 20-EMA confluence\n\n"
+        f"{tweet_2_sweep}\n"
+        f"{tweet_2_ob}\n"
+        f"{tweet_2_target}\n\n"
         f"Systematic rules. Zero emotion. 1:1.75R geometric target."
     )
 
@@ -207,6 +221,17 @@ def generate_tradingview_idea_post(
         title = f"{display_pair} ({timeframe}): Institutional Order Block Retest & CCRS Divergence {dir_word}"
         intro_status = f"Order Type: {direction} ({timeframe})\n"
 
+    if direction == "SHORT":
+        sweep_desc = "• Liquidity Sweep: Buy-Side Liquidity (BSL) swept at local fractal highs, trapping premature breakout buyers."
+        mss_desc = "• Structure Confirmation: Confirmed 15M Market Structure Shift (MSS ▾) breaking lower with displacement."
+        ob_desc = "• Order Block Mitigation: Clean tap into Bearish Order Block (-OB / Supply) with 20-EMA dynamic resistance."
+        target_desc = f"• Draw on Liquidity (DOL): Targeting resting Sell-Side Liquidity (SSL) pool at {tp_str}"
+    else:
+        sweep_desc = "• Liquidity Sweep: Sell-Side Liquidity (SSL) swept below local fractal lows, clearing retail sell stops."
+        mss_desc = "• Structure Confirmation: Confirmed 15M Market Structure Shift (MSS ▴) breaking higher with displacement."
+        ob_desc = "• Order Block Mitigation: Clean tap into Bullish Order Block (+OB / Demand) with 20-EMA dynamic support."
+        target_desc = f"• Draw on Liquidity (DOL): Targeting resting Buy-Side Liquidity (BSL) pool at {tp_str}"
+
     description = (
         f"{display_pair} Systematic {action_type} ({timeframe})\n"
         f"━━━━━━━━━━━━━━━━━━\n"
@@ -216,11 +241,12 @@ def generate_tradingview_idea_post(
         f"• 7-Currency Factor Engine: Rolling 120-hour CCRS divergence (|D| ≥ 1.75σ) normalized by 200-hour volatility.\n"
         f"• The synthetic currency basket confirms institutional order flow backing the {direction.lower()} move.\n\n"
         f"2. PRECISION EXECUTION (15M SMC ORDER FLOW)\n"
-        f"• Liquidity Sweep: Confirmed 10-bar Donchian sweep at local fractal swings trapping retail breakout volume.\n"
-        f"• Order Block Mitigation: Rejection wick confirms displacement back to the 20-period dynamic EMA.\n"
+        f"{sweep_desc}\n"
+        f"{mss_desc}\n"
+        f"{ob_desc}\n"
         f"• Execution Level: {entry_str}\n"
         f"• Invalidation (Stop Loss): {sl_str} (2.0× ATR Volatility Buffer)\n"
-        f"• Take Profit Target: {tp_str} (1:{rr:.2f}R Geometric Target)\n\n"
+        f"{target_desc} (1:{rr:.2f}R Geometric Target)\n\n"
         f"3. CAPITAL PRESERVATION & RISK MANAGEMENT\n"
         f"• Position Sizing: Strict 0.50% to 1.00% risk per trade (Prop Firm Compliant).\n"
         f"• Dynamic Trailing: Volatility cushion stop trailing active at +1.20R to eliminate drawdown.\n\n"
