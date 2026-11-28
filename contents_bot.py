@@ -30,7 +30,15 @@ from core.marketing.contents_bot import (
 
 def main():
     if len(sys.argv) > 1 and sys.argv[1] == "--loop":
-        run_contents_bot_loop()
+        max_rt = None
+        if "--max-runtime" in sys.argv:
+            idx = sys.argv.index("--max-runtime")
+            if idx + 1 < len(sys.argv):
+                try:
+                    max_rt = float(sys.argv[idx + 1])
+                except ValueError:
+                    pass
+        run_contents_bot_loop(max_runtime_sec=max_rt)
         return
 
     admin_id = TELEGRAM_CHAT_ID.split(",")[0].strip() if TELEGRAM_CHAT_ID else "8142877259"

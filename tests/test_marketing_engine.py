@@ -257,7 +257,7 @@ def test_contents_bot_commands(monkeypatch):
     assert len(messages_sent) == 1
     assert "CONTENTS MARKETING COCKPIT" in messages_sent[0]["text"]
     assert messages_sent[0]["markup"] is not None
-    assert "keyboard" in messages_sent[0]["markup"]  # Persistent keyboard present!
+    assert "remove_keyboard" in messages_sent[0]["markup"]  # Clean text bar enforced!
 
     # 2. Test /signal
     res_sig = handle_contents_bot_update({"message": {"chat": {"id": "8142877259"}, "text": "/signal"}})

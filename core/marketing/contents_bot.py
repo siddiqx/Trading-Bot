@@ -40,18 +40,10 @@ ACTIVE_PAIRS = ["EURUSD", "USDCAD", "USDCHF", "AUDUSD"]
 
 def get_persistent_menu_keyboard() -> dict:
     """
-    Returns a persistent 6-button ReplyKeyboardMarkup displayed directly
-    on the typing section in Telegram mobile and desktop.
+    Keeps the typing area 100% clean by removing any bottom reply keyboards.
+    Commands are accessed purely via the Telegram 3-dot / Menu (/) button.
     """
-    return {
-        "keyboard": [
-            [{"text": "⚡ Latest Signal"}, {"text": "📊 Chart"}],
-            [{"text": "🐦 Twitter Thread"}, {"text": "📝 Reddit Post"}],
-            [{"text": "🌐 4H Trend Outlook"}, {"text": "📈 TradingView Idea"}]
-        ],
-        "resize_keyboard": True,
-        "is_persistent": True
-    }
+    return {"remove_keyboard": True}
 
 
 def get_inline_action_keyboard(pair: str = "EURUSD") -> dict:
@@ -637,16 +629,24 @@ def process_contents_bot_pending_updates(bot_token: Optional[str] = None, offset
         return offset
 
 
-def run_contents_bot_loop(poll_interval: float = 2.0, bot_token: Optional[str] = None) -> None:
+def run_contents_bot_loop(
+    poll_interval: float = 2.0,
+    bot_token: Optional[str] = None,
+    max_runtime_sec: Optional[float] = None
+) -> None:
     """
     Runs a continuous long-polling listener for @contents7_bot.
-    Enables sub-second interactive responses when run as a background service.
+    Enables sub-second interactive responses when run as a background service or GitHub Actions runner.
     """
     token = (bot_token or TELEGRAM_MARKETING_BOT_TOKEN).strip()
     print(f"🚀 Contents Marketing Bot (@contents7_bot) live listener starting...")
     offset = None
     import time
+    start_time = time.time()
     while True:
+        if max_runtime_sec and (time.time() - start_time >= max_runtime_sec):
+            print(f"Reached max runtime of {max_runtime_sec}s. Exiting cleanly for next runner cycle.")
+            break
         try:
             offset = process_contents_bot_pending_updates(bot_token=token, offset=offset)
             time.sleep(poll_interval)

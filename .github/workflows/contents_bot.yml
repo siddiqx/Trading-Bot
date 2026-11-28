@@ -1,0 +1,41 @@
+name: 24/7 Contents Marketing Bot Daemon
+
+on:
+  schedule:
+    # Automatically triggers every 4 hours to guarantee continuous, 24/7 listener uptime
+    - cron: '0 */4 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: contents-bot-daemon
+  cancel-in-progress: true
+
+jobs:
+  contents-bot-daemon:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run 24/7 Contents Bot Real-Time Listener
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_MARKETING_BOT_TOKEN: ${{ secrets.TELEGRAM_MARKETING_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          echo "Starting 24/7 Contents Bot live Telegram listener..."
+          # Run for 14,000 seconds (~3.88 hours) before clean handoff to next runner
+          python contents_bot.py --loop --max-runtime 14000
