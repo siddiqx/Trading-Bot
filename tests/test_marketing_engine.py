@@ -71,6 +71,9 @@ def test_generate_tradingview_idea_post():
     assert "1.08125" in tv_post["description"]
     assert "t.me/ccrs_forex_signals" in tv_post["description"]
     assert "forex" in tv_post["tags"]
+    # Ensure zero markdown hash or asterisk symbols in description
+    assert "#" not in tv_post["description"]
+    assert "*" not in tv_post["description"]
 
     # 2. Closed Win Resolution
     tv_win = generate_tradingview_idea_post(trade, realized_pips=37.5, realized_r=1.50)
