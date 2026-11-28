@@ -2036,6 +2036,16 @@ def broadcast_commercial_signal(sig: dict, state: dict, extra_footer: str = "", 
     except Exception as e:
         logger.debug(f"Discord signal dispatch non-critical error: {e}")
 
+    # 5. Dispatch 1-Click TradingView Idea Pack to Admin Private Telegram
+    try:
+        from core.marketing import format_tradingview_telegram_pack
+        if admin_id and not admin_id.startswith("@"):
+            tv_pack_msg = format_tradingview_telegram_pack(sig)
+            _safe_send_telegram_alert(tv_pack_msg, specific_chat_id=admin_id, protect_content=False)
+            logger.info(f"1-Click TradingView publication pack dispatched to Admin ({admin_id}).")
+    except Exception as e:
+        logger.debug(f"TradingView setup pack dispatch non-critical error: {e}")
+
     state["last_signal_time"] = now_utc.isoformat()
     save_state(state)
 
@@ -2229,6 +2239,16 @@ def broadcast_trade_exit(
             send_discord_tp_celebration(trade, realized_pips, realized_r, streak=streak, chart_bytes=tp_chart_bytes)
         except Exception as e:
             logger.debug(f"Discord TP celebration dispatch non-critical error: {e}")
+
+        # 6. Dispatch 1-Click TradingView Idea Pack to Admin Private Telegram
+        try:
+            from core.marketing import format_tradingview_telegram_pack
+            tv_pack_msg = format_tradingview_telegram_pack(trade, realized_pips=realized_pips, realized_r=realized_r)
+            if admin_id and not admin_id.startswith("@"):
+                _safe_send_telegram_alert(tv_pack_msg, specific_chat_id=admin_id, protect_content=False)
+                logger.info(f"1-Click TradingView publication pack dispatched to Admin ({admin_id}).")
+        except Exception as e:
+            logger.debug(f"TradingView pack dispatch non-critical error: {e}")
 
     return results
 
@@ -5186,6 +5206,22 @@ if __name__ == "__main__":
         state = load_state()
         res = check_disboard_bump_reminder(state, force=True)
         print(f"Disboard bump reminder triggered to Admin: {res}")
+    elif len(sys.argv) > 1 and sys.argv[1] == "--tv":
+        from core.marketing.case_study_generator import format_tradingview_telegram_pack
+        records = load_trade_records()
+        completed = records.get("completed_trades", [])
+        active = list(records.get("active_trades", {}).values())
+        admin_id = TELEGRAM_CHAT_ID.split(",")[0].strip() if TELEGRAM_CHAT_ID else ""
+
+        target_trade = active[0] if active else (completed[-1] if completed else {
+            "pair": "EURUSD", "direction": "SHORT", "entry": 1.08500, "stop_loss": 1.08750,
+            "take_profit": 1.08125, "timeframe": "15M"
+        })
+        pips = target_trade.get("realized_pips")
+        r_val = target_trade.get("realized_r")
+        tv_msg = format_tradingview_telegram_pack(target_trade, realized_pips=pips, realized_r=r_val)
+        res = _safe_send_telegram_alert(tv_msg, specific_chat_id=admin_id, protect_content=False)
+        print(f"TradingView publication pack dispatched to Admin ({admin_id}): {res}")
     elif len(sys.argv) > 1 and sys.argv[1] in ("--engagement", "--news", "--poll", "--ict", "--vip"):
         from core.marketing.engagement_engine import check_and_dispatch_engagement_content
         state = load_state()

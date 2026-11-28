@@ -5,6 +5,7 @@ from core.marketing.case_study_generator import (
     generate_twitter_thread,
     generate_telegram_share_url,
     generate_tradingview_idea_post,
+    format_tradingview_telegram_pack,
 )
 from core.marketing.reddit_publisher import (
     publish_reddit_case_study,
@@ -34,6 +35,7 @@ __all__ = [
     "generate_twitter_thread",
     "generate_telegram_share_url",
     "generate_tradingview_idea_post",
+    "format_tradingview_telegram_pack",
     "publish_reddit_case_study",
     "save_local_draft",
     "is_on_cooldown",

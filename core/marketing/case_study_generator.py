@@ -240,3 +240,48 @@ def generate_tradingview_idea_post(
         "timeframe": timeframe
     }
 
+
+def format_tradingview_telegram_pack(
+    trade: Dict[str, Any],
+    realized_pips: Optional[float] = None,
+    realized_r: Optional[float] = None,
+    channel_url: str = "https://t.me/ccrs_forex_signals"
+) -> str:
+    """
+    Formats an automated 1-click copyable TradingView Idea pack
+    tailored for instant private delivery to the Admin Telegram chat.
+    Uses <pre> and <code> tags for 1-tap mobile copying.
+    """
+    post = generate_tradingview_idea_post(
+        trade, realized_pips=realized_pips, realized_r=realized_r, channel_url=channel_url
+    )
+    pair = trade.get("pair") or trade.get("symbol") or "EURUSD"
+    display_pair = f"{pair[:3]}/{pair[3:]}" if len(pair) == 6 else pair
+    direction = trade.get("direction", "LONG").upper()
+    tf = str(trade.get("timeframe", "15M")).upper()
+
+    if realized_pips is not None and realized_r is not None:
+        pips_str = f"+{realized_pips:.1f}" if realized_pips >= 0 else f"{realized_pips:.1f}"
+        r_str = f"+{realized_r:.2f}R" if realized_r >= 0 else f"{realized_r:.2f}R"
+        status_line = f"🎯 <b>Take Profit Hit ({pips_str} Pips / {r_str})</b>"
+    else:
+        status_line = f"🟢 <b>Fresh Active Signal ({direction})</b>"
+
+    tags_str = " ".join([f"#{t}" for t in post.get("tags", [])])
+
+    return (
+        f"📝 <b>TRADINGVIEW IDEA PUBLICATION PACK</b>\n"
+        f"━━━━━━━━━━━━━━━━━━\n"
+        f"Asset: <b>{display_pair} ({direction})</b> • <code>{tf}</code>\n"
+        f"Status: {status_line}\n\n"
+        f"📌 <b>COPY TITLE (Tap to copy):</b>\n"
+        f"<code>{post['title']}</code>\n\n"
+        f"📋 <b>COPY DESCRIPTION (Tap to copy):</b>\n"
+        f"<pre>{post['description']}</pre>\n\n"
+        f"🏷️ <b>TAGS:</b>\n"
+        f"<code>{tags_str}</code>\n\n"
+        f"━━━━━━━━━━━━━━━━━━\n"
+        f"👉 <i>Open TradingView → Publish Idea → Paste Title & Description (10 seconds to publish).</i>"
+    )
+
+
